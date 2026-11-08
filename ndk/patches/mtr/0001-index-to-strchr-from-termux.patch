@@ -1,0 +1,41 @@
+Subject: build with bionic: index() -> strchr()
+
+Why: bionic does not declare the legacy BSD index() (clang errors on the implicit declaration).
+Source: termux-packages root-packages/mtr/index_to_strchr.patch at commit
+5628ffe85dc4a70916543752fe81ad3c1066ea32 (applied unchanged). Termux's hsearch.patch is not needed
+(bionic has hcreate/hsearch since API 28) and its packet.c.patch (no setuid drop, for unprivileged
+Termux apps) is not wanted for a root module.
+
+--- a/packet/command.c
++++ b/packet/command.c
+@@ -393,7 +393,7 @@
+         buffer->incoming_buffer[buffer->incoming_read_position] = 0;
+ 
+         /*  Find the next newline, which terminates command requests  */
+-        end_of_command = index(buffer->incoming_buffer, '\n');
++        end_of_command = strchr(buffer->incoming_buffer, '\n');
+         if (end_of_command == NULL) {
+             /*
+                No newlines found, so any data we've read so far is
+--- a/ui/cmdpipe.c
++++ b/ui/cmdpipe.c
+@@ -778,7 +778,7 @@
+      */
+     while (true) {
+         /*  If no newline is found, our reply isn't yet complete  */
+-        end_of_reply = index(reply_start, '\n');
++        end_of_reply = strchr(reply_start, '\n');
+         if (end_of_reply == NULL) {
+             /*  No complete replies remaining  */
+             break;
+--- a/ui/curses.c
++++ b/ui/curses.c
+@@ -398,7 +398,7 @@
+     const char *format,
+     int n)
+ {
+-    if (index(format, 'N')) {
++    if (strchr(format, 'N')) {
+         *dst++ = ' ';
+         format_number(n, 5, dst);
+     } else if (strchr(format, 'f')) {

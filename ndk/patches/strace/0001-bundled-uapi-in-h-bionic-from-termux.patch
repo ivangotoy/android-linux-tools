@@ -1,0 +1,23 @@
+Subject: bundled uapi <linux/in.h>: use bionic's struct in_addr
+
+Why: strace compiles against its bundled kernel uapi headers; their <linux/in.h> shadows the
+NDK copy, which bionic patches to take struct in_addr / in_addr_t from <bits/in_addr.h>. Without
+this, <arpa/inet.h> fails with "unknown type name in_addr_t".
+Source: termux-packages packages/strace/bundled-linux-include-uapi-linux-in.h.patch at commit
+bcea3c1434a95a0bbd2a55e8aa8413450b459163 (applied unchanged). Termux's other strace patches
+(setuid/username handling for unprivileged apps, static_assert removal, mpers/armv7 configure)
+are not needed for this root, non-mpers build.
+
+--- a/bundled/linux/include/uapi/linux/in.h
++++ b/bundled/linux/include/uapi/linux/in.h
+@@ -91,7 +91,9 @@
+ };
+ #endif
+ 
+-#if __UAPI_DEF_IN_ADDR
++#ifdef __ANDROID__
++#include <bits/in_addr.h>
++#elif __UAPI_DEF_IN_ADDR
+ /* Internet address. */
+ struct in_addr {
+ 	__be32	s_addr;
