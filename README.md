@@ -11,20 +11,49 @@ and it does not change device state except through the files mounted under `syst
   which is the same under Magisk, KernelSU (with or without a metamodule) and APatch.
 - Version: `<alpine-branch>-rN`, for example `v3.24-r1`. versionCode is `major*10000 + minor*100 + N`,
   for example `32401`.
-- Layout: ELF programs are in `libexec/`. Shared libraries and `ld-musl-aarch64.so.1` are in `lib/`.
+- Layout (v1): ELF programs are in `libexec/`. Shared libraries and `ld-musl-aarch64.so.1` are in `lib/`.
   Small `#!/system/bin/sh` wrappers are in `system/bin/`. Terminfo is in `share/terminfo`, and the CA
-  bundle is `etc/ssl/cert.pem`.
+  bundle is `etc/ssl/cert.pem`. v2.2 moves all of these under `system/etc/android-linux-tools/` (see
+  "Runtime layout" below).
 
 ## v2: native Android (bionic) builds with the NDK
 
-v2 (`v2.M-rN`, versionCode `major*100000 + minor*1000 + N`, e.g. `201001` for `v2.1-r1`, above every v1 code)
+v2 (`v2.M-rN`, versionCode `major*100000 + minor*1000 + N`, e.g. `202001` for `v2.2-r1`, above every v1 code)
 keeps the module id, name, the `-ng` rule and both flavours of v1, but compiles the tools from upstream source
 with the Android NDK instead of shipping Alpine/musl binaries. Since v2.1 every tool is an NDK build: the ZIPs
 contain no Alpine/musl binary, no musl loader or libraries and no resolv.conf overlay, and use
 `ndk/module/customize.sh` (v1's `module/customize.sh` without the musl and resolv.conf code). v2.0 was a hybrid
-that kept the v1 Alpine binary for unported tools; `ALLOW_ALPINE=1` in `ndk/build.conf` re-enables that fallback. `share/android-linux-tools/MANIFEST.json` (and `dist/MANIFEST-v2.json`)
+that kept the v1 Alpine binary for unported tools; `ALLOW_ALPINE=1` in `ndk/build.conf` re-enables that fallback
+(not supported by the v2.2 layout checks, which require every ELF in `$ALTDIR/libexec`).
+`$ALTDIR/share/android-linux-tools/MANIFEST.json` (and `dist/MANIFEST-v2.json`)
 records per tool its origin (`ndk` or `alpine`), upstream version, source sha256, linkage and patches;
-`share/android-linux-tools/origins.txt` is the same in one line per tool for `phone-test.sh`.
+`$ALTDIR/share/android-linux-tools/origins.txt` is the same in one line per tool for `phone-test.sh`.
+
+### Runtime layout (v2.2): `/system/etc/android-linux-tools`
+
+`/data/adb` is `0700 root`. Up to v2.1 the wrappers exec'd `/data/adb/modules/android-linux-tools/libexec/<tool>`,
+so every tool failed for adb shell (uid 2000), Termux and apps (`/system/bin/dig[11]: .../libexec/dig:
+inaccessible or not found`, KernelSU + NoMount). Since v2.2 every runtime file is in the module's
+`system/` tree, which the root manager mounts over `/system`:
+
+| Module path | Device path | Contents |
+|---|---|---|
+| `system/bin/` | `/system/bin` | wrappers and `alt-list` (names after the `-ng` rule) |
+| `system/etc/android-linux-tools/libexec/` | `$ALTDIR/libexec` | every ELF program |
+| `system/etc/android-linux-tools/share/terminfo/` | `$ALTDIR/share/terminfo` | terminfo (compiled-in default of ncurses) |
+| `system/etc/android-linux-tools/etc/ssl/cert.pem` | `$ALTDIR/etc/ssl/cert.pem` | Mozilla CA bundle (curl, OpenSSL default) |
+| `system/etc/android-linux-tools/etc/alt-tools.map` | `$ALTDIR/etc/alt-tools.map` | rename map written by `customize.sh`, read by `alt-list` |
+| `system/etc/android-linux-tools/share/android-linux-tools/` | `$ALTSHARE` | `dns-servers`, `origins.txt`, `MANIFEST.json`, `phone-test.sh` |
+| `module.prop`, `customize.sh`, `META-INF/`, `share/licenses/` | `/data/adb/modules/android-linux-tools` | module metadata and licences only |
+
+`ALTDIR=/system/etc/android-linux-tools`. Wrappers set `ALTDIR` instead of `MODDIR` and use no `/data/adb` path.
+`customize.sh` sets everything root:root with SELinux context `u:object_r:system_file:s0`: `0755` for
+directories, programs and scripts, `0644` for data. Why `/system/etc` (an existing directory on every device,
+so no new top-level `/system` directory): Magisk adds new files of `system/` to `/system`, KernelSU (built-in
+magic mount or a metamodule such as meta-overlayfs) and APatch overlay `system/` on `/system`, and the NoMount
+metamodule injects each file of `system/` and synthesizes missing directories (root:root `0755`); details and
+sources in `ndk/REFERENCES.md`, "Runtime layout". `check.py` and `layout_test.py` (install simulation of each
+ZIP, see Builder) fail if a runtime path is under `/data/adb`.
 
 - Toolchain: Android NDK r30 (LTS, 30.0.16248370) from dl.google.com, verified with Google's published SHA-1
   and a pinned SHA-256, in a Debian trixie-slim image pinned by digest (packages from snapshot.debian.org).
@@ -39,15 +68,15 @@ records per tool its origin (`ndk` or `alpine`), upstream version, source sha256
   socat, iperf3, rsync, ncat, iftop, mount.cifs, traceroute-ng, arping-ng, tracepath-ng. Everything else is static.
 - DNS: NDK tools resolve names through bionic/netd, so they need no resolv.conf. `drill` (ldns) is a DNS query
   tool that talks to a server directly; when no `@server` is given its wrapper adds `@<first DNS server of the
-  active default network>` from `share/android-linux-tools/dns-servers` (dumpsys connectivity, getprop fallback).
+  active default network>` from `$ALTSHARE/dns-servers` (dumpsys connectivity, getprop fallback).
   `dig` and `host` (BIND) get the same servers through `ALT_DNS_SERVERS`, which their wrapper exports and a
   small dighost.c patch uses when neither `@server` (host: the server argument) nor a resolv.conf names one.
   The v1 resolv.conf overlay and `resolv-refresh` were only shipped while Alpine network tools remained (v2.0-r1:
   dig, host, mount.cifs); v2.1 ships neither.
 - TLS/CA: curl uses mbedTLS 3.6 LTS with the Mozilla bundle from curl.se (pinned by sha256) as
-  `etc/ssl/cert.pem`; the wrapper also passes `--capath /system/etc/security/cacerts` (or the conscrypt apex
+  `$ALTDIR/etc/ssl/cert.pem`; the wrapper also passes `--capath /system/etc/security/cacerts` (or the conscrypt apex
   store) when present. mbedTLS loads every file of the directory, which works with Android's old-style hash names.
-- BIND (dig, host) uses OpenSSL 3.5 LTS (static) with `etc/ssl/cert.pem` as its default CA file (`dig +tls`).
+- BIND (dig, host) uses OpenSSL 3.5 LTS (static) with `$ALTDIR/etc/ssl/cert.pem` as its default CA file (`dig +tls`).
 - bpftool: both flavours ship the NDK bpftool (no LLVM: no JIT disassembly, no skeleton features). v2.0's full
   flavour kept the v1 Alpine bpftool with libLLVM (about 172 MB); since v2.1 lite and full contain the same
   tools and differ only in `flavour=` and the description, so either ZIP can be installed.
@@ -58,14 +87,14 @@ records per tool its origin (`ndk` or `alpine`), upstream version, source sha256
 - New in v2: `ethtool-ng` (always `-ng`), `drill`, `wg-quick`, `awg`, `awg-quick`. Ported in v2.1: `nfct`,
   `dig`, `host`, `mount.cifs`, and bpftool in the full flavour. Reasons and sources per tool: `ndk/REFERENCES.md`.
 
-### v2.1 contents
+### v2.2 contents
 
-Both flavours contain the same 66 NDK tools (plus `alt-list`); there is no `lib/` directory. Sizes are of the stripped `libexec/` programs; `Linkage` dynamic = PIE against the system `libc.so`/`libm.so`/`libdl.so` (`libz.so` for curl) only. Generated from `dist/MANIFEST-v2.json`.
+Both flavours contain the same 66 NDK tools (plus `alt-list`); there is no `lib/` directory. Sizes are of the stripped `$ALTDIR/libexec/` programs; `Linkage` dynamic = PIE against the system `libc.so`/`libm.so`/`libdl.so` (`libz.so` for curl) only. Generated from `dist/MANIFEST-v2.json`.
 
 | ZIP | Bytes | Unpacked |
 |---|---|---|
-| `android-linux-tools-v2.1-r1.zip` | 26070503 | 53.5 MB |
-| `android-linux-tools-full-v2.1-r1.zip` | 26070596 | 53.5 MB |
+| `android-linux-tools-v2.2-r1.zip` | 26077121 | 53.5 MB |
+| `android-linux-tools-full-v2.2-r1.zip` | 26077213 | 53.5 MB |
 
 | Command | Recipe | Version | Linkage | libexec (KB) | Licence (SPDX) |
 |---|---|---|---|---|---|
@@ -168,7 +197,12 @@ JOBS=8 MEM=12G ./build-ndk.sh  # make -j and memory limit (defaults)
   recipe, patches, environment and dependency hashes.
 - `ndk/tools.tsv` maps wrapper names to NDK binaries; every other name of `config/tools.tsv` uses the v1 Alpine
   binary, fetched and verified by the unchanged v1 `scripts/fetch.py` from `alpine.lock.json`.
-- `ndk/package.sh` stages, checks and zips both flavours (`ndk/scripts/stage.py`, `check.py`, `manifest.py`).
+- `ndk/package.sh` stages, checks and zips both flavours (`ndk/scripts/stage.py`, `check.py`, `manifest.py`),
+  then runs `ndk/scripts/layout_test.py` on each ZIP: it unzips it under a simulated
+  `data/adb/modules/android-linux-tools` (0700), runs its `customize.sh` with `set_perm` stubs and checks, as a
+  non-root user would see it, that every `$ALTDIR` path of every wrapper exists and is readable (programs:
+  executable) through every directory, that nothing refers to `/data/adb`, and owner, label and mode of every
+  file under `system/`. Also usable on the host: `python3 -I ndk/scripts/layout_test.py ZIP NEW-EMPTY-DIR`.
   The host checks run no aarch64 code: AArch64 machine; NDK static binaries `statically linked` with no
   `DT_NEEDED`; NDK dynamic binaries PIE with interpreter `/system/bin/linker64`, `DT_NEEDED` only libc/libm/libdl/
   liblog/libz, no RUNPATH and an Android note of API 35; Alpine binaries with the v1 musl interpreter, RUNPATH and
@@ -179,6 +213,18 @@ JOBS=8 MEM=12G ./build-ndk.sh  # make -j and memory limit (defaults)
 - Release settings: `ndk/build.conf` (`V2_VERSION`, `MODULE_RELEASE`).
 
 ### Phone test (v2)
+
+Run `sh /system/etc/android-linux-tools/share/android-linux-tools/phone-test.sh` (also `dist/phone-test.sh`).
+As root it runs every check and then repeats the non-root checks as uid 2000 (`su 2000 -c`, `su shell -c`,
+`su -s /system/bin/sh 2000 -c`, or the module's `setpriv --reuid=2000`; SKIP with the reason if none gives
+uid 2000). Run as a non-root user (`adb shell`, Termux) or with `--nonroot` it runs only the non-root checks:
+every wrapper resolves in `PATH`, refers to no `/data/adb` path and its `$ALTDIR/libexec` target is readable and
+executable; the runtime data (alt-tools.map, cert.pem, terminfo, origins.txt, dns-servers) is readable; versions
+of dig, drill, curl, jq, htop, tmux, nano, less, awg and bpftool; `curl -sI https://example.com`,
+`drill example.com` and `dig +short example.com` with the Android DNS servers. `su`/`setpriv` keep root's
+SELinux domain, so the uid 2000 run from root tests file permissions; `adb shell` also tests the `shell` domain.
+Root-only operations (nft, ipset, conntrack, `bpftool prog list`, awg links) stay in the root run. The root run
+also fails on v2.1 leftovers in `/data/adb/modules/android-linux-tools` (`libexec`, `share/terminfo`, ...).
 
 `phone-test.sh` prints `ORIGIN <tool> <installed-name> <ndk|alpine> <version> <linkage>` for every tool and
 checks that all origins are `ndk` and that no musl loader is installed. The DNS section needs no resolv.conf:
