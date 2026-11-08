@@ -35,6 +35,7 @@ VERSION = 'v%s-r%d' % (CONF2['V2_VERSION'], REL)
 VCODE = int(m.group(1)) * 100000 + int(m.group(2)) * 1000 + REL
 API = int(os.environ.get('API', '29'))
 NDK_RELEASE = os.environ.get('NDK_RELEASE', '')
+REPO_URL = 'https://git.digtvbg.com/ivangotoy/android-linux-tools'
 
 EXTRA_ENV = {
     'mtr': ['export MTR_PACKET="$ALTDIR/libexec/mtr-packet"'],
@@ -298,8 +299,10 @@ for r in tools_out:
         origins.append('%s %s %s %s' % (r['tool'], r['origin'], r['version'], r['linkage'].split()[0]))
 write(os.path.join(SHARE, 'origins.txt'), '\n'.join(origins) + '\n', 0o644)
 
-# ---- licences
-lic_rows = []
+# ---- licences: this repository's own files (MIT) and every bundled upstream package
+copyfile(os.path.join(SRC, 'LICENSE'), os.path.join(ST, 'share', 'licenses', MODID, 'LICENSE'), 0o644)
+lic_rows = [{'source': 'module', 'name': MODID, 'version': VERSION, 'license': 'MIT', 'url': REPO_URL,
+             'license_files': ['share/licenses/%s/LICENSE' % MODID]}]
 for rname in sorted({e['recipe'] for e in entries if e['origin'] == 'ndk'} |
                     {d for e in entries if e['origin'] == 'ndk' for d in meta[e['recipe']]['deps']} | {'ncurses', 'cacert'}):
     mt = meta[rname]
@@ -328,6 +331,10 @@ for n in used_pk:
                      'origin': PK[n]['origin'], 'aports_commit': PK[n]['aports_commit'], 'license_files': copied})
 aports_branch = LOCK['alpine_branch'].lstrip('v') + '-stable'
 notice = ['Android Linux tools %s (%s flavour) - third-party licences' % (VERSION, FLAVOUR), '',
+          'The module\'s own files (wrappers, alt-list, customize.sh, dns-servers, phone-test.sh) and the build',
+          'scripts in %s are MIT licensed:' % REPO_URL,
+          'share/licenses/%s/LICENSE. Each bundled package below keeps its own upstream licence; the' % MODID,
+          'patches in share/licenses/ndk/<package>/ keep the terms of their upstream authors.', '',
           'NDK builds (origin ndk): compiled from the upstream source tarballs below with Android NDK %s for' % NDK_RELEASE,
           'aarch64-linux-android API %d. Patches applied are listed per package and shipped next to its licence' % API,
           'files in share/licenses/ndk/<package>/; recipes are in the android-linux-tools repository, ndk/recipes/.', '']

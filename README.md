@@ -438,3 +438,11 @@ corresponding source is the Alpine aports tree at the pinned branch,
 <https://gitlab.alpinelinux.org/alpine/aports/-/tree/3.24-stable>, at the per-package `aports_commit`
 recorded in `alpine.lock.json`. Each APKBUILD there names the upstream source tarball and Alpine's
 patches. The build scripts in this repository are by Ivan Angelov.
+
+## Licence of this repository
+
+The repository's own code (build scripts, recipes, staging and check scripts, module scripts such as the
+wrappers, `alt-list`, `customize.sh`, `dns-servers` and `phone-test.sh`) is MIT licensed, see `LICENSE`
+(Copyright (c) 2026 Ivan Angelov). The ZIPs ship it as `share/licenses/android-linux-tools/LICENSE`.
+The bundled third-party tools keep their upstream licences (`share/licenses/` and `share/licenses/NOTICE.txt`
+in the ZIP), and the patches in `ndk/patches/` keep the terms of their upstream authors.
