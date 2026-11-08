@@ -7,7 +7,9 @@ name: github-release
 
 on:
   release:
-    types: [published]
+    # published: created as a release. updated: also fires when a draft is published
+    # (Forgejo does not send published for that). Re-runs are idempotent.
+    types: [published, updated]
   workflow_dispatch:
     inputs:
       tag:
@@ -16,6 +18,7 @@ on:
 
 jobs:
   copy:
+    if: ${{ forgejo.event_name != 'release' || !forgejo.event.release.draft }}
     runs-on: release-host
     timeout-minutes: 60
     steps:
