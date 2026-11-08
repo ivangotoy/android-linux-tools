@@ -1,0 +1,22 @@
+Subject: libmisc/walk_tree.c: define IFTODT() when the libc lacks it
+
+Why: bionic's <dirent.h> defines the DT_* constants but not the IFTODT() conversion macro that
+glibc and musl provide, so getfacl/setfacl -R fail to compile ("call to undeclared function").
+The fallback is the same definition glibc uses ((mode & S_IFMT) >> 12).
+Source: written for this module
+(see ndk/REFERENCES.md for the sources checked); same definition as glibc and musl <dirent.h>.
+
+--- a/libmisc/walk_tree.c
++++ b/libmisc/walk_tree.c
+@@ -32,6 +32,11 @@
+ 
+ #include "walk_tree.h"
+ 
++#ifndef IFTODT
++/* bionic <dirent.h> has DT_* but not the glibc/BSD IFTODT() macro */
++#define IFTODT(mode) (((mode) & 0170000) >> 12)
++#endif
++
+ struct dir_stack_entry {
+ 	struct dir_stack_entry *parent;
+ 	DIR *stream;
