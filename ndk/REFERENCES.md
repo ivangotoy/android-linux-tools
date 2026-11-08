@@ -88,7 +88,7 @@ The rule applied:
 - Dynamic tools resolve with `getaddrinfo`, which goes through bionic `libc.so` to netd (dnsproxyd).
 - drill talks to a DNS server directly and never calls the libc resolver. Its flag in `ndk/tools.tsv` is `dns`.
   When the user gives no `@server`, the generated wrapper (`ndk/scripts/stage.py`) adds `@<first server>`. The
-  server comes from `share/android-linux-tools/dns-servers`, which reads the `DnsAddresses` of the
+  server comes from `$ALTDIR/share/android-linux-tools/dns-servers`, which reads the `DnsAddresses` of the
   "Active default network" from `dumpsys connectivity`, falls back to `getprop net.dns1/net.dns2`, and never prints
   a public resolver. Nothing reads or writes resolv.conf.
 - BIND's dig and host (v2.1) read `/etc/resolv.conf` and otherwise fall back to `::1`/`127.0.0.1`. Their flag
@@ -110,10 +110,56 @@ The rule applied:
   BoringSSL tries both hashes, which is why AOSP curl can use `--with-ca-path`.
 - mbedTLS `mbedtls_x509_crt_parse_path()` loads every regular file in the directory regardless of name. That
   ignoring the trailing `-text` dump in each file causes no error is [I] in the survey.
-- So curl is built with mbedTLS. The wrapper passes `--cacert $MODDIR/etc/ssl/cert.pem` (the bundled Mozilla
+- So curl is built with mbedTLS. The wrapper passes `--cacert $ALTDIR/etc/ssl/cert.pem` (the bundled Mozilla
   bundle) and `--capath /system/etc/security/cacerts`. It uses `/apex/com.android.conscrypt/cacerts` only if the
   system directory is missing.
 - The survey suggested preferring the apex directory first. The wrapper prefers the system directory.
+
+### Runtime layout: /system/etc/android-linux-tools (v2.2)
+Problem (Android 15, KernelSU with the NoMount metamodule): `/data/adb` is `0700 root`, so for
+adb shell (uid 2000), Termux and apps every wrapper failed when it exec'd `$MODDIR/libexec/<tool>`:
+`/system/bin/dig[11]: /data/adb/modules/android-linux-tools/libexec/dig: inaccessible or not found`. The wrapper
+itself, a new file in the module's `system/bin`, ran fine as uid 2000: what the manager mounts from `system/`
+is readable by every uid; what the wrapper read directly from `/data/adb` was not. v2.1's phone test ran
+everything as root and missed it.
+
+Chosen approach: everything a wrapper uses at run time is in the module's `system/etc/android-linux-tools/`,
+which is `ALTDIR=/system/etc/android-linux-tools` on the device: `libexec/` (every ELF), `share/terminfo/`,
+`etc/ssl/cert.pem`, `etc/alt-tools.map`, and `share/android-linux-tools/` (dns-servers, origins.txt,
+MANIFEST.json, phone-test.sh). Wrappers set `ALTDIR`, not `MODDIR`. The compiled-in paths move as well: ncurses
+`--with-default-terminfo-dir`/`--with-terminfo-dirs`, curl `--with-ca-bundle`, OpenSSL `--openssldir`. Only the
+module metadata (`module.prop`, `customize.sh`, `META-INF`) and `share/licenses/` stay in the module root.
+`customize.sh` sets everything root:root with `u:object_r:system_file:s0` (the label of stock `/system/bin`
+programs), `0755` for directories, programs and scripts and `0644` for data.
+
+| Source | What it says / does |
+|---|---|
+| Magisk developer guide, https://topjohnwu.github.io/Magisk/guides.html | "new files in the module's `system` will be added to the real `/system`"; `set_perm`/`set_perm_recursive` default context `u:object_r:system_file:s0` |
+| KernelSU module guide, https://kernelsu.org/guide/module.html | the module's `system` directory is overlaid on `/system`; same `set_perm`/`set_perm_recursive` and default context |
+| KernelSU metamodule guide, https://kernelsu.org/guide/metamodule.html | since KernelSU 3.0 a metamodule mounts `system/` (overlayfs or magic mount); must honour `skip_mount` |
+| meta-overlayfs README, https://github.com/KernelSU-Modules-Repo/meta-overlayfs | mounts each enabled module's `system/` (and vendor, product, ...) as an overlayfs layer: new subdirectories merge into the lower `/system/etc` |
+| NoMount, https://github.com/maxsteeel/nomount (read at bf1847f, 2026-10-22) | README: VFS path injection that can "inject entirely new files into existing system directories". `module/metamount.sh` adds one rule per file/symlink of `system/` (`find -L ... -type f -o -type l`); `kernel/src/nomount.c` `nm_init_prealloc_inode()` gives a virtual directory with no real counterpart `S_IFDIR \| 0755` root:root and a file the mode/uid/gid of the module file, and forwards xattrs (the SELinux label) to the module file |
+| APatch module guide, https://apatch.dev/apm-guide.html | `system/` overlaid on `/system` with OverlayFS; same `set_perm` functions and default context |
+
+Why `/system/etc/<id>`: `/system/etc` exists on every device and every manager/metamodule above can add a new
+subdirectory under an existing directory (Magisk and magic mount: new files of `system/` are added; overlayfs:
+merge; NoMount: per-file rules plus synthesized directories), so no new top-level `/system` directory is needed.
+A subdirectory of `/system/bin` would also work but would sit next to the wrappers in a `PATH` directory and in
+the rename loop of `customize.sh`. `/system/etc` is where Android keeps non-`PATH` system files, and the
+`etc/`, `share/` and `libexec/` names inside keep the v2.1 relative layout. The only `/data/adb` path left is
+`$MODDIR` in `phone-test.sh` (root checks of `module.prop` and old-layout leftovers) and in the hybrid-only
+`resolv-refresh`.
+
+Checks: `ndk/scripts/check.py` fails on `$MODDIR` or `/data/adb` in a wrapper, `/data/adb` in an NDK ELF, an ELF
+outside `$ALTDIR/libexec`, or a v2.1 runtime path in the module root. `ndk/scripts/layout_test.py` (run by
+`ndk/package.sh` on each ZIP) unzips it under a simulated `data/adb/modules/android-linux-tools` (0700), runs
+its `customize.sh` with `set_perm` stubs, and checks the view of a non-root user: every `$ALTDIR` path in every
+wrapper exists and is readable (programs: executable) by "other" through every directory, nothing refers to
+`/data/adb`, and owner, label and mode of every file under `system/`. Run against the v2.1 ZIP it reports 274
+errors. On the phone, `phone-test.sh` run as root repeats the non-root checks as uid 2000 (`su 2000 -c`,
+`su shell -c`, `su -s /system/bin/sh 2000 -c`, or the module's `setpriv --reuid=2000`); `su`/`setpriv` keep
+the root SELinux domain, so that run tests file permissions, not the `shell` domain policy (run the script from
+`adb shell` for that).
 
 ### Source verification
 - Every recipe pins `SHA256` and records in `CHECKSUM_SOURCE` how that value was verified: a detached signature
@@ -480,7 +526,8 @@ Sources checked:
 | AOSP external/conscrypt apex/ca-certificates | `cacerts_apex`; Conscrypt prefers /apex/com.android.conscrypt/cacerts |
 
 Chosen approach: download the immutable dated copy https://curl.se/ca/cacert-2026-11-05.pem (sha256
-`427c0642...97285`) and install it as `data/cacert.pem`. stage.py places it at `etc/ssl/cert.pem`.
+`427c0642...97285`) and install it as `data/cacert.pem`. stage.py places it at `$ALTDIR/etc/ssl/cert.pem`
+(module `system/etc/android-linux-tools/etc/ssl/cert.pem`).
 CHECKSUM_SOURCE: https://curl.se/ca/cacert.pem.sha256 (the same file as cacert.pem on 2026-11-05).
 
 Why: the Mozilla bundle does not depend on the device. The Android store reflects the device's trust settings,
@@ -504,7 +551,8 @@ Chosen approach:
 - `configure_std --with-mbedtls=$DEPROOT --with-zlib --without-libpsl --without-libidn2 --without-nghttp2
   --without-brotli --without-zstd --without-libssh2 --without-librtmp --disable-ldap --disable-ldaps
   --enable-threaded-resolver --disable-ares --disable-manual --disable-docs
-  --with-ca-bundle=/data/adb/modules/android-linux-tools/etc/ssl/cert.pem --without-ca-path --without-ca-fallback`.
+  --with-ca-bundle=/system/etc/android-linux-tools/etc/ssl/cert.pem --without-ca-path --without-ca-fallback`
+  (v2.1: `/data/adb/modules/android-linux-tools/etc/ssl/cert.pem`, unreadable for non-root users).
 - `make LDFLAGS="$LT_LDFLAGS"`.
 - `LINKAGE=dynamic`: system `libc.so`/`libm.so`/`libdl.so` plus the system `libz.so`; mbedTLS static.
 - No patches.
@@ -586,7 +634,7 @@ Sources checked:
 | Upstream | 3.5 is the current LTS branch (3.5.9 released 2026-09-29) |
 
 Chosen approach: `ANDROID_NDK_ROOT=/opt/ndk ./Configure android-arm64 -D__ANDROID_API__=35 --prefix=/usr
---libdir=lib --openssldir=/data/adb/modules/android-linux-tools/etc/ssl no-shared no-module no-engine no-dso
+--libdir=lib --openssldir=/system/etc/android-linux-tools/etc/ssl no-shared no-module no-engine no-dso
 no-tests no-docs no-apps no-ui-console no-ssl3 no-comp $CFLAGS`, `make build_libs`, `make install_dev`.
 `crypto/buildinf.h` is regenerated with `util/mkbuildinf.pl` and a fixed compiler description, because the
 generated one embeds the whole compiler command line including the `-ffile-prefix-map` build paths
@@ -595,7 +643,7 @@ generated one embeds the whole compiler command line including the `-ffile-prefi
 
 Why: BIND 9.20 requires OpenSSL (≥1.1.1) for its crypto (DNSSEC, TSIG, DoT); it cannot use mbedTLS, which curl
 keeps. LTS 3.5 instead of 3.6. `--openssldir` makes OpenSSL's default CA file the module's Mozilla bundle
-(`etc/ssl/cert.pem`) for `dig +tls` certificate checks.
+(`$ALTDIR/etc/ssl/cert.pem`) for `dig +tls` certificate checks.
 
 ### BIND 9.20.30 (dig, host)
 Sources checked:
@@ -640,13 +688,13 @@ that the NDK has no ncurses.
 
 Chosen approach:
 - A host `tic` is built from the same source (gcc). It compiles a fixed list of terminfo entries into
-  `data/terminfo`, which ships as `share/terminfo`. The list: xterm, xterm-256color, xterm-color, screen,
+  `data/terminfo`, which ships as `$ALTDIR/share/terminfo`. The list: xterm, xterm-256color, xterm-color, screen,
   screen-256color, tmux, tmux-256color, linux, vt100, vt220, dumb, ansi, rxvt, rxvt-unicode,
   rxvt-unicode-256color.
 - Target library flags: `configure_std --without-shared --with-normal --without-debug --without-ada --without-cxx
   --without-cxx-binding --without-tests --without-progs --without-manpages --enable-widec --enable-pc-files
-  --with-build-cc=gcc --with-default-terminfo-dir=/data/adb/modules/android-linux-tools/share/terminfo
-  --with-terminfo-dirs=<module>/share/terminfo:/system/etc/terminfo --disable-termcap --disable-db-install
+  --with-build-cc=gcc --with-default-terminfo-dir=/system/etc/android-linux-tools/share/terminfo
+  --with-terminfo-dirs=/system/etc/android-linux-tools/share/terminfo:/system/etc/terminfo --disable-termcap --disable-db-install
   --without-gpm --disable-stripping`.
 - Only include/ and ncurses/ are built and installed. Compatibility links are added: `libncurses.a`,
   `libtinfo(w).a`, `ncurses.pc`, and `include/ncurses(w)/`.
@@ -1496,5 +1544,7 @@ phone test checks only the version and help output.
 ### Not ported
 None since v2.1: every tool of `config/tools.tsv` (and wg-quick, awg, awg-quick, drill, ethtool-ng) is an NDK
 build, `ndk/build.conf` has `ALLOW_ALPINE=0`, and `ndk/scripts/check.py` fails on any Alpine/musl ELF, a `lib/`
-directory, the resolv.conf overlay, or ELF files outside `libexec/`. Setting `ALLOW_ALPINE=1` restores the v2.0
+directory, the resolv.conf overlay, or ELF files outside `$ALTDIR/libexec/`. Setting `ALLOW_ALPINE=1` restores the v2.0
 hybrid fallback (v1 Alpine binary for a tool whose recipe is missing from `ndk/tools.tsv`).
+
+- util-linux setpriv: bionic getpwuid() returns NULL pw_passwd/pw_gecos for Android IDs; upstream passwd_copy() xstrdup()s every field and aborts (xalloc.h assertion) on any --reuid/--regid. Patch 0002 copies NULL fields as NULL. Found on an Android 15 vendor ROM.

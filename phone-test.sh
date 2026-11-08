@@ -1,24 +1,39 @@
 #!/system/bin/sh
 # android-linux-tools phone test (device independent, POSIX sh for mksh/toybox).
-# Run as root:  sh /data/adb/modules/android-linux-tools/share/android-linux-tools/phone-test.sh
+#   sh /system/etc/android-linux-tools/share/android-linux-tools/phone-test.sh
+# As root: every check, then the non-root checks again as uid 2000 (shell) via su (or setpriv).
+# As a non-root user (adb shell, Termux) or with --nonroot: only the non-root checks.
+# v2.2+: wrappers, programs and data are under ALTDIR (mounted from the module's system/ tree, readable by
+# every uid); MODDIR (/data/adb, 0700 root) is only read by the root checks.
 MODDIR=/data/adb/modules/android-linux-tools
+ALTDIR=/system/etc/android-linux-tools
+ALTSHARE=$ALTDIR/share/android-linux-tools
+SELF=$ALTSHARE/phone-test.sh
 PASS=0
 FAIL=0
 SKIP=0
 TO=""
 if command -v timeout >/dev/null 2>&1; then TO="timeout 30"; fi
 
-if [ "$(id -u)" != "0" ]; then
-  echo "must run as root"
-  exit 2
+NONROOT=0
+if [ "$1" = --nonroot ] || [ "$(id -u)" != "0" ]; then
+  NONROOT=1
 fi
-if [ ! -r "$MODDIR/module.prop" ]; then
-  echo "module not installed at $MODDIR"
-  exit 2
+if [ "$NONROOT" = 1 ]; then
+  if [ ! -r "$ALTSHARE/MANIFEST.json" ]; then
+    echo "module runtime files not readable at $ALTSHARE (module not installed or not mounted?)"
+    exit 2
+  fi
+  FLAVOUR=$(sed -n 's/^ "flavour": "\([a-z]*\)".*/\1/p' "$ALTSHARE/MANIFEST.json")
+  echo "== $(sed -n 's/^ "version": "\([^"]*\)".*/\1/p' "$ALTSHARE/MANIFEST.json") flavour=$FLAVOUR uid=$(id -u) (non-root checks only)"
+else
+  if [ ! -r "$MODDIR/module.prop" ]; then
+    echo "module not installed at $MODDIR"
+    exit 2
+  fi
+  FLAVOUR=$(sed -n 's/^flavour=//p' "$MODDIR/module.prop")
+  echo "== $(sed -n 's/^version=//p' "$MODDIR/module.prop") flavour=$FLAVOUR kernel=$(uname -r)"
 fi
-
-FLAVOUR=$(sed -n 's/^flavour=//p' "$MODDIR/module.prop")
-echo "== $(sed -n 's/^version=//p' "$MODDIR/module.prop") flavour=$FLAVOUR kernel=$(uname -r)"
 
 result() {
   case "$1" in
@@ -100,6 +115,141 @@ fchk() {
   fi
 }
 
+ORIGINS="$ALTSHARE/origins.txt"
+# origin TOOL: ndk|alpine (v2 modules); empty for v1 modules without origins.txt
+origin() {
+  [ -r "$ORIGINS" ] || return 0
+  while read -r ot oo ov ol; do
+    if [ "$ot" = "$1" ]; then
+      printf '%s\n' "$oo"
+      break
+    fi
+  done < "$ORIGINS"
+}
+
+NS=""
+# dnschk LABEL REGEX TOOL ARGS...: like chk, but prints the tool origin; SKIP when offline
+dnschk() {
+  dl=$1
+  dp=$2
+  dt=$3
+  shift 3
+  if [ -z "$(tn "$dt")" ]; then
+    result skip "$dl" "$dt not installed"
+    return
+  fi
+  if [ -z "$NS" ] && ! ping -c 1 -W 3 example.com >/dev/null 2>&1; then
+    result skip "$dl" "offline (no DNS servers, ping example.com fails)"
+    return
+  fi
+  chk "$dl [$(origin "$dt")]" "$dp" "$dt" "$@"
+}
+
+# rchk LABEL FILE TEST...: pass if FILE passes every test operator (-r, -x, -d...)
+rchk() {
+  rl=$1
+  rf=$2
+  shift 2
+  for rt in "$@"; do
+    if ! test "$rt" "$rf"; then
+      result bad "$rl" 1 "$rf fails test $rt as uid $(id -u)"
+      return
+    fi
+  done
+  result ok "$rl"
+}
+
+# nonroot_checks: what a non-root user (adb shell uid 2000, Termux, apps) needs; run as that user
+nonroot_checks() {
+  NRP="uid$(id -u)"
+  echo "== non-root: uid=$(id -u) gid=$(id -g) context=$(cat /proc/self/attr/current 2>/dev/null | tr -d '\0')"
+  rchk "$NRP:altdir" "$ALTDIR" -d -r -x
+  rchk "$NRP:libexec" "$ALTDIR/libexec" -d -r -x
+  rchk "$NRP:alt-tools.map" "$ALTDIR/etc/alt-tools.map" -f -r
+  rchk "$NRP:cert.pem" "$ALTDIR/etc/ssl/cert.pem" -f -r
+  rchk "$NRP:terminfo-xterm" "$ALTDIR/share/terminfo/x/xterm" -f -r
+  rchk "$NRP:origins.txt" "$ORIGINS" -f -r
+  [ -f "$ALTSHARE/dns-servers" ] && rchk "$NRP:dns-servers" "$ALTSHARE/dns-servers" -f -r -x
+  if [ "$(id -u)" != 0 ] && [ -r "$MODDIR/module.prop" ]; then
+    echo "note: $MODDIR is readable by uid $(id -u)"
+  fi
+  NW="${TMPDIR:-/data/local/tmp}/alttoolstest-nr.$$"
+  mkdir -p "$NW" && printf '%s\n' "$MAP" > "$NW/map"
+  if [ ! -s "$NW/map" ]; then
+    result bad "$NRP:wrappers" 1 "cannot write $NW/map"
+  fi
+  while read -r o n d; do
+    [ -n "$o" ] || continue
+    p=$(command -v "$n" 2>/dev/null)
+    if [ -z "$p" ]; then
+      result bad "$NRP:wrapper:$n" 127 "not in PATH"
+      continue
+    fi
+    if [ ! -r "$p" ] || [ ! -x "$p" ]; then
+      result bad "$NRP:wrapper:$n" 126 "$p not readable/executable"
+      continue
+    fi
+    if grep -q '/data/adb' "$p" 2>/dev/null; then
+      result bad "$NRP:wrapper:$n" 1 "$p references /data/adb"
+      continue
+    fi
+    [ "$o" = alt-list ] && { result ok "$NRP:wrapper:$n"; continue; }
+    t=$(sed -n 's|^.*exec "\$ALTDIR/libexec/\([^"]*\)".*$|\1|p' "$p" | head -n 1)
+    if [ -z "$t" ]; then
+      result bad "$NRP:wrapper:$n" 1 "$p has no \$ALTDIR/libexec target"
+    elif [ -r "$ALTDIR/libexec/$t" ] && [ -x "$ALTDIR/libexec/$t" ]; then
+      result ok "$NRP:wrapper:$n -> libexec/$t"
+    else
+      result bad "$NRP:wrapper:$n" 126 "$ALTDIR/libexec/$t not readable/executable"
+    fi
+  done < "$NW/map"
+  rm -rf "$NW"
+  chk "$NRP:alt-list" '^alt-list ' alt-list -m
+  chk "$NRP:dig-version" 'DiG [0-9]' dig -v
+  chk "$NRP:drill-version" 'drill version [0-9]' drill -v
+  chk "$NRP:curl-version" 'curl [0-9]' curl --version
+  chk "$NRP:jq-version" '^jq-[0-9]' jq --version
+  chk "$NRP:htop-version" 'htop [0-9]' htop -V
+  chk "$NRP:tmux-version" 'tmux [0-9]' tmux -V
+  chk "$NRP:nano-version" 'GNU nano, version [0-9]' nano --version
+  chk "$NRP:less-version" 'less [0-9]' less --version
+  chk "$NRP:awg-version" 'amneziawg-tools v[0-9]' awg --version
+  chk "$NRP:bpftool-version" 'bpftool v[0-9]' bpftool version
+  NS=""
+  [ -f "$ALTSHARE/dns-servers" ] && NS=$(/system/bin/sh "$ALTSHARE/dns-servers" 2>/dev/null | tr '\n' ' ')
+  echo "active network DNS servers (uid $(id -u)): ${NS:-none found}"
+  dnschk "$NRP:curl-https" '^HTTP/' curl -sI --max-time 20 https://example.com
+  dnschk "$NRP:drill-example" 'rcode: NOERROR' drill example.com
+  dnschk "$NRP:dig-short" '^[0-9a-f:.]+$' dig +short example.com
+}
+
+if [ "$NONROOT" = 1 ]; then
+  nonroot_checks
+  echo "SKIPPED $SKIP"
+  echo "NONROOT pass=$PASS fail=$FAIL skip=$SKIP"
+  [ "$FAIL" -eq 0 ]
+  exit
+fi
+
+# as_shell CMD: run CMD as uid 2000 (shell). Forms: Magisk/KernelSU/APatch su, then the module's setpriv.
+AS_SHELL=""
+# setpriv first: it can keep the inet (3003) group adb shell has; su 2000 drops all
+# supplementary groups, and without inet netd refuses DNS (curl rc 6), unlike a real adb shell.
+for f in "setpriv" "su 2000 -c" "su shell -c" "su -s /system/bin/sh 2000 -c"; do
+  if [ "$f" = setpriv ]; then
+    SP=$(tn setpriv)
+    [ -n "$SP" ] || continue
+    t=$("$SP" --reuid=2000 --regid=2000 --groups=3003,3009 /system/bin/sh -c 'id -u' 2>/dev/null </dev/null)
+    f="$SP --reuid=2000 --regid=2000 --groups=3003,3009 /system/bin/sh -c"
+  else
+    t=$($TO $f 'id -u' 2>/dev/null </dev/null)
+  fi
+  if [ "$t" = 2000 ]; then
+    AS_SHELL=$f
+    break
+  fi
+done
+
 # The kernel config is ~190 KB: too big for one argument (MAX_ARG_STRLEN is
 # 128 KB and mksh runs printf as an external command), so keep it in a file.
 KCONF=""
@@ -150,17 +300,6 @@ kchk() {
   fi
 }
 
-ORIGINS="$MODDIR/share/android-linux-tools/origins.txt"
-# origin TOOL: ndk|alpine (v2 modules); empty for v1 modules without origins.txt
-origin() {
-  [ -r "$ORIGINS" ] || return 0
-  while read -r ot oo ov ol; do
-    if [ "$ot" = "$1" ]; then
-      printf '%s\n' "$oo"
-      break
-    fi
-  done < "$ORIGINS"
-}
 if [ -r "$ORIGINS" ]; then
   echo "== origins (tool installed-name origin version linkage)"
   grep -v '^#' "$ORIGINS" | while read -r ot oo ov ol; do
@@ -179,6 +318,15 @@ if [ -r "$ORIGINS" ]; then
   fi
 fi
 
+echo "== layout (v2.2+: runtime files under $ALTDIR, none in $MODDIR)"
+for x in libexec share/terminfo share/android-linux-tools etc/ssl etc/alt-tools.map; do
+  if [ -e "$MODDIR/$x" ]; then
+    result bad "layout:moddir-$x" 1 "$MODDIR/$x exists (v2.1 layout, root-only)"
+  fi
+done
+rchk layout:altdir-libexec "$ALTDIR/libexec" -d -x
+rchk layout:altdir-cert "$ALTDIR/etc/ssl/cert.pem" -f -r
+
 echo "== installed tools (alt-list)"
 W=/data/local/tmp/alttoolstest.$$
 mkdir -p "$W"
@@ -188,14 +336,16 @@ while read -r o n d; do
   p=$(command -v "$n" 2>/dev/null)
   if [ -z "$p" ]; then
     result bad "path:$n" 127 "not in PATH"
-  elif head -c 400 "$p" 2>/dev/null | grep -q "MODDIR=$MODDIR"; then
+  elif head -c 400 "$p" 2>/dev/null | grep -q "ALTDIR=$ALTDIR"; then
+    result ok "path:$n"
+  elif [ "$o" = alt-list ] && head -c 200 "$p" 2>/dev/null | grep -q "^# alt-list: list the tools installed by android-linux-tools"; then
     result ok "path:$n"
   else
     result bad "path:$n" 1 "$p is not the module wrapper"
   fi
   if [ "$o" != "$n" ]; then
     q=$(command -v "$o" 2>/dev/null)
-    if [ -n "$q" ] && head -c 400 "$q" 2>/dev/null | grep -q "MODDIR=$MODDIR"; then
+    if [ -n "$q" ] && head -c 400 "$q" 2>/dev/null | grep -q "ALTDIR=$ALTDIR"; then
       result bad "noshadow:$o" 1 "$q is the module wrapper"
     else
       result ok "noshadow:$o (device: ${q:-$d}, module: $n)"
@@ -319,9 +469,9 @@ chk mount.cifs-help 'Usage: mount\.cifs|mount\.cifs' mount.cifs -h
 chk getfacl-dir 'owner' getfacl /data/local/tmp
 
 echo "== DNS"
-if [ -f "$MODDIR/share/android-linux-tools/resolv-refresh" ]; then
+if [ -f "$ALTSHARE/resolv-refresh" ]; then
   # v1 resolv.conf overlay, only shipped while some Alpine (musl) network tools remain
-  ALT_DNS_FORCE=1 /system/bin/sh "$MODDIR/share/android-linux-tools/resolv-refresh" >/dev/null 2>&1
+  ALT_DNS_FORCE=1 /system/bin/sh "$ALTSHARE/resolv-refresh" >/dev/null 2>&1
   if grep -q '^nameserver ' "$MODDIR/etc/resolv.conf" 2>/dev/null; then
     result ok "dns-resolvconf ($(grep '^nameserver ' "$MODDIR/etc/resolv.conf" | sed 's/^nameserver //' | tr '\n' ' '))"
     if [ -L /system/etc/resolv.conf ] && grep -q '^nameserver ' /etc/resolv.conf 2>/dev/null; then
@@ -339,24 +489,8 @@ else
 fi
 [ -e /etc/resolv.conf ] && echo "note: /etc/resolv.conf exists ($(readlink /etc/resolv.conf 2>/dev/null || echo file))"
 NS=""
-[ -f "$MODDIR/share/android-linux-tools/dns-servers" ] && NS=$(/system/bin/sh "$MODDIR/share/android-linux-tools/dns-servers" 2>/dev/null | tr '\n' ' ')
+[ -f "$ALTSHARE/dns-servers" ] && NS=$(/system/bin/sh "$ALTSHARE/dns-servers" 2>/dev/null | tr '\n' ' ')
 echo "active network DNS servers: ${NS:-none found}"
-# dnschk LABEL REGEX TOOL ARGS...: like chk, but prints the tool origin; SKIP when offline
-dnschk() {
-  dl=$1
-  dp=$2
-  dt=$3
-  shift 3
-  if [ -z "$(tn "$dt")" ]; then
-    result skip "$dl" "$dt not installed"
-    return
-  fi
-  if [ -z "$NS" ] && ! ping -c 1 -W 3 example.com >/dev/null 2>&1; then
-    result skip "$dl" "offline (no DNS servers, ping example.com fails)"
-    return
-  fi
-  chk "$dl [$(origin "$dt")]" "$dp" "$dt" "$@"
-}
 dnschk curl-https '^HTTP/' curl -sI --max-time 20 https://example.com
 dnschk drill-example 'rcode: NOERROR' drill example.com
 dnschk dig-short '^[0-9a-f:.]+$' dig +short example.com
@@ -394,6 +528,26 @@ out=$("$T_TMUX" -L alttoolstest new-session -d -s alttoolstest 'sleep 30' 2>&1 &
 if printf '%s\n' "$out" | grep -q alttoolstest; then result ok tmux-session; else result bad tmux-session 1 "$out"; fi
 chk lsblk-list 'NAME' lsblk
 chk findmnt-data 'TARGET' findmnt /data
+
+echo "== non-root (uid 2000 shell)"
+if [ -z "$AS_SHELL" ]; then
+  result skip nonroot "cannot switch to uid 2000: su 2000/su shell/setpriv did not give uid 2000"
+elif [ ! -r "$SELF" ]; then
+  result bad nonroot 1 "$SELF missing (runtime tree not mounted?)"
+else
+  echo "running as uid 2000 via: $AS_SHELL"
+  NROUT=$($AS_SHELL "/system/bin/sh $SELF --nonroot" 2>&1 </dev/null)
+  printf '%s\n' "$NROUT" | grep -v '^NONROOT \|^SKIPPED '
+  NRT=$(printf '%s\n' "$NROUT" | sed -n 's/^NONROOT pass=\([0-9]*\) fail=\([0-9]*\) skip=\([0-9]*\)$/\1 \2 \3/p' | tail -n 1)
+  if [ -z "$NRT" ]; then
+    result bad nonroot 1 "no NONROOT summary from the uid 2000 run: $NROUT"
+  else
+    set -- $NRT
+    PASS=$((PASS + $1))
+    FAIL=$((FAIL + $2))
+    SKIP=$((SKIP + $3))
+  fi
+fi
 
 echo "== cleanup"
 [ -n "$NFT" ] && "$NFT" delete table inet alttoolstest >/dev/null 2>&1

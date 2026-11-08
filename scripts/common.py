@@ -4,6 +4,10 @@ import json
 
 MODID = 'android-linux-tools'
 MODDIR = '/data/adb/modules/' + MODID
+# v2.2+: runtime files (programs, terminfo, CA bundle, helper scripts and data) live in the module's
+# system/etc/<MODID>/ tree, which the root manager mounts at /system/etc/<MODID> (readable by every uid);
+# /data/adb is root-only (0700)
+ALTDIR = '/system/etc/' + MODID
 LDSO = 'ld-musl-aarch64.so.1'
 FLAVOURS = ('lite', 'full')
 

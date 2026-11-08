@@ -1,0 +1,20 @@
+#!/system/bin/sh
+ALTDIR=/system/etc/android-linux-tools
+# alt-list: list the tools installed by android-linux-tools.
+#   alt-list      installed command names, renamed ones annotated
+#   alt-list -m   machine map: "<tool> <installed-name> <device-path-or->" per line
+#   alt-list -r   renamed tools only
+# v2.2+: the map is in the mounted /system tree, readable by every uid (the module directory is root-only)
+MAP="$ALTDIR/etc/alt-tools.map"
+if [ ! -r "$MAP" ]; then
+  echo "alt-list: $MAP missing (module not installed by a root manager?)" >&2
+  exit 1
+fi
+case "$1" in
+  -m) cat "$MAP" ;;
+  -r) while read -r t n d; do [ "$t" != "$n" ] && echo "$t -> $n (device has $d)"; done < "$MAP" ;;
+  '') while read -r t n d; do
+        if [ "$t" = "$n" ]; then echo "$n"; else echo "$n (renamed from $t: device has $d)"; fi
+      done < "$MAP" ;;
+  *) echo "usage: alt-list [-m|-r]" >&2; exit 2 ;;
+esac

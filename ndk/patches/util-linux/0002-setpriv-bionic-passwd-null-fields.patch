@@ -1,0 +1,29 @@
+Subject: setpriv: tolerate NULL passwd fields (bionic)
+
+Why: bionic's getpwuid()/getpwnam() return pw_passwd and pw_gecos as NULL for Android
+IDs (AID table and app IDs). passwd_copy() xstrdup()s every field, and xstrdup() asserts
+on NULL, so every --reuid/--regid/--ruid use aborts with
+`include/xalloc.h:92: char *xstrdup(const char *): assertion "str" failed`.
+Copy NULL fields as NULL instead (setpriv only reads pw_name, pw_uid, pw_gid, pw_dir, pw_shell
+and handles missing values).
+Source: written for this module (see ndk/REFERENCES.md); seen on an Android 15 vendor ROM.
+
+--- a/sys-utils/setpriv.c
++++ b/sys-utils/setpriv.c
+@@ -799,11 +799,11 @@
+ {
+ 	struct passwd *rv;
+ 	rv = memcpy(dst, src, sizeof(*dst));
+-	rv->pw_name = xstrdup(rv->pw_name);
+-	rv->pw_passwd = xstrdup(rv->pw_passwd);
+-	rv->pw_gecos = xstrdup(rv->pw_gecos);
+-	rv->pw_dir = xstrdup(rv->pw_dir);
+-	rv->pw_shell = xstrdup(rv->pw_shell);
++	rv->pw_name = rv->pw_name ? xstrdup(rv->pw_name) : NULL;
++	rv->pw_passwd = rv->pw_passwd ? xstrdup(rv->pw_passwd) : NULL;
++	rv->pw_gecos = rv->pw_gecos ? xstrdup(rv->pw_gecos) : NULL;
++	rv->pw_dir = rv->pw_dir ? xstrdup(rv->pw_dir) : NULL;
++	rv->pw_shell = rv->pw_shell ? xstrdup(rv->pw_shell) : NULL;
+ 	return rv;
+ }
+ 
