@@ -288,7 +288,7 @@ skips are kernel features the device lacks):
 - Releases are published on Forgejo (<https://git.digtvbg.com/ivangotoy/android-linux-tools/releases>) with
   both ZIPs and their `.sha256` files as assets. A release tag is never moved; a fix gets a new `-rN`.
 - Git refs reach GitHub through the Forgejo push mirror. `.forgejo/workflows/github-release.yml` runs when a
-  release is published (or a draft is published) and `ci/github-release.py` copies it to
+  `v*` tag is pushed, waits for that tag's Forgejo release to be published, and `ci/github-release.py` copies it to
   <https://github.com/ivangotoy/android-linux-tools/releases>: it waits for the mirrored tag at the same commit,
   creates the GitHub release on it, uploads every Forgejo asset and byte-verifies each upload. It never creates
   or moves a tag and never deletes anything. It can be re-run by hand (workflow_dispatch with the tag).

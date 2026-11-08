@@ -108,6 +108,8 @@ def main():
     ap.add_argument('--github-repo', required=True)
     ap.add_argument('--tag', required=True)
     ap.add_argument('--wait-tag', type=int, default=1800)
+    ap.add_argument('--wait-release', type=int, default=0,
+                    help='seconds to wait for the Forgejo release to be published')
     ap.add_argument('--dry-run', action='store_true')
     a = ap.parse_args()
     token = os.environ.get('GH_RELEASE_TOKEN', '')
@@ -119,10 +121,18 @@ def main():
     fbase = '%s/repos/%s' % (a.forgejo_api.rstrip('/'), a.repo)
     gbase = '%s/repos/%s' % (GH_API, a.github_repo)
 
-    # Published Forgejo release, read anonymously.
-    st, body = fetch('%s/releases/tags/%s' % (fbase, urllib.parse.quote(tag)))
-    if st != 200:
-        die('Forgejo release lookup returned HTTP %d' % st)
+    # Published Forgejo release, read anonymously. The tag is pushed before the release
+    # is published (drafts are not visible anonymously), so wait for it.
+    rdeadline = time.monotonic() + a.wait_release
+    while True:
+        st, body = fetch('%s/releases/tags/%s' % (fbase, urllib.parse.quote(tag)))
+        if st == 200 and not json.loads(body).get('draft'):
+            break
+        if st not in (200, 404):
+            die('Forgejo release lookup returned HTTP %d' % st)
+        if time.monotonic() >= rdeadline:
+            die('no published Forgejo release for %s within %d s' % (tag, a.wait_release))
+        time.sleep(30)
     frel = json.loads(body)
     if frel.get('draft') or frel.get('tag_name') != tag:
         die('Forgejo release for %s is not a published release of that tag' % tag)

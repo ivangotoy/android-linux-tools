@@ -1,15 +1,18 @@
 # Copies every published Forgejo release (same assets, same bytes) to the GitHub
 # mirror https://github.com/ivangotoy/android-linux-tools. Git refs reach GitHub
 # through the Forgejo push mirror; this job waits for the mirrored tag at the same
-# commit and never creates or moves a tag. Re-run it by hand for a release:
-# Actions -> github-release -> Run workflow, tag = vX.Y-rN.
+# commit and never creates or moves a tag.
+#
+# Trigger: pushing a vX.Y-rN tag. The job then waits up to 2 h for the Forgejo
+# release of that tag to be published. (Release-event workflows did not start on
+# this Forgejo instance for API-published releases, so the tag push is the trigger.)
+# Re-run by hand: Actions -> github-release -> Run workflow, tag = vX.Y-rN.
 name: github-release
 
 on:
-  release:
-    # published: created as a release. updated: also fires when a draft is published
-    # (Forgejo does not send published for that). Re-runs are idempotent.
-    types: [published, updated]
+  push:
+    tags:
+      - 'v*'
   workflow_dispatch:
     inputs:
       tag:
@@ -18,14 +21,13 @@ on:
 
 jobs:
   copy:
-    if: ${{ forgejo.event_name != 'release' || !forgejo.event.release.draft }}
     runs-on: release-host
-    timeout-minutes: 60
+    timeout-minutes: 180
     steps:
       - name: Copy release to GitHub
         env:
           GH_RELEASE_TOKEN: ${{ secrets.GH_RELEASE_TOKEN }}
-          TAG: ${{ forgejo.event.release.tag_name || inputs.tag }}
+          TAG: ${{ inputs.tag || forgejo.ref_name }}
           API: ${{ forgejo.api_url }}
           REPO: ${{ forgejo.repository }}
           SERVER: ${{ forgejo.server_url }}
@@ -33,7 +35,7 @@ jobs:
         run: |
           set -eu
           case "$TAG" in v[0-9]*) ;; *) echo "bad tag: $TAG"; exit 1 ;; esac
-          # Script from the default branch at this run's commit, read anonymously.
+          # Script at this run's commit, read anonymously.
           curl -fsS -o github-release.py "$SERVER/$REPO/raw/commit/$SHA/ci/github-release.py"
           python3 -I github-release.py --forgejo-api "$API" --repo "$REPO" \
-            --github-repo ivangotoy/android-linux-tools --tag "$TAG"
+            --github-repo ivangotoy/android-linux-tools --tag "$TAG" --wait-release 7200
