@@ -15,6 +15,91 @@ and it does not change device state except through the files mounted under `syst
   Small `#!/system/bin/sh` wrappers are in `system/bin/`. Terminfo is in `share/terminfo`, and the CA
   bundle is `etc/ssl/cert.pem`.
 
+## v2: native Android (bionic) builds with the NDK
+
+v2 (`v2.0-rN`, versionCode `major*100000 + minor*1000 + N`, e.g. `200001`, above every v1 code) keeps the
+module id, name, `customize.sh`, the `-ng` rule and both flavours of v1, but compiles the tools from upstream
+source with the Android NDK instead of shipping Alpine/musl binaries. Tools that are not ported keep their v1
+Alpine binary in the same module (hybrid). `share/android-linux-tools/MANIFEST.json` (and `dist/MANIFEST-v2.json`)
+records per tool its origin (`ndk` or `alpine`), upstream version, source sha256, linkage and patches;
+`share/android-linux-tools/origins.txt` is the same in one line per tool for `phone-test.sh`.
+
+- Toolchain: Android NDK r30 (LTS, 30.0.16248370) from dl.google.com, verified with Google's published SHA-1
+  and a pinned SHA-256, in a Debian trixie-slim image pinned by digest (packages from snapshot.debian.org).
+- Target: `aarch64-linux-android29`. API 29 (Android 10) is the floor so one build runs on Android 13-16;
+  it is also the first level with native ELF TLS and with `glob`/`hsearch`/`getloadavg`/`reallocarray` in bionic.
+  Dynamic binaries carry an Android ELF note of 29. The NDK only ships `crtbegin_static.o` for its newest level,
+  so static binaries' notes read 37; they carry their own libc and depend only on the kernel.
+- Linkage rule: fully static (`-static`, NDK `libc.a`) unless the tool resolves host names. Static bionic has
+  no netd client, so `getaddrinfo()` in a static binary cannot reach Android's resolver. Tools that call the
+  libc resolver are PIEs linked against the system `libc.so`/`libm.so`/`libdl.so` (`libz.so` for curl) only,
+  with every third-party library linked in statically: no `$MODDIR/lib`, no RUNPATH.
+  Dynamic: nft, ipset, wg, ip-ng, tc-ng, ss-ng, bridge, tcpdump, curl, mtr, socat, iperf3, rsync, ncat, iftop,
+  traceroute-ng, arping-ng, tracepath-ng. Everything else from the NDK is static.
+- DNS: NDK tools resolve names through bionic/netd, so they need no resolv.conf. `drill` (ldns) is a DNS query
+  tool that talks to a server directly; when no `@server` is given its wrapper adds `@<first DNS server of the
+  active default network>` from `share/android-linux-tools/dns-servers` (dumpsys connectivity, getprop fallback).
+  The v1 resolv.conf overlay and `resolv-refresh` are only shipped while Alpine network tools remain (in
+  v2.0-r1: dig, host, mount.cifs); `customize.sh` skips the overlay when `resolv-refresh` is absent.
+- TLS/CA: curl uses mbedTLS 3.6 LTS with the Mozilla bundle from curl.se (pinned by sha256) as
+  `etc/ssl/cert.pem`; the wrapper also passes `--capath /system/etc/security/cacerts` (or the conscrypt apex
+  store) when present. mbedTLS loads every file of the directory, which works with Android's old-style hash names.
+- bpftool: the lite flavour ships the NDK bpftool (no LLVM: no JIT disassembly, no skeleton features); the
+  full flavour keeps the v1 Alpine bpftool with libLLVM.
+- New in v2: `ethtool-ng` (always `-ng`) and `drill`. Not ported, still Alpine: `nfct`, `dig`, `host`
+  (BIND 9.20 needs libuv/OpenSSL/liburcu/libcap and does not support a static build), `mount.cifs` (needs a
+  cross-built libtalloc, and bionic lacks `addmntent`). Reasons per tool: `ndk/REFERENCES.md`.
+
+### Builder
+
+```
+./build-ndk.sh                 # build the image, all recipes, stage + check + zip both flavours into dist/
+./build-ndk.sh --clean         # same after deleting .work/ndk/{build,out,stage} and the v2 files in dist/ (downloads kept)
+./build-ndk.sh --clean-all     # also delete downloaded sources and Alpine apks
+./build-ndk.sh curl strace     # only these recipes (and their dependencies), no packaging
+./build-ndk.sh --image-only    # only build the container image
+JOBS=8 MEM=12G ./build-ndk.sh  # make -j and memory limit (defaults)
+```
+
+- The host needs only docker (docker group, no `--privileged`; the container runs as the calling user with all
+  capabilities dropped) and systemd. The run is wrapped in `systemd-run --user --scope -p MemoryMax=12G
+  -p MemorySwapMax=0`; because the container itself runs under dockerd, the same limit is also passed as
+  `docker run --memory 12G --memory-swap 12G`, which is what actually bounds the compilers.
+- Everything else (NDK, autotools, meson, python, zip, patchelf) is inside the image. Scratch space is
+  `.work/ndk/` (`dl/` sources, `build/` trees and logs, `out/` binaries, `stage/`, `alpine/` v1 apks).
+- `ndk/Dockerfile` builder image; `ndk/build.sh` driver; `ndk/lib/env.sh` cross environment;
+  `ndk/lib/api-site.py` generates a `CONFIG_SITE` that marks every bionic function introduced after API 29 as
+  unavailable (the static `libc.a` contains them, so configure link tests would otherwise find them).
+- `ndk/recipes/<name>.sh`: `VERSION`, `URL`, `SHA256`, `CHECKSUM_SOURCE` (signature key fingerprint or the
+  published checksum the sha256 was verified against when pinning), `LICENSE`, `DEPS`, optional `LINKAGE=dynamic`,
+  `EXTRA_SRCS` (e.g. bash's official patch series) and a `build()` function. `ndk/recipes.list` is the build order.
+- `ndk/patches/<name>/*.patch` are applied in order; each starts with a header saying why and citing its source
+  (termux-packages, buildroot, or written for this module). `ndk/REFERENCES.md` records, per tool, the sources
+  surveyed (AOSP, termux-packages, Alpine, buildroot, OpenWrt, LineageOS, GitHub ports), what they do and why the
+  recipe's approach was chosen.
+- Each recipe builds against a private sysroot with only its declared dependencies, and is cached by a hash of
+  recipe, patches, environment and dependency hashes.
+- `ndk/tools.tsv` maps wrapper names to NDK binaries; every other name of `config/tools.tsv` uses the v1 Alpine
+  binary, fetched and verified by the unchanged v1 `scripts/fetch.py` from `alpine.lock.json`.
+- `ndk/package.sh` stages, checks and zips both flavours (`ndk/scripts/stage.py`, `check.py`, `manifest.py`).
+  The host checks run no aarch64 code: AArch64 machine; NDK static binaries `statically linked` with no
+  `DT_NEEDED`; NDK dynamic binaries PIE with interpreter `/system/bin/linker64`, `DT_NEEDED` only libc/libm/libdl/
+  liblog/libz, no RUNPATH and an Android note of API 29; Alpine binaries with the v1 musl interpreter, RUNPATH and
+  library closure; no builder or home paths in any ELF or ZIP; `sh -n` and `bash --posix -n` on every script;
+  version patterns of `phone-test.sh` found in the ELF strings.
+- Reproducible: two `./build-ndk.sh --clean` runs give byte-identical binaries, ZIPs and MANIFEST
+  (SOURCE_DATE_EPOCH from `config/build.conf`, `-ffile-prefix-map`, sorted ZIP entries, fixed mtimes).
+- Release settings: `ndk/build.conf` (`V2_VERSION`, `MODULE_RELEASE`).
+
+### Phone test (v2)
+
+`phone-test.sh` prints `ORIGIN <tool> <installed-name> <ndk|alpine> <version> <linkage>` for every tool, and the
+DNS section no longer needs resolv.conf: `curl -sI https://example.com`, `drill example.com` (and `dig +short
+example.com` while dig is still Alpine) are run with their origin in the label. The resolv.conf overlay is only
+checked when the build still ships `resolv-refresh`.
+
+The sections below describe v1 (Alpine) and still apply to the remaining Alpine tools.
+
 ## Flavours
 
 Both flavours use the same module id and versionCode, so only one can be installed at a time.

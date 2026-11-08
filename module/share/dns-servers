@@ -1,0 +1,42 @@
+#!/system/bin/sh
+# dns-servers: print the DNS server addresses of the active default network, one per line.
+# Used by the wrappers of DNS query tools (drill) that talk to a DNS server directly and so cannot use
+# bionic getaddrinfo/netd. Source: dumpsys connectivity (root/shell), else getprop net.dns1/net.dns2.
+# Prints nothing if no server is known. Never prints a public resolver.
+PATH="$PATH:/system/bin"
+servers=""
+add_server() {
+  a=${1##*/}
+  case "$a" in
+    ''|*[!0-9A-Za-z:.%_-]*) return ;;
+  esac
+  case "$a" in
+    *[.:]*) ;;
+    *) return ;;
+  esac
+  case " $servers " in
+    *" $a "*) return ;;
+  esac
+  servers="$servers $a"
+}
+dump=$(dumpsys connectivity 2>/dev/null)
+net=$(printf '%s\n' "$dump" | sed -n 's/^ *Active default network: *\([0-9][0-9]*\).*/\1/p' | head -n 1)
+if [ -n "$net" ]; then
+  line=$(printf '%s\n' "$dump" | grep -F "network{$net}" | grep -F ' DnsAddresses: [' | head -n 1)
+  if [ -n "$line" ]; then
+    list=${line#* DnsAddresses: \[}
+    list=${list%%\]*}
+    for a in $(printf '%s\n' "$list" | tr ',' ' '); do
+      add_server "$a"
+    done
+  fi
+fi
+if [ -z "$servers" ]; then
+  for p in net.dns1 net.dns2; do
+    v=$(getprop "$p" 2>/dev/null)
+    [ -n "$v" ] && add_server "$v"
+  done
+fi
+for a in $servers; do
+  echo "$a"
+done
