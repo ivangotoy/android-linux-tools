@@ -1,0 +1,193 @@
+Subject: build with bionic: in_addr_t, IN6_IS_ADDR_UNSPECIFIED, index/rindex, strdupa
+
+Why:
+- iproute2 compiles with -Iinclude/uapi, so its own uapi <linux/in6.h> shadows the bionic sysroot copy,
+  which is where bionic gets in_addr_t; typedef it there.
+- bionic's IN6_IS_ADDR_UNSPECIFIED() takes a struct in6_addr *, lib/utils.c passes __u32[]; use a
+  local array version.
+- bionic has no BSD index()/rindex() declarations (not in <strings.h>); use strchr()/strrchr().
+- bionic has no strdupa(); define it with alloca() where it is used.
+- bionic has no getpass() (ip sr hmac set prompts for a key); add a small termios-based one in
+  ip/ipseg6.c (written for this module; Termux gets getpass from libandroid-support instead).
+- bionic's libc.a defines an undeclared bpf() syscall stub, so lib/bpf_glue.c's bpf() is a duplicate
+  symbol in a static link; rename it via include/bpf_util.h (written for this module).
+Source: adapted from termux-packages packages/iproute2/{in_addr_t,IN6_IS_ADDR_UNSPECIFIED,rindex,
+strdupa}.patch at commit e187f140fbaf3539de31549c1fed8211a2ac94d2 (2026-11-01), rebased to 7.3.0.
+Termux's sethostent.patch (API < 28 only) and libandroid-glob (bionic has glob() since API 28) are
+not needed at API 29; Makefile.patch only moves paths into the Termux prefix and is not used.
+
+--- a/bridge/vni.c
++++ b/bridge/vni.c
+@@ -40,6 +40,9 @@
+ 	exit(-1);
+ }
+ 
++#undef strdupa
++#define strdupa(s) strcpy(alloca(strlen(s) + 1), s)
++
+ static int parse_vni_filter(const char *argv, struct nlmsghdr *n, int reqsize,
+ 			    inet_prefix *group)
+ {
+--- a/include/bpf_util.h
++++ b/include/bpf_util.h
+@@ -279,6 +279,10 @@
+ 
+ int bpf_dump_prog_info(FILE *f, uint32_t id);
+ 
++#ifdef __ANDROID__
++/* bionic's libc.a has its own (undeclared) bpf() syscall stub: avoid a duplicate symbol in static links. */
++#define bpf iproute2_bpf
++#endif
+ int bpf(int cmd, union bpf_attr *attr, unsigned int size);
+ 
+ #ifdef HAVE_ELF
+--- a/include/uapi/linux/in6.h
++++ b/include/uapi/linux/in6.h
+@@ -25,6 +25,8 @@
+ #include <linux/types.h>
+ #include <linux/libc-compat.h>
+ 
++typedef uint32_t in_addr_t;
++
+ /*
+  *	IPv6 address structure
+  */
+--- a/ip/iplink_bond.c
++++ b/ip/iplink_bond.c
+@@ -178,6 +178,9 @@
+ 	print_explain(stderr);
+ }
+ 
++#undef strdupa
++#define strdupa(s) strcpy(alloca(strlen(s) + 1), s)
++
+ static int bond_parse_opt(struct link_util *lu, int argc, char **argv,
+ 			  struct nlmsghdr *n)
+ {
+--- a/ip/iproute_lwtunnel.c
++++ b/ip/iproute_lwtunnel.c
+@@ -180,6 +180,9 @@
+ 	return -1;
+ }
+ 
++#undef strdupa
++#define strdupa(s) strcpy(alloca(strlen(s) + 1), s)
++
+ static int parse_seg6local_flavors(const char *buf, __u32 *flv_mask)
+ {
+ 	unsigned char flavor_ok[SEG6_LOCAL_FLV_OP_MAX + 1] = { 0, };
+--- a/ip/ipseg6.c
++++ b/ip/ipseg6.c
+@@ -20,6 +20,44 @@
+ #include <linux/seg6_genl.h>
+ #include <linux/seg6_hmac.h>
+ 
++#ifdef __ANDROID__
++#include <termios.h>
++/* bionic has no getpass(): read one line from the terminal with echo off. */
++static char *getpass(const char *prompt)
++{
++	static char buf[256];
++	struct termios old, noecho;
++	FILE *in = fopen("/dev/tty", "r+");
++	FILE *out = in;
++	int restore = 0;
++	size_t n;
++
++	if (!in) {
++		in = stdin;
++		out = stderr;
++	}
++	fputs(prompt, out);
++	fflush(out);
++	if (tcgetattr(fileno(in), &old) == 0) {
++		noecho = old;
++		noecho.c_lflag &= ~ECHO;
++		restore = tcsetattr(fileno(in), TCSAFLUSH, &noecho) == 0;
++	}
++	if (!fgets(buf, sizeof(buf), in))
++		buf[0] = '\0';
++	if (restore) {
++		tcsetattr(fileno(in), TCSAFLUSH, &old);
++		fputc('\n', out);
++	}
++	n = strlen(buf);
++	if (n && buf[n - 1] == '\n')
++		buf[n - 1] = '\0';
++	if (in != stdin)
++		fclose(in);
++	return buf;
++}
++#endif
++
+ #include "utils.h"
+ #include "ip_common.h"
+ #include "libgenl.h"
+--- a/lib/bpf_legacy.c
++++ b/lib/bpf_legacy.c
+@@ -957,6 +957,9 @@
+ 	return 0;
+ }
+ 
++#undef strdupa
++#define strdupa(s) strcpy(alloca(strlen(s) + 1), s)
++
+ int bpf_load_common(struct bpf_cfg_in *cfg, const struct bpf_cfg_ops *ops,
+ 		    void *nl)
+ {
+--- a/lib/color.c
++++ b/lib/color.c
+@@ -109,6 +109,9 @@
+ 	return false;
+ }
+ 
++#undef strdupa
++#define strdupa(s) strcpy(alloca(strlen(s) + 1), s)
++
+ bool matches_color(const char *arg, int *val)
+ {
+ 	char *dup, *p;
+--- a/lib/utils.c
++++ b/lib/utils.c
+@@ -550,6 +550,10 @@
+ 	return 1;
+ }
+ 
++#undef IN6_IS_ADDR_UNSPECIFIED
++#define IN6_IS_ADDR_UNSPECIFIED(a) \
++	(a[0] == 0 && a[1] == 0 && a[2] == 0 && a[3] == 0)
++
+ static void set_address_type(inet_prefix *addr)
+ {
+ 	switch (addr->family) {
+--- a/tc/f_flower.c
++++ b/tc/f_flower.c
+@@ -341,7 +341,7 @@
+ 	char *slash, *mask = NULL;
+ 	size_t slen, slen_mask = 0;
+ 
+-	slash = index(str, '/');
++	slash = strchr(str, '/');
+ 	if (slash) {
+ 		*slash = 0;
+ 		mask = slash + 1;
+@@ -1281,7 +1281,7 @@
+ 			if (mask_len + strlen(token) > FLOWER_OPTS_MAX)
+ 				return -1;
+ 
+-			data_len = strlen(rindex(token, ':'));
++			data_len = strlen(strrchr(token, ':'));
+ 			sprintf(&mask[mask_len], "ffff:ff:");
+ 			mask_len += 8;
+ 			memset(&mask[mask_len], 'f', data_len - 1);
+--- a/tc/m_ct.c
++++ b/tc/m_ct.c
+@@ -191,7 +191,7 @@
+ 	char *slash, *mask = NULL;
+ 	size_t slen, slen_mask = 0;
+ 
+-	slash = index(str, '/');
++	slash = strchr(str, '/');
+ 	if (slash) {
+ 		*slash = 0;
+ 		mask = slash+1;
