@@ -15,6 +15,8 @@ BIONIC_LIBS = {'libc.so', 'libm.so', 'libdl.so', 'liblog.so', 'libz.so'}
 FORBID = set('iptables ip6tables ip tc ss ethtool nsenter unshare chroot lsof nc file vmstat getfattr setfattr'.split())
 HOSTPATHS = [b'/home/ivan', b'/work/build', b'/work/out', b'/opt/ndk', b'/.work/']
 API = int(os.environ.get('API', '29'))
+CONF2 = dict(l.strip().split('=', 1) for l in open('/src/ndk/build.conf') if '=' in l and not l.lstrip().startswith('#'))
+ALLOW_ALPINE = CONF2.get('ALLOW_ALPINE', '1') == '1'
 
 res = {'flavour': FLAVOUR, 'errors': [], 'libexec': {}, 'libs': {}, 'wrappers': {}, 'scripts': {}, 'version_audit': {}}
 err = res['errors'].append
@@ -125,6 +127,32 @@ for f in sorted(present):
     if f != LDSO and [n for n in e['needed'] if n != 'libc.musl-aarch64.so.1'] and e['runpath'] != [MODDIR + '/lib']:
         err('lib needs rpath: ' + f)
     res['libs'][f] = e
+
+# every ELF of the module must be a libexec program (no stray binaries or libraries elsewhere)
+stray = []
+for dirpath, dirs, files in os.walk(ST):
+    dirs.sort()
+    for f in sorted(files):
+        fp = os.path.join(dirpath, f)
+        if os.path.islink(fp) or os.path.dirname(fp) == os.path.join(ST, 'libexec'):
+            continue
+        with open(fp, 'rb') as fh:
+            if fh.read(4) == b'\x7fELF':
+                stray.append(os.path.relpath(fp, ST))
+res['elf_outside_libexec'] = stray
+if not ALLOW_ALPINE:
+    # ndk/build.conf ALLOW_ALPINE=0: no Alpine/musl program, library, loader or resolv.conf overlay
+    for f, v in sorted(res['libexec'].items()):
+        if not v['origin'].startswith('ndk:'):
+            err('ALLOW_ALPINE=0 but libexec/%s has origin %s' % (f, v['origin']))
+    if os.path.isdir(libdir):
+        err('ALLOW_ALPINE=0 but lib/ exists: %s' % ' '.join(sorted(present)))
+    if stray:
+        err('ELF files outside libexec: %s' % ' '.join(stray))
+    if os.path.exists(os.path.join(ST, 'share', MODID, 'resolv-refresh')) or SJ['need_resolv']:
+        err('ALLOW_ALPINE=0 but the resolv.conf overlay (resolv-refresh) is shipped')
+    if re.search(r'ld-musl|system/etc/resolv\.conf', open(os.path.join(ST, 'customize.sh')).read()):
+        err('ALLOW_ALPINE=0 but customize.sh still handles musl/resolv.conf')
 
 has_bpftool = os.path.exists(os.path.join(ST, 'libexec', 'bpftool'))
 has_llvm = any(n.startswith('libLLVM') for n in present)
@@ -281,6 +309,7 @@ res['summary'] = {'flavour': FLAVOUR, 'libexec_elfs': len(res['libexec']), 'libs
                   'wrappers': len(res['wrappers']), 'errors': len(res['errors']),
                   'ndk_static': sum(1 for v in res['libexec'].values() if v.get('linkage') == 'static'),
                   'ndk_dynamic': sum(1 for v in res['libexec'].values() if v.get('linkage') == 'dynamic'),
+                  'allow_alpine': ALLOW_ALPINE, 'elf_outside_libexec': len(stray),
                   'alpine_musl': sum(1 for v in res['libexec'].values() if v.get('linkage') == 'musl'),
                   'version_checks_ok': sum(1 for v in res['version_audit'].values() if v['status'] == 'ok')}
 common.dump(res, '/work/stage/host_checks-%s.json' % FLAVOUR)

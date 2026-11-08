@@ -10,6 +10,7 @@ SRC = '/src'
 OUT = '/work/out'
 V1 = '/work/stage/v1root'
 FLAVOUR = sys.argv[1]
+NEEDS_ALPINE_ONLY = sys.argv[2:] == ['--needs-alpine']
 if FLAVOUR not in common.FLAVOURS:
     raise SystemExit('flavour must be lite or full')
 ST = os.path.join('/work/stage', FLAVOUR, MODID)
@@ -87,12 +88,12 @@ ndk_by_name = {r['name']: r for r in ndkrows if r['name'] and r['target'] in ndk
 entries = []   # {name, target, args, origin, flags, recipe|package}
 seen_targets = set()
 for t in v1tools:
-    # full flavour keeps the v1 Alpine bpftool (+libLLVM, JIT disassembly); lite gets the NDK bpftool
-    keep_alpine = FLAVOUR == 'full' and 'full' in t['flags']
-    if t['name'] and t['name'] in ndk_by_name and not keep_alpine:
+    # since v2.1 both flavours use the NDK bpftool (no LLVM); an Alpine binary is only a fallback for a
+    # tool without an NDK build (ALLOW_ALPINE=1 in ndk/build.conf)
+    if t['name'] and t['name'] in ndk_by_name:
         r = ndk_by_name[t['name']]
         entries.append(dict(r, origin='ndk'))
-    elif t['name'] is None and t['target'] in ndk_ok and not keep_alpine:
+    elif t['name'] is None and t['target'] in ndk_ok:
         entries.append(dict(ndk_ok[t['target']], origin='ndk'))
     else:
         entries.append({'name': t['name'], 'target': t['target'], 'args': t['args'], 'flags': t['flags'],
@@ -107,6 +108,15 @@ tgt_origin = {}
 for e in entries:
     if tgt_origin.setdefault(e['target'], e['origin']) != e['origin']:
         raise SystemExit('libexec %s needed from both ndk and alpine' % e['target'])
+if NEEDS_ALPINE_ONLY:
+    # package.sh: fetch the v1 Alpine packages only if some tool still needs them
+    for e in entries:
+        if e['origin'] == 'alpine':
+            print(e['package'])
+    sys.exit(0)
+if CONF2.get('ALLOW_ALPINE', '1') != '1' and any(e['origin'] == 'alpine' for e in entries):
+    raise SystemExit('ALLOW_ALPINE=0 but no NDK build for: %s' % ' '.join(
+        sorted({e['name'] or e['target'] for e in entries if e['origin'] == 'alpine'})))
 
 # ---- fresh stage
 if os.path.exists(os.path.dirname(ST)):
@@ -182,7 +192,7 @@ origin['data:etc/ssl/cert.pem'] = 'ndk:cacert'
 
 # ---- wrappers
 need_resolv = any(e['origin'] == 'alpine' and 'dns' in e['flags'] for e in entries if e['name'])
-need_dnsservers = any(e['origin'] == 'ndk' and 'dns' in e['flags'] for e in entries if e['name'])
+need_dnsservers = any(e['origin'] == 'ndk' and ('dns' in e['flags'] or 'dnsenv' in e['flags']) for e in entries if e['name'])
 wrappers = []
 for e in entries:
     if e['name'] is None:
@@ -210,6 +220,14 @@ for e in entries:
                   '  -q|--disable) shift; exec %s-q $ALT_CA "$@" ;;' % exe,
                   'esac',
                   'exec %s$ALT_CA "$@"' % exe]
+    elif e['origin'] == 'ndk' and 'dnsenv' in e['flags']:
+        lines += ['# BIND dig/host: no resolv.conf on Android. Without @server (dig) or a server argument (host) they use',
+                  '# ALT_DNS_SERVERS (patched dighost.c): the DNS servers of the active default network.',
+                  'if [ -z "$ALT_DNS_SERVERS" ]; then',
+                  '  ALT_DNS_SERVERS=$(/system/bin/sh "$MODDIR/share/%s/dns-servers" 2>/dev/null | tr \'\\n\' \' \')' % MODID,
+                  '  export ALT_DNS_SERVERS',
+                  'fi',
+                  'exec %s"$@"' % exe]
     elif e['origin'] == 'ndk' and 'dns' in e['flags']:
         lines += ['# DNS query tool: talks to a DNS server directly (not via getaddrinfo). Without @server, use the',
                   '# first DNS server of the active default network; no resolv.conf is read or written.',
@@ -233,7 +251,10 @@ if need_resolv:
 if need_dnsservers:
     copyfile(os.path.join(SRC, 'module', 'share', 'dns-servers'), os.path.join(SHARE, 'dns-servers'), 0o755)
 copyfile(os.path.join(SRC, 'phone-test.sh'), os.path.join(SHARE, 'phone-test.sh'), 0o755)
-copyfile(os.path.join(SRC, 'module', 'customize.sh'), os.path.join(ST, 'customize.sh'), 0o644)
+# v2 without Alpine binaries: ndk/module/customize.sh has no musl loader or resolv.conf overlay handling;
+# the v1 module/customize.sh is used unchanged while Alpine binaries are shipped
+copyfile(os.path.join(SRC, 'module', 'customize.sh') if alpine_targets else
+         os.path.join(SRC, 'ndk', 'module', 'customize.sh'), os.path.join(ST, 'customize.sh'), 0o644)
 for f in ('update-binary', 'updater-script'):
     copyfile(os.path.join(SRC, 'module', 'META-INF', 'com', 'google', 'android', f),
              os.path.join(ST, 'META-INF', 'com', 'google', 'android', f), 0o644)
@@ -255,7 +276,8 @@ for e in entries:
                    checksum_source=mt['checksum_source'], license=mt['license'], patches=mt['patches'],
                    deps={d: {'version': meta[d]['version'], 'sha256': meta[d]['sha256'], 'patches': meta[d]['patches']}
                          for d in mt['deps']},
-                   linkage=linkage_of(p), dns='netd getaddrinfo' if linkage_of(p) == 'dynamic' else
+                   linkage=linkage_of(p), dns='dns-servers -> ALT_DNS_SERVERS (+ netd getaddrinfo for @name)'
+                   if 'dnsenv' in e['flags'] else 'netd getaddrinfo' if linkage_of(p) == 'dynamic' else
                    ('dns-servers -> @server' if 'dns' in e['flags'] else 'none'))
     else:
         pk = PK[e['package']]
@@ -318,14 +340,17 @@ write(os.path.join(ST, 'share', 'licenses', 'NOTICE.txt'), '\n'.join(notice) + '
 # ---- module.prop
 ndk_n = sum(1 for e in entries if e['name'] and e['origin'] == 'ndk')
 alp_n = sum(1 for e in entries if e['name'] and e['origin'] == 'alpine')
-main = 'nft, ipset, conntrack, wg, ip-ng/tc-ng/ss-ng, bridge, ethtool-ng, bpftool, tcpdump, strace, curl, drill, mtr, socat, iperf3, htop, tmux, bash, rsync, sqlite3, jq and more'
-fdesc = ('full flavour: bpftool with libLLVM (JIT disassembly, Alpine)' if FLAVOUR == 'full'
-         else 'lite flavour: bpftool without LLVM disassembler; the -full zip adds libLLVM')
+main = 'nft, ipset, conntrack, wg/awg (+wg-quick/awg-quick), ip-ng/tc-ng/ss-ng, bridge, ethtool-ng, bpftool, tcpdump, strace, curl, dig, drill, mtr, socat, iperf3, htop, tmux, bash, rsync, sqlite3, jq and more'
+fdesc = ('%s flavour: bpftool without LLVM disassembler' % FLAVOUR if not alpine_targets else
+         'full flavour: bpftool with libLLVM (JIT disassembly, Alpine)' if FLAVOUR == 'full' and
+         origin.get('libexec/bpftool', '').startswith('alpine:') else
+         '%s flavour: bpftool without LLVM disassembler' % FLAVOUR)
+alp_desc = (', %d from Alpine %s' % (alp_n, LOCK['alpine_branch'])) if alp_n else ''
 write(os.path.join(ST, 'module.prop'),
       'id=%s\nname=Android Linux tools\nversion=%s\nversionCode=%d\nauthor=Ivan Angelov\n'
-      'description=[%s] %d tools built with the Android NDK (bionic), %d from Alpine %s: %s. '
+      'description=[%s] %d tools built with the Android NDK (bionic)%s: %s. '
       'Names that exist on the device get an -ng suffix (alt-list).\nflavour=%s\n'
-      % (MODID, VERSION, VCODE, fdesc, ndk_n, alp_n, LOCK['alpine_branch'], main, FLAVOUR), 0o644)
+      % (MODID, VERSION, VCODE, fdesc, ndk_n, alp_desc, main, FLAVOUR), 0o644)
 
 manifest = {'module': MODID, 'version': VERSION, 'versionCode': VCODE, 'flavour': FLAVOUR, 'arch': 'aarch64',
             'ndk': NDK_RELEASE, 'api': API, 'alpine_branch': LOCK['alpine_branch'], 'moddir': MODDIR,

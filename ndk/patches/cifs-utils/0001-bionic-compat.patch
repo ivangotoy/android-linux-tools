@@ -1,0 +1,137 @@
+Subject: bionic compat for mount.cifs: addmntent(), getpass(), _PATH_MNTTAB, /proc/mounts as mtab
+
+Why: bionic has no addmntent(), getpass(), _PATH_MNTTAB or _PATH_MOUNTED_LOCK, and its _PATH_MOUNTED
+(MOUNTED) is /proc/mounts itself. android_compat.c adds addmntent() and getpass() following musl
+(MIT); android_compat.h adds the two path macros. mtab_unusable() treats a /proc/ mtab like an mtab
+symlink, so mount.cifs never tries to lock or append to the kernel mount table (glibc/musl systems
+have /etc/mtab -> /proc/self/mounts for the same effect). The recipe compiles android_compat.c into
+a small archive passed in LIBS, so configure's getpass check and the link see it.
+cldap_ping.c uses bzero(), which bionic removed: memset() instead.
+Source: written for this module (see ndk/REFERENCES.md); addmntent/getpass from musl 1.2.5.
+
+--- a/android_compat.c
++++ b/android_compat.c
+@@ -0,0 +1,51 @@
++/*
++ * bionic compat for mount.cifs (Android): addmntent() and getpass(), which bionic does not provide.
++ * Both follow musl libc (src/misc/mntent.c, src/legacy/getpass.c; MIT licence, Copyright 2005-2020
++ * Rich Felker et al.).
++ */
++#ifdef __ANDROID__
++#define _GNU_SOURCE
++#include <fcntl.h>
++#include <stdio.h>
++#include <termios.h>
++#include <unistd.h>
++#include "android_compat.h"
++
++int addmntent(FILE *f, const struct mntent *mnt)
++{
++	if (fseek(f, 0, SEEK_END))
++		return 1;
++	return fprintf(f, "%s\t%s\t%s\t%s\t%d\t%d\n", mnt->mnt_fsname, mnt->mnt_dir, mnt->mnt_type,
++		       mnt->mnt_opts, mnt->mnt_freq, mnt->mnt_passno) < 0;
++}
++
++char *getpass(const char *prompt)
++{
++	int fd;
++	struct termios s, t;
++	ssize_t l;
++	static char password[128];
++
++	if ((fd = open("/dev/tty", O_RDWR | O_NOCTTY | O_CLOEXEC)) < 0)
++		return 0;
++	tcgetattr(fd, &t);
++	s = t;
++	t.c_lflag &= ~(ECHO | ISIG);
++	t.c_lflag |= ICANON;
++	t.c_iflag &= ~(INLCR | IGNCR);
++	t.c_iflag |= ICRNL;
++	tcsetattr(fd, TCSAFLUSH, &t);
++	tcdrain(fd);
++	dprintf(fd, "%s", prompt);
++	l = read(fd, password, sizeof password);
++	if (l >= 0) {
++		if ((l > 0 && password[l - 1] == '\n') || l == sizeof password)
++			l--;
++		password[l] = 0;
++	}
++	tcsetattr(fd, TCSAFLUSH, &s);
++	dprintf(fd, "\n");
++	close(fd);
++	return l < 0 ? 0 : password;
++}
++#endif
+--- a/android_compat.h
++++ b/android_compat.h
+@@ -0,0 +1,18 @@
++/* bionic compat for mount.cifs (Android): see ndk/patches/cifs-utils/0001-bionic-compat.patch */
++#ifndef CIFS_ANDROID_COMPAT_H
++#define CIFS_ANDROID_COMPAT_H
++#ifdef __ANDROID__
++#include <stdio.h>
++#include <mntent.h>
++#include <paths.h>
++/* Android has no fstab for user mounts; check_fstab() (non-root only) then reports it cannot open it */
++#ifndef _PATH_MNTTAB
++#define _PATH_MNTTAB "/etc/fstab"
++#endif
++#ifndef _PATH_MOUNTED_LOCK
++#define _PATH_MOUNTED_LOCK _PATH_MOUNTED "~"
++#endif
++int addmntent(FILE *f, const struct mntent *mnt);
++char *getpass(const char *prompt);
++#endif
++#endif
+--- a/cldap_ping.c
++++ b/cldap_ping.c
+@@ -304,13 +304,13 @@
+ 
+ 	if (family == AF_INET6) {
+ 		addr_size = sizeof(struct sockaddr_in6);
+-		bzero((void *) &socketaddr, addr_size);
++		memset(&socketaddr, 0, addr_size);
+ 		socketaddr.ss_family = AF_INET6;
+ 		((struct sockaddr_in6 *)&socketaddr)->sin6_addr = *((struct in6_addr*)addr);
+ 		((struct sockaddr_in6 *)&socketaddr)->sin6_port = htons(389);
+ 	} else {
+ 		addr_size = sizeof(struct sockaddr_in);
+-		bzero((void *) &socketaddr, addr_size);
++		memset(&socketaddr, 0, addr_size);
+ 		socketaddr.ss_family = AF_INET;
+ 		((struct sockaddr_in *)&socketaddr)->sin_addr = *((struct in_addr*)addr);
+ 		((struct sockaddr_in *)&socketaddr)->sin_port = htons(389);
+--- a/mount.cifs.c
++++ b/mount.cifs.c
+@@ -20,6 +20,7 @@
+ 
+ #ifdef HAVE_CONFIG_H
+ #include "config.h"
++#include "android_compat.h"
+ #endif /* HAVE_CONFIG_H */
+ 
+ #include <stdlib.h>
+--- a/mtab.c
++++ b/mtab.c
+@@ -39,8 +39,10 @@
+ #include <stdlib.h>
+ #include <signal.h>
+ #include <paths.h>
++#include <string.h>
+ #include "mount.h"
+ #include "config.h"
++#include "android_compat.h"
+ 
+ 
+ /* Updating mtab ----------------------------------------------*/
+@@ -87,6 +89,9 @@
+ {
+ 	struct stat mstat;
+ 
++	/* bionic: _PATH_MOUNTED is /proc/mounts itself, which the kernel maintains (like an mtab symlink) */
++	if (!strncmp(_PATH_MOUNTED, "/proc/", 6))
++		return EMLINK;
+ 	if(lstat(_PATH_MOUNTED, &mstat))
+ 		return errno;
+ 	else if (S_ISLNK(mstat.st_mode))

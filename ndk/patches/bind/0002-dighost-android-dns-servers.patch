@@ -1,0 +1,49 @@
+Subject: dig/host: take nameservers from ALT_DNS_SERVERS when there is no resolv.conf
+
+Why: Android has no /etc/resolv.conf and nothing listens on 127.0.0.1:53/::1:53, so dig/host fall back to
+localhost and time out. The module wrapper exports the DNS servers of the active default network
+(share/android-linux-tools/dns-servers: dumpsys connectivity, getprop fallback) in ALT_DNS_SERVERS.
+They are used only when neither @server/the host server argument nor a resolv.conf provides one.
+The check runs before get_server_list(): libirs fills a missing resolv.conf with 127.0.0.1/::1, so
+the server list is never empty after it.
+Termux instead points RESOLV_CONF at a static $PREFIX/etc/resolv.conf with public resolvers.
+Source: written for this module (see ndk/REFERENCES.md).
+
+--- a/bin/dig/dighost.c
++++ b/bin/dig/dighost.c
+@@ -1317,6 +1317,35 @@
+ 		debug("retries is %d.", tries);
+ 	}
+ 
++	/*
++	 * Android has no resolv.conf: the module wrapper exports the DNS servers
++	 * of the active default network (space separated) in ALT_DNS_SERVERS.
++	 * Checked before get_server_list(), which would add 127.0.0.1/::1.
++	 */
++	if (ISC_LIST_EMPTY(server_list) && result == ISC_R_FILENOTFOUND &&
++	    getenv("ALT_DNS_SERVERS") != NULL)
++	{
++		char *alt_list = strdup(getenv("ALT_DNS_SERVERS"));
++		char *alt_save = NULL;
++		char *alt_ns;
++
++		if (alt_list == NULL) {
++			fatal("out of memory");
++		}
++		for (alt_ns = strtok_r(alt_list, " \t\n", &alt_save);
++		     alt_ns != NULL;
++		     alt_ns = strtok_r(NULL, " \t\n", &alt_save))
++		{
++			if ((strchr(alt_ns, ':') != NULL && !have_ipv6) ||
++			    (strchr(alt_ns, ':') == NULL && !have_ipv4))
++			{
++				continue;
++			}
++			add_fallback_nameserver(alt_ns);
++		}
++		free(alt_list);
++	}
++
+ 	/* If user doesn't specify server use nameservers from resolv.conf. */
+ 	if (ISC_LIST_EMPTY(server_list)) {
+ 		get_server_list(resconf);

@@ -17,10 +17,12 @@ and it does not change device state except through the files mounted under `syst
 
 ## v2: native Android (bionic) builds with the NDK
 
-v2 (`v2.0-rN`, versionCode `major*100000 + minor*1000 + N`, e.g. `200001`, above every v1 code) keeps the
-module id, name, `customize.sh`, the `-ng` rule and both flavours of v1, but compiles the tools from upstream
-source with the Android NDK instead of shipping Alpine/musl binaries. Tools that are not ported keep their v1
-Alpine binary in the same module (hybrid). `share/android-linux-tools/MANIFEST.json` (and `dist/MANIFEST-v2.json`)
+v2 (`v2.M-rN`, versionCode `major*100000 + minor*1000 + N`, e.g. `201001` for `v2.1-r1`, above every v1 code)
+keeps the module id, name, the `-ng` rule and both flavours of v1, but compiles the tools from upstream source
+with the Android NDK instead of shipping Alpine/musl binaries. Since v2.1 every tool is an NDK build: the ZIPs
+contain no Alpine/musl binary, no musl loader or libraries and no resolv.conf overlay, and use
+`ndk/module/customize.sh` (v1's `module/customize.sh` without the musl and resolv.conf code). v2.0 was a hybrid
+that kept the v1 Alpine binary for unported tools; `ALLOW_ALPINE=1` in `ndk/build.conf` re-enables that fallback. `share/android-linux-tools/MANIFEST.json` (and `dist/MANIFEST-v2.json`)
 records per tool its origin (`ndk` or `alpine`), upstream version, source sha256, linkage and patches;
 `share/android-linux-tools/origins.txt` is the same in one line per tool for `phone-test.sh`.
 
@@ -33,21 +35,107 @@ records per tool its origin (`ndk` or `alpine`), upstream version, source sha256
   no netd client, so `getaddrinfo()` in a static binary cannot reach Android's resolver. Tools that call the
   libc resolver are PIEs linked against the system `libc.so`/`libm.so`/`libdl.so` (`libz.so` for curl) only,
   with every third-party library linked in statically: no `$MODDIR/lib`, no RUNPATH.
-  Dynamic: nft, ipset, wg, ip-ng, tc-ng, ss-ng, bridge, tcpdump, curl, mtr, socat, iperf3, rsync, ncat, iftop,
-  traceroute-ng, arping-ng, tracepath-ng. Everything else from the NDK is static.
+  Dynamic: nft, ipset, wg, wg-quick, awg, awg-quick, ip-ng, tc-ng, ss-ng, bridge, tcpdump, curl, dig, host, mtr,
+  socat, iperf3, rsync, ncat, iftop, mount.cifs, traceroute-ng, arping-ng, tracepath-ng. Everything else is static.
 - DNS: NDK tools resolve names through bionic/netd, so they need no resolv.conf. `drill` (ldns) is a DNS query
   tool that talks to a server directly; when no `@server` is given its wrapper adds `@<first DNS server of the
   active default network>` from `share/android-linux-tools/dns-servers` (dumpsys connectivity, getprop fallback).
-  The v1 resolv.conf overlay and `resolv-refresh` are only shipped while Alpine network tools remain (in
-  v2.0-r1: dig, host, mount.cifs); `customize.sh` skips the overlay when `resolv-refresh` is absent.
+  `dig` and `host` (BIND) get the same servers through `ALT_DNS_SERVERS`, which their wrapper exports and a
+  small dighost.c patch uses when neither `@server` (host: the server argument) nor a resolv.conf names one.
+  The v1 resolv.conf overlay and `resolv-refresh` were only shipped while Alpine network tools remained (v2.0-r1:
+  dig, host, mount.cifs); v2.1 ships neither.
 - TLS/CA: curl uses mbedTLS 3.6 LTS with the Mozilla bundle from curl.se (pinned by sha256) as
   `etc/ssl/cert.pem`; the wrapper also passes `--capath /system/etc/security/cacerts` (or the conscrypt apex
   store) when present. mbedTLS loads every file of the directory, which works with Android's old-style hash names.
-- bpftool: the lite flavour ships the NDK bpftool (no LLVM: no JIT disassembly, no skeleton features); the
-  full flavour keeps the v1 Alpine bpftool with libLLVM.
-- New in v2: `ethtool-ng` (always `-ng`) and `drill`. Not ported, still Alpine: `nfct`, `dig`, `host`
-  (BIND 9.20 needs libuv/OpenSSL/liburcu/libcap and does not support a static build), `mount.cifs` (needs a
-  cross-built libtalloc, and bionic lacks `addmntent`). Reasons per tool: `ndk/REFERENCES.md`.
+- BIND (dig, host) uses OpenSSL 3.5 LTS (static) with `etc/ssl/cert.pem` as its default CA file (`dig +tls`).
+- bpftool: both flavours ship the NDK bpftool (no LLVM: no JIT disassembly, no skeleton features). v2.0's full
+  flavour kept the v1 Alpine bpftool with libLLVM (about 172 MB); since v2.1 lite and full contain the same
+  tools and differ only in `flavour=` and the description, so either ZIP can be installed.
+- WireGuard/AmneziaWG: `wg`, `awg` (amneziawg-tools 3.1.20260812) and the upstream Android `wg-quick`/`awg-quick`
+  (`src/wg-quick/android.c`, a C program: no bash needed; it drives the stock `ip`, `iptables`, `ndc` and the
+  netd DnsResolver over binder). awg-quick is patched to use the kernel `amneziawg` link type (e.g. a custom
+  kernel's built-in AmneziaWG) before falling back to userspace amneziawg-go, as upstream linux.bash does.
+- New in v2: `ethtool-ng` (always `-ng`), `drill`, `wg-quick`, `awg`, `awg-quick`. Ported in v2.1: `nfct`,
+  `dig`, `host`, `mount.cifs`, and bpftool in the full flavour. Reasons and sources per tool: `ndk/REFERENCES.md`.
+
+### v2.1 contents
+
+Both flavours contain the same 66 NDK tools (plus `alt-list`); there is no `lib/` directory. Sizes are of the stripped `libexec/` programs; `Linkage` dynamic = PIE against the system `libc.so`/`libm.so`/`libdl.so` (`libz.so` for curl) only. Generated from `dist/MANIFEST-v2.json`.
+
+| ZIP | Bytes | Unpacked |
+|---|---|---|
+| `android-linux-tools-v2.1-r1.zip` | 26070503 | 53.5 MB |
+| `android-linux-tools-full-v2.1-r1.zip` | 26070596 | 53.5 MB |
+
+| Command | Recipe | Version | Linkage | libexec (KB) | Licence (SPDX) |
+|---|---|---|---|---|---|
+| `nft` | nftables | 1.1.7 | dynamic | 938 | GPL-2.0-only |
+| `ipset` | ipset | 7.24 | dynamic | 156 | GPL-2.0-only |
+| `conntrack` | conntrack-tools | 1.4.9 | static | 438 | GPL-2.0-or-later |
+| `nfct` | conntrack-tools | 1.4.9 | static | 277 | GPL-2.0-or-later |
+| `wg` | wireguard-tools | 1.0.20260223 | dynamic | 78 | GPL-2.0-only |
+| `bridge` | iproute2 | 7.3.0 | dynamic | 112 | GPL-2.0-or-later |
+| `ip-ng` | iproute2 | 7.3.0 | dynamic | 599 (=ip) | GPL-2.0-or-later |
+| `tc-ng` | iproute2 | 7.3.0 | dynamic | 451 (=tc) | GPL-2.0-or-later |
+| `ss-ng` | iproute2 | 7.3.0 | dynamic | 107 (=ss) | GPL-2.0-or-later |
+| `bpftool` | bpftool | 7.8.1 | static | 1020 | GPL-2.0-only OR BSD-2-Clause |
+| `getfacl` | acl | 2.4.0 | static | 294 | LGPL-2.1-or-later AND GPL-2.0-or-later |
+| `setfacl` | acl | 2.4.0 | static | 345 | LGPL-2.1-or-later AND GPL-2.0-or-later |
+| `mount.cifs` | cifs-utils | 7.9 | dynamic | 60 | GPL-3.0-or-later |
+| `iperf3` | iperf3 | 3.22 | dynamic | 127 | BSD-3-Clause-LBNL |
+| `tcpdump` | tcpdump | 4.99.7 | dynamic | 1239 | BSD-3-Clause |
+| `strace` | strace | 7.3 | static | 1601 | LGPL-2.1-or-later |
+| `capsh` | libcap | 2.78 | static | 937 | BSD-3-Clause OR GPL-2.0-only |
+| `getpcaps` | libcap | 2.78 | static | 893 | BSD-3-Clause OR GPL-2.0-only |
+| `setpriv` | util-linux | 2.42.4 | static | 337 | GPL-2.0-or-later AND LGPL-2.1-or-later |
+| `lsblk` | util-linux | 2.42.4 | static | 1142 | GPL-2.0-or-later AND LGPL-2.1-or-later |
+| `blkid-ng` | util-linux | 2.42.4 | static | 849 (=blkid) | GPL-2.0-or-later AND LGPL-2.1-or-later |
+| `findmnt` | util-linux | 2.42.4 | static | 1081 | GPL-2.0-or-later AND LGPL-2.1-or-later |
+| `lscpu` | util-linux | 2.42.4 | static | 781 | GPL-2.0-or-later AND LGPL-2.1-or-later |
+| `curl` | curl | 8.23.0 | dynamic | 1392 | curl |
+| `dig` | bind | 9.20.30 | dynamic | 8159 | MPL-2.0 |
+| `host` | bind | 9.20.30 | dynamic | 8126 | MPL-2.0 |
+| `mtr` | mtr | 0.96 | dynamic | 213 | GPL-2.0-only |
+| `socat` | socat | 1.8.1.3 | dynamic | 317 | GPL-2.0-only WITH OpenSSL-Exception |
+| `htop` | htop | 3.5.3 | static | 1093 | GPL-2.0-or-later |
+| `iostat` | sysstat | 12.8.0 | static | 359 | GPL-2.0-or-later |
+| `pidstat` | sysstat | 12.8.0 | static | 405 | GPL-2.0-or-later |
+| `mpstat` | sysstat | 12.8.0 | static | 345 | GPL-2.0-or-later |
+| `sqlite3` | sqlite | 3.54.1 | static | 2062 | blessing |
+| `rsync` | rsync | 3.5.2 | dynamic | 563 | GPL-3.0-or-later |
+| `zstd` | zstd | 1.5.7 | static | 879 | BSD-3-Clause OR GPL-2.0-only |
+| `unzstd` | zstd | 1.5.7 | static | 879 (=zstd `-d`) | BSD-3-Clause OR GPL-2.0-only |
+| `zstdcat` | zstd | 1.5.7 | static | 879 (=zstd `-dcf`) | BSD-3-Clause OR GPL-2.0-only |
+| `xz` | xz | 5.8.4 | static | 803 | 0BSD AND GPL-2.0-or-later |
+| `unxz` | xz | 5.8.4 | static | 803 (=xz `-d`) | 0BSD AND GPL-2.0-or-later |
+| `xzcat` | xz | 5.8.4 | static | 803 (=xz `-dc`) | 0BSD AND GPL-2.0-or-later |
+| `lz4` | lz4 | 1.11.0 | static | 450 | BSD-2-Clause AND GPL-2.0-or-later |
+| `unlz4` | lz4 | 1.11.0 | static | 450 (=lz4 `-d`) | BSD-2-Clause AND GPL-2.0-or-later |
+| `lz4cat` | lz4 | 1.11.0 | static | 450 (=lz4 `-dc`) | BSD-2-Clause AND GPL-2.0-or-later |
+| `e2fsck-ng` | e2fsprogs | 1.47.4 | static | 887 (=e2fsck) | GPL-2.0-or-later AND LGPL-2.0-or-later AND BSD-3-Clause AND MIT |
+| `mke2fs-ng` | e2fsprogs | 1.47.4 | static | 715 (=mke2fs) | GPL-2.0-or-later AND LGPL-2.0-or-later AND BSD-3-Clause AND MIT |
+| `tune2fs-ng` | e2fsprogs | 1.47.4 | static | 707 (=tune2fs) | GPL-2.0-or-later AND LGPL-2.0-or-later AND BSD-3-Clause AND MIT |
+| `resize2fs-ng` | e2fsprogs | 1.47.4 | static | 563 (=resize2fs) | GPL-2.0-or-later AND LGPL-2.0-or-later AND BSD-3-Clause AND MIT |
+| `fsck.f2fs-ng` | f2fs-tools | 1.17.0 | static | 648 (=fsck.f2fs) | GPL-2.0-or-later OR LGPL-2.1-or-later |
+| `dump.f2fs-ng` | f2fs-tools | 1.17.0 | static | 648 (=dump.f2fs) | GPL-2.0-or-later OR LGPL-2.1-or-later |
+| `traceroute-ng` | traceroute | 2.1.6 | dynamic | 62 (=traceroute) | GPL-2.0-or-later |
+| `arping-ng` | iputils | 20250605 | dynamic | 17 (=arping) | BSD-3-Clause AND GPL-2.0-or-later |
+| `tracepath-ng` | iputils | 20250605 | dynamic | 13 (=tracepath) | BSD-3-Clause AND GPL-2.0-or-later |
+| `tmux` | tmux | 3.8 | static | 2014 | ISC |
+| `nano` | nano | 9.3 | static | 1330 | GPL-3.0-or-later |
+| `less` | less | 710 | static | 619 | GPL-3.0-or-later OR BSD-2-Clause |
+| `jq` | jq | 1.8.2 | static | 1144 | MIT |
+| `bash` | bash | 5.3.20 | static | 1972 | GPL-3.0-or-later |
+| `ncat` | nmap | 7.993 | dynamic | 153 | LicenseRef-NPSL |
+| `iftop` | iftop | 1.0pre4 | dynamic | 426 | GPL-2.0-or-later |
+| `tree` | tree | 2.3.2 | static | 369 | GPL-2.0-or-later |
+| `pv` | pv | 1.12.7 | static | 433 | Artistic-2.0 |
+| `wg-quick` | wireguard-tools | 1.0.20260223 | dynamic | 29 | GPL-2.0-only |
+| `awg` | amneziawg-tools | 3.1.20260812 | dynamic | 96 | GPL-2.0-only |
+| `awg-quick` | amneziawg-tools | 3.1.20260812 | dynamic | 29 | GPL-2.0-only |
+| `drill` | ldns | 1.9.2 | static | 515 | BSD-3-Clause |
+| `ethtool-ng` | ethtool | 7.2 | static | 544 (=ethtool) | GPL-2.0-only |
+| `alt-list` | (module script) | | | | |
 
 ### Builder
 
@@ -92,12 +180,16 @@ JOBS=8 MEM=12G ./build-ndk.sh  # make -j and memory limit (defaults)
 
 ### Phone test (v2)
 
-`phone-test.sh` prints `ORIGIN <tool> <installed-name> <ndk|alpine> <version> <linkage>` for every tool, and the
-DNS section no longer needs resolv.conf: `curl -sI https://example.com`, `drill example.com` (and `dig +short
-example.com` while dig is still Alpine) are run with their origin in the label. The resolv.conf overlay is only
+`phone-test.sh` prints `ORIGIN <tool> <installed-name> <ndk|alpine> <version> <linkage>` for every tool and
+checks that all origins are `ndk` and that no musl loader is installed. The DNS section needs no resolv.conf:
+`curl -sI https://example.com`, `drill example.com`, `dig +short example.com` and `host example.com` are run
+with their origin in the label. New checks in v2.1: versions of nfct, wg-quick, awg, awg-quick; `nfct timeout
+list`; `mount.cifs -h`; `bpftool prog list`; and, if the kernel has the `amneziawg` link type, `ip-ng link add
+awgt0 type amneziawg`, `awg show awgt0` and the delete (SKIP otherwise). The resolv.conf overlay is only
 checked when the build still ships `resolv-refresh`.
 
-The sections below describe v1 (Alpine) and still apply to the remaining Alpine tools.
+The sections below describe v1 (Alpine). Since v2.1 no Alpine binary is left in the v2 ZIPs, so the v1 DNS overlay
+and musl details below apply only to the v1 ZIPs built by `./build.sh`.
 
 ## Flavours
 

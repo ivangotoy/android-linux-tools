@@ -166,6 +166,17 @@ if [ -r "$ORIGINS" ]; then
   grep -v '^#' "$ORIGINS" | while read -r ot oo ov ol; do
     echo "ORIGIN $ot $(tn "$ot") $oo $ov $ol"
   done
+  NONNDK=$(grep -v '^#' "$ORIGINS" | while read -r ot oo ov ol; do [ "$oo" = ndk ] || printf '%s ' "$ot"; done)
+  if [ -z "$NONNDK" ]; then
+    result ok origins-all-ndk
+  else
+    result skip origins-all-ndk "hybrid build, not NDK: $NONNDK"
+  fi
+  if [ -z "$NONNDK" ] && [ -e "$MODDIR/lib/ld-musl-aarch64.so.1" ]; then
+    result bad no-musl-runtime 1 "all tools are NDK builds but $MODDIR/lib/ld-musl-aarch64.so.1 is present"
+  elif [ -z "$NONNDK" ]; then
+    result ok no-musl-runtime
+  fi
 fi
 
 echo "== installed tools (alt-list)"
@@ -196,8 +207,11 @@ echo "== version/help"
 vchk nft 'nftables v[0-9]' --version
 vchk ipset 'ipset v[0-9]' version
 vchk conntrack 'conntrack v[0-9]' --version
-vchk nfct 'nfct|usage' --version
+vchk nfct 'nfct v[0-9]' list version
 vchk wg 'wireguard-tools v[0-9]' --version
+vchk wg-quick 'Usage: .*\[ up \| down \]' --help
+vchk awg 'amneziawg-tools v[0-9]' --version
+vchk awg-quick 'Usage: .*\[ up \| down \]' --help
 vchk bridge 'bridge utility, v?[0-9]' -V
 vchk ethtool-ng 'ethtool version [0-9]' --version
 vchk ip-ng 'utility, iproute2-v?[0-9]' -V
@@ -275,10 +289,33 @@ if [ -n "$IPSET" ] && "$IPSET" list -n alttoolstest >/dev/null 2>&1; then
 fi
 kchk conntrack-count "CONFIG_NF_CONNTRACK CONFIG_NF_CT_NETLINK" conntrack -C
 kchk wg-show "CONFIG_WIREGUARD" wg show all
+# AmneziaWG: the kernel's amneziawg link type (e.g. built into a custom kernel); SKIP when absent
+IPNG=$(tn ip-ng)
+if [ -z "$(tn awg)" ]; then
+  missing awg awg-link
+elif [ -z "$IPNG" ]; then
+  missing ip-ng awg-link
+else
+  "$IPNG" link del awgt0 >/dev/null 2>&1
+  out=$($TO "$IPNG" link add awgt0 type amneziawg 2>&1)
+  rc=$?
+  if [ "$rc" -eq 0 ]; then
+    result ok awg-link-add
+    chk awg-show 'interface: awgt0' awg show awgt0
+    fchk awg-link-del ip-ng link del awgt0
+  elif printf '%s\n' "$out" | grep -qiE "unknown device type|not supported|$KPAT"; then
+    result skip awg-link "kernel has no amneziawg link type: $(printf '%s' "$out" | head -n 1 | cut -c1-100)"
+  else
+    result bad awg-link-add "$rc" "$out"
+  fi
+fi
 kchk bridge-link "CONFIG_BRIDGE" bridge link
 chk tc-ng-qdisc 'qdisc' tc-ng qdisc show dev lo
 chk ethtool-ng-lo 'Settings for lo|Link detected' ethtool-ng lo
 chk bpftool-version 'bpftool v[0-9]' bpftool version
+kchk bpftool-prog-list "CONFIG_BPF_SYSCALL" bpftool prog list
+kchk nfct-timeout-list "CONFIG_NF_CT_NETLINK_TIMEOUT" nfct timeout list
+chk mount.cifs-help 'Usage: mount\.cifs|mount\.cifs' mount.cifs -h
 chk getfacl-dir 'owner' getfacl /data/local/tmp
 
 echo "== DNS"
@@ -323,6 +360,7 @@ dnschk() {
 dnschk curl-https '^HTTP/' curl -sI --max-time 20 https://example.com
 dnschk drill-example 'rcode: NOERROR' drill example.com
 dnschk dig-short '^[0-9a-f:.]+$' dig +short example.com
+dnschk host-example 'example\.com has (IPv6 )?address' host example.com
 out=$($TO ping -c 1 -W 3 example.com 2>&1)
 if printf '%s\n' "$out" | grep -qiE '^PING example\.com'; then
   result ok bionic-dns-unaffected
@@ -359,6 +397,7 @@ chk findmnt-data 'TARGET' findmnt /data
 
 echo "== cleanup"
 [ -n "$NFT" ] && "$NFT" delete table inet alttoolstest >/dev/null 2>&1
+[ -n "$IPNG" ] && "$IPNG" link del awgt0 >/dev/null 2>&1
 [ -n "$IPSET" ] && "$IPSET" destroy alttoolstest >/dev/null 2>&1
 [ -n "$T_TMUX" ] && "$T_TMUX" -L alttoolstest kill-server >/dev/null 2>&1
 rm -rf "$W"
