@@ -4,8 +4,11 @@ nftables
 ipset
 libnfnetlink
 libnetfilter_conntrack
+libnetfilter_cttimeout
+libnetfilter_cthelper
 conntrack-tools
 wireguard-tools
+amneziawg-tools
 iproute2
 libpcap
 tcpdump
@@ -13,6 +16,10 @@ mbedtls
 cacert
 curl
 ldns
+libuv
+liburcu
+openssl
+bind
 ncurses
 mtr
 socat
@@ -48,3 +55,5 @@ traceroute
 iputils
 elfutils
 bpftool
+talloc
+cifs-utils

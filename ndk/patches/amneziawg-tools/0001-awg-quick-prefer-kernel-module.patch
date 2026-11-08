@@ -1,0 +1,33 @@
+awg-quick (src/wg-quick/android.c): create the interface with the kernel module first and fall back to
+userspace amneziawg-go only when that fails, as src/wg-quick/linux.bash add_if() does (including its
+/sys/module/amneziawg check). Upstream android.c runs amneziawg-go whenever the config has any AmneziaWG
+parameter (Jc, S1, H1, I1...), so a kernel with built-in AmneziaWG (ip link add X type amneziawg) was never
+used for such configs.
+
+--- a/src/wg-quick/android.c
++++ b/src/wg-quick/android.c
+@@ -633,10 +633,20 @@
+ 
+ static void add_if(const char *iface)
+ {
+-	if (is_awg_on)
+-		cmd("amneziawg-go %s", iface);
+-	else
+-		cmd("ip link add %s type amneziawg", iface);
++	_cleanup_free_ char *ip_cmd = NULL;
++
++	/* As in linux.bash: use the kernel module, fall back to userspace amneziawg-go only without it. */
++	if (asprintf(&ip_cmd, "ip link add %s type amneziawg", iface) < 0) {
++		perror("Error: asprintf");
++		exit(errno);
++	}
++	printf("[#] %s\n", ip_cmd);
++	if (system(ip_cmd) == 0)
++		return;
++	if (!access("/sys/module/amneziawg", F_OK))
++		exit(EIO);
++	fprintf(stderr, "[!] Missing WireGuard (Amnezia VPN) kernel module. Falling back to slow userspace implementation.\n");
++	cmd("amneziawg-go %s", iface);
+ }
+ 
+ static void del_if(const char *iface)

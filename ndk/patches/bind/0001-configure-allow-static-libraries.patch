@@ -1,0 +1,33 @@
+Subject: configure: allow static BIND libraries (dig/host link libisc/libdns/libisccfg statically)
+
+Why: configure refuses --enable-static outside --enable-developer because named loses dlopen()
+(plugins, dyndb) and libtool-built shared objects. dig and host load no plugins; they are PIEs
+linked dynamically against the system bionic libc (RELRO/ASLR kept), only BIND's own libraries and
+libuv/liburcu/OpenSSL/libcap are static archives, so no $MODDIR/lib and no RUNPATH are needed.
+Termux instead uses --enable-developer, which also changes other defaults; this only drops the check.
+Source: written for this module (see ndk/REFERENCES.md).
+
+--- a/configure
++++ b/configure
+@@ -17743,10 +17743,6 @@
+ DLOPEN_LIBS="$lt_cv_dlopen_libs"
+ 
+ 
+-if test "$enable_static" != "no" && test "$enable_developer" != "yes"
+-then :
+-  as_fn_error $? "Static linking is not supported as it disables dlopen() and certain security features (e.g. RELRO, ASLR)" "$LINENO" 5
+-fi
+ 
+ 
+ #
+--- a/configure.ac
++++ b/configure.ac
+@@ -111,8 +111,6 @@
+ DLOPEN_LIBS="$lt_cv_dlopen_libs"
+ AC_SUBST(DLOPEN_LIBS)
+ 
+-AS_IF([test "$enable_static" != "no" && test "$enable_developer" != "yes"],
+-      [AC_MSG_ERROR([Static linking is not supported as it disables dlopen() and certain security features (e.g. RELRO, ASLR)])])
+ 
+ 
+ #

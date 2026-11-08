@@ -1,10 +1,15 @@
 # v2 tools built with the NDK. A wrapper name listed here uses the NDK binary when its recipe built it;
 # every other wrapper of config/tools.tsv keeps the v1 Alpine binary (hybrid module).
-# name  recipe  binary(.work/ndk/out/bin = libexec name)  args(- = none)  flags(- = none; dns = needs a DNS server address, not getaddrinfo)
+# name  recipe  binary(.work/ndk/out/bin = libexec name)  args(- = none)  flags(- = none; dns = needs a DNS server address,
+# not getaddrinfo: the wrapper adds @<server>; dnsenv = the wrapper exports ALT_DNS_SERVERS for BIND's dig/host)
 nft             nftables         nft          -     -
 ipset           ipset            ipset        -     -
 conntrack       conntrack-tools  conntrack    -     -
+nfct            conntrack-tools  nfct         -     -
 wg              wireguard-tools  wg           -     -
+wg-quick        wireguard-tools  wg-quick     -     -
+awg             amneziawg-tools  awg          -     -
+awg-quick       amneziawg-tools  awg-quick    -     -
 bridge          iproute2         bridge       -     -
 ip-ng           iproute2         ip           -     -
 tc-ng           iproute2         tc           -     -
@@ -14,12 +19,15 @@ tcpdump         tcpdump          tcpdump      -     -
 strace          strace           strace       -     -
 curl            curl             curl         -     -
 drill           ldns             drill        -     dns
+dig             bind             dig          -     dnsenv
+host            bind             host         -     dnsenv
 mtr             mtr              mtr          -     -
 -               mtr              mtr-packet   -     -
 socat           socat            socat        -     -
 ethtool-ng      ethtool          ethtool      -     -
 getfacl         acl              getfacl      -     -
 setfacl         acl              setfacl      -     -
+mount.cifs      cifs-utils       mount.cifs   -     -
 capsh           libcap           capsh        -     -
 getpcaps        libcap           getpcaps     -     -
 setpriv         util-linux       setpriv      -     -

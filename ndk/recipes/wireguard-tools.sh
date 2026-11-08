@@ -8,4 +8,7 @@ LINKAGE=dynamic
 build() {
   make -j"$JOBS" -C src wg PLATFORM=linux
   install_bin src/wg wg
+  # wg-quick: upstream's Android variant (src/wg-quick/android.c), as wireguard-android and Termux build it
+  $CC $CFLAGS $CPPFLAGS -std=gnu11 -D_GNU_SOURCE -o src/wg-quick-android src/wg-quick/android.c $LDFLAGS -ldl
+  install_bin src/wg-quick-android wg-quick
 }
