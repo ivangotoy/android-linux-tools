@@ -108,7 +108,7 @@ build_one() {
       build "$n" "$B/src/$SRCDIR" > "$B/logs/$n.log" 2>&1 || { log "FAILED $n (see .work/ndk/build/logs/$n.log)"; tail -n 40 "$B/logs/$n.log"; exit 1; }
     lic="$OUT/licenses/$n"
     rm -rf "$lic"; mkdir -p "$lic"
-    for f in $(cd "$B/src/$SRCDIR" && ls -d COPYING* COPYRIGHT* LICENSE* LICENCE* NOTICE* README.md-license 2>/dev/null); do
+    for f in $(cd "$B/src/$SRCDIR" && ls -d COPYING* COPYRIGHT* LICENSE* LICENCE* License NOTICE* README.md-license doc/COPYING* docs/COPYING* 2>/dev/null); do
       [ -f "$B/src/$SRCDIR/$f" ] && cp "$B/src/$SRCDIR/$f" "$lic/"
     done
     [ -d "/src/ndk/patches/$PATCHES_FROM" ] && cp /src/ndk/patches/"$PATCHES_FROM"/*.patch "$lic/" 2>/dev/null || true

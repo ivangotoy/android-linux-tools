@@ -1,0 +1,36 @@
+# Copies every published Forgejo release (same assets, same bytes) to the GitHub
+# mirror https://github.com/ivangotoy/android-linux-tools. Git refs reach GitHub
+# through the Forgejo push mirror; this job waits for the mirrored tag at the same
+# commit and never creates or moves a tag. Re-run it by hand for a release:
+# Actions -> github-release -> Run workflow, tag = vX.Y-rN.
+name: github-release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to copy (vX.Y-rN)
+        required: true
+
+jobs:
+  copy:
+    runs-on: release-host
+    timeout-minutes: 60
+    steps:
+      - name: Copy release to GitHub
+        env:
+          GH_RELEASE_TOKEN: ${{ secrets.GH_RELEASE_TOKEN }}
+          TAG: ${{ forgejo.event.release.tag_name || inputs.tag }}
+          API: ${{ forgejo.api_url }}
+          REPO: ${{ forgejo.repository }}
+          SERVER: ${{ forgejo.server_url }}
+          SHA: ${{ forgejo.sha }}
+        run: |
+          set -eu
+          case "$TAG" in v[0-9]*) ;; *) echo "bad tag: $TAG"; exit 1 ;; esac
+          # Script from the default branch at this run's commit, read anonymously.
+          curl -fsS -o github-release.py "$SERVER/$REPO/raw/commit/$SHA/ci/github-release.py"
+          python3 -I github-release.py --forgejo-api "$API" --repo "$REPO" \
+            --github-repo ivangotoy/android-linux-tools --tag "$TAG"
