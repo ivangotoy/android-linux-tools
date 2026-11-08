@@ -1546,3 +1546,5 @@ None since v2.1: every tool of `config/tools.tsv` (and wg-quick, awg, awg-quick,
 build, `ndk/build.conf` has `ALLOW_ALPINE=0`, and `ndk/scripts/check.py` fails on any Alpine/musl ELF, a `lib/`
 directory, the resolv.conf overlay, or ELF files outside `$ALTDIR/libexec/`. Setting `ALLOW_ALPINE=1` restores the v2.0
 hybrid fallback (v1 Alpine binary for a tool whose recipe is missing from `ndk/tools.tsv`).
+
+- util-linux setpriv: bionic getpwuid() returns NULL pw_passwd/pw_gecos for Android IDs; upstream passwd_copy() xstrdup()s every field and aborts (xalloc.h assertion) on any --reuid/--regid. Patch 0002 copies NULL fields as NULL. Found on an Android 15 vendor ROM.

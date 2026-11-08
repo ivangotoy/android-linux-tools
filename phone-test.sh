@@ -233,12 +233,14 @@ fi
 
 # as_shell CMD: run CMD as uid 2000 (shell). Forms: Magisk/KernelSU/APatch su, then the module's setpriv.
 AS_SHELL=""
-for f in "su 2000 -c" "su shell -c" "su -s /system/bin/sh 2000 -c" "setpriv"; do
+# setpriv first: it can keep the inet (3003) group adb shell has; su 2000 drops all
+# supplementary groups, and without inet netd refuses DNS (curl rc 6), unlike a real adb shell.
+for f in "setpriv" "su 2000 -c" "su shell -c" "su -s /system/bin/sh 2000 -c"; do
   if [ "$f" = setpriv ]; then
     SP=$(tn setpriv)
     [ -n "$SP" ] || continue
-    t=$("$SP" --reuid=2000 --regid=2000 --clear-groups /system/bin/sh -c 'id -u' 2>/dev/null </dev/null)
-    f="$SP --reuid=2000 --regid=2000 --clear-groups /system/bin/sh -c"
+    t=$("$SP" --reuid=2000 --regid=2000 --groups=3003,3009 /system/bin/sh -c 'id -u' 2>/dev/null </dev/null)
+    f="$SP --reuid=2000 --regid=2000 --groups=3003,3009 /system/bin/sh -c"
   else
     t=$($TO $f 'id -u' 2>/dev/null </dev/null)
   fi
@@ -335,6 +337,8 @@ while read -r o n d; do
   if [ -z "$p" ]; then
     result bad "path:$n" 127 "not in PATH"
   elif head -c 400 "$p" 2>/dev/null | grep -q "ALTDIR=$ALTDIR"; then
+    result ok "path:$n"
+  elif [ "$o" = alt-list ] && head -c 200 "$p" 2>/dev/null | grep -q "^# alt-list: list the tools installed by android-linux-tools"; then
     result ok "path:$n"
   else
     result bad "path:$n" 1 "$p is not the module wrapper"

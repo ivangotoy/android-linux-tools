@@ -185,6 +185,10 @@ for w in sorted(os.listdir(os.path.join(ST, 'system', 'bin'))):
         target_ok = bool(m) and os.path.isfile(os.path.join(LIBEXEC, m.group(1)))
         if ('ALTDIR=' + ALTDIR + '\n') not in txt:
             err('wrapper ALTDIR wrong: ' + w)
+    # customize.sh and phone-test.sh recognise this module's wrappers by the ALTDIR line in the
+    # first 400 bytes (head -c 400); without it an upgrade renames the new wrapper to <name>-ng
+    if ('ALTDIR=' + ALTDIR) not in txt[:400]:
+        err('wrapper %s: ALTDIR marker not within the first 400 bytes' % w)
     # runtime files must be reachable by every uid: no $MODDIR and no /data/adb path in any wrapper
     if 'MODDIR' in txt or '/data/adb' in txt:
         err('wrapper %s references $MODDIR or /data/adb (root-only) for runtime files' % w)
