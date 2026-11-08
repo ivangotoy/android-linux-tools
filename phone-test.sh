@@ -207,7 +207,7 @@ echo "== version/help"
 vchk nft 'nftables v[0-9]' --version
 vchk ipset 'ipset v[0-9]' version
 vchk conntrack 'conntrack v[0-9]' --version
-vchk nfct 'nfct v[0-9]' version
+vchk nfct 'nfct v[0-9]' list version
 vchk wg 'wireguard-tools v[0-9]' --version
 vchk wg-quick 'Usage: .*\[ up \| down \]' --help
 vchk awg 'amneziawg-tools v[0-9]' --version
