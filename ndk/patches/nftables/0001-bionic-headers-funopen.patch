@@ -1,4 +1,4 @@
-Subject: build with bionic: header clashes, rthdr0 addresses, fopencookie before API 32
+Subject: build with bionic: header clashes, rthdr0 addresses, no fopencookie
 
 Why:
 - bionic's <netinet/in.h> includes <linux/ipv6.h>, so nft's own struct ipv6hdr is a redefinition;
@@ -7,13 +7,17 @@ Why:
   <netinet/tcp.h> includes <linux/tcp.h> whose TCP_FLAG_* enumerators clash with nft's
   (src/ipopt.c includes both); include them first and rename nft's enumerators via macros.
 - bionic's <netinet/ip6.h> (from OpenBSD) has no ip6r0_addr[] in struct ip6_rthdr0.
-- fopencookie() is __INTRODUCED_IN(32) in bionic; use funopen() below API 32.
+- bionic has no fopencookie() at all (neither in the NDK r30 headers nor in libc.a); use the BSD
+  funopen() that bionic does provide.
 - bionic's <netinet/igmp.h> lacks IGMP_V1/V2_MEMBERSHIP_REPORT and IGMP_V2_LEAVE_GROUP (added
   with #ifndef, values from RFC 1112/2236 as in glibc).
 All other changes are under __ANDROID__ only; byte offsets used by nft payload templates are unchanged.
 Source: written for this module. No Android/bionic build of nftables exists in AOSP or
 termux-packages (see ndk/REFERENCES.md); the funopen() substitution is the usual BSD/bionic
-replacement for fopencookie() (bionic libc/include/stdio.h documents both).
+replacement for fopencookie() on BSD-derived libcs (bionic <stdio.h> declares funopen()).
+Compared with github.com/der-exp/android_external_nftables commit b1520ae2 (an AOSP-tree port
+found by the survey), which works around the same header clashes and also uses funopen().
+
 
 --- a/include/headers.h
 +++ b/include/headers.h
@@ -106,8 +110,8 @@ replacement for fopencookie() (bionic libc/include/stdio.h documents both).
  	return buflen;
  }
  
-+#if defined(__ANDROID__) && __ANDROID_API__ < 32
-+/* fopencookie() is only in bionic from API 32; funopen() has always been there. */
++#ifdef __ANDROID__
++/* bionic has no fopencookie() (not in the NDK headers or libc.a); it has the BSD funopen(). */
 +static int cookie_write_funopen(void *cookie, const char *buf, int buflen)
 +{
 +	return cookie_write(cookie, buf, buflen);
@@ -116,7 +120,7 @@ replacement for fopencookie() (bionic libc/include/stdio.h documents both).
 +
  static int init_cookie(struct cookie *cookie)
  {
-+#if !defined(__ANDROID__) || __ANDROID_API__ >= 32
++#ifndef __ANDROID__
  	cookie_io_functions_t cookie_fops = {
  		.write = cookie_write,
  	};
@@ -128,7 +132,7 @@ replacement for fopencookie() (bionic libc/include/stdio.h documents both).
  
  	cookie->orig_fp = cookie->fp;
  
-+#if defined(__ANDROID__) && __ANDROID_API__ < 32
++#ifdef __ANDROID__
 +	cookie->fp = funopen(cookie, NULL, cookie_write_funopen, NULL, NULL);
 +#else
  	cookie->fp = fopencookie(cookie, "w", cookie_fops);

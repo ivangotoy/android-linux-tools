@@ -11,6 +11,6 @@ build() {
   cmake --build build -j"$JOBS"
   rm -rf "$B/destdir/$NAME"
   DESTDIR="$B/destdir/$NAME" cmake --install build
-  cp -a "$B/destdir/$NAME/usr/." "$DEPROOT/"
-  sed -i "s|^prefix=.*|prefix=$DEPROOT|" "$DEPROOT"/lib/pkgconfig/mbed*.pc
+  mkdir -p "$PKGDIR"
+  cp -a "$B/destdir/$NAME/usr/." "$PKGDIR/"
 }

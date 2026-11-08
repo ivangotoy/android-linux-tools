@@ -4,7 +4,7 @@
 #   bash /src/ndk/build.sh tool...    build only these recipes (plus dependencies)
 set -euo pipefail
 . /src/ndk/lib/env.sh
-mkdir -p "$B/src" "$B/stamps" "$B/meta" "$B/logs" "$B/tmp" "$B/home" "$DEPROOT" "$OUT/bin" "$OUT/meta" "$DL"
+mkdir -p "$B/src" "$B/stamps" "$B/meta" "$B/logs" "$B/tmp" "$B/home" "$B/pkg" "$B/sysroot" "$OUT/bin" "$OUT/meta" "$DL"
 python3 -I /src/ndk/lib/api-site.py "$SYSROOT/usr/include" "$API" "$B/api-site.sh" >/dev/null
 export SOURCE_DATE_EPOCH=$(sed -n 's/^SOURCE_DATE_EPOCH=//p' /src/config/build.conf)
 
@@ -15,7 +15,7 @@ recipe_file() { echo "/src/ndk/recipes/$1.sh"; }
 # load_recipe NAME: reset recipe variables and source the recipe
 load_recipe() {
   unset -f build 2>/dev/null || true
-  NAME=$1; VERSION=; URL=; SHA256=; DEPS=; LICENSE=; SRCDIR=; CHECKSUM_SOURCE=; PATCHES_FROM=$1; TARBALL=; LINKAGE=
+  NAME=$1; VERSION=; URL=; SHA256=; DEPS=; LICENSE=; SRCDIR=; CHECKSUM_SOURCE=; PATCHES_FROM=$1; TARBALL=; LINKAGE=; EXTRA_SRCS=()
   . "$(recipe_file "$1")"
   : "${VERSION:?}" "${URL:?}" "${SHA256:?}"
   TARBALL=${TARBALL:-$(basename "$URL")}
@@ -25,12 +25,30 @@ load_recipe() {
 # recipe_hash NAME: identity of a recipe = recipe file + patches + env + dependency hashes
 recipe_hash() {
   local n=$1 d h
-  h=$( { cat "$(recipe_file "$n")" /src/ndk/lib/env.sh /src/ndk/lib/api-site.py;
+  h=$( { cat "$(recipe_file "$n")" /src/ndk/lib/env.sh /src/ndk/lib/api-site.py /src/ndk/build.sh;
          [ -d "/src/ndk/patches/$n" ] && find "/src/ndk/patches/$n" -type f | sort | xargs cat;
          for d in $(deps_of "$n"); do recipe_hash "$d"; done; } | sha256sum | cut -c1-16)
   echo "$h"
 }
 deps_of() ( load_recipe "$1" >/dev/null; echo "$DEPS" )
+# all_deps NAME: transitive dependencies, each once, dependencies first
+all_deps() {
+  local d
+  for d in $(deps_of "$1"); do all_deps "$d"; echo "$d"; done | awk '!seen[$0]++'
+}
+# mk_sysroot NAME: private prefix with exactly the declared (transitive) dependencies, so a recipe can
+# never pick up an optional library just because another recipe happened to be built earlier
+mk_sysroot() {
+  local r="$B/sysroot/$1" d
+  rm -rf "$r"; mkdir -p "$r/include" "$r/lib/pkgconfig"
+  for d in $(all_deps "$1"); do
+    [ -d "$B/pkg/$d" ] && cp -a "$B/pkg/$d/." "$r/"
+  done
+  for d in "$r"/lib/pkgconfig/*.pc "$r"/share/pkgconfig/*.pc; do
+    [ -f "$d" ] && [ ! -L "$d" ] && sed -i "s|^prefix=.*|prefix=$r|" "$d"
+  done
+  return 0
+}
 
 fetch() {
   local f="$DL/$TARBALL"
@@ -40,6 +58,17 @@ fetch() {
     mv "$f.part" "$f"
   fi
   echo "$SHA256  $f" | sha256sum -c --quiet - || { log "SHA256 MISMATCH $NAME $f"; exit 1; }
+  # EXTRA_SRCS: additional upstream files ("URL SHA256" per entry), e.g. official patch series
+  local x u h
+  for x in "${EXTRA_SRCS[@]}"; do
+    u=${x% *}; h=${x##* }; f="$DL/$(basename "$u")"
+    if [ ! -f "$f" ] || ! echo "$h  $f" | sha256sum -c --quiet - 2>/dev/null; then
+      log "fetch $NAME $u"
+      curl -fsSL --retry 5 -o "$f.part" "$u"
+      mv "$f.part" "$f"
+    fi
+    echo "$h  $f" | sha256sum -c --quiet - || { log "SHA256 MISMATCH $NAME $f"; exit 1; }
+  done
 }
 
 extract() {
@@ -72,6 +101,9 @@ build_one() {
     fetch
     extract
     rm -f "$B/meta/$n.bins"
+    mk_sysroot "$n"
+    rm -rf "$B/pkg/$n"
+    DEPROOT="$B/sysroot/$n" PKGDIR="$B/pkg/$n" \
     bash -eo pipefail -c '. /src/ndk/lib/env.sh; NAME=$1; . "/src/ndk/recipes/$1.sh"; set_linkage; cd "$2"; set -x; build' \
       build "$n" "$B/src/$SRCDIR" > "$B/logs/$n.log" 2>&1 || { log "FAILED $n (see .work/ndk/build/logs/$n.log)"; tail -n 40 "$B/logs/$n.log"; exit 1; }
     lic="$OUT/licenses/$n"

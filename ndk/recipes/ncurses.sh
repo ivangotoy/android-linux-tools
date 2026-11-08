@@ -30,18 +30,18 @@ build() {
   make -C include DESTDIR="$B/destdir/$NAME" install
   make -C ncurses DESTDIR="$B/destdir/$NAME" install
   make -C misc DESTDIR="$B/destdir/$NAME" install.libs
-  cp -a "$B/destdir/$NAME/usr/." "$DEPROOT/"
-  sed -i "s|^prefix=.*|prefix=$DEPROOT|" "$DEPROOT"/lib/pkgconfig/*.pc
+  mkdir -p "$PKGDIR"
+  cp -a "$B/destdir/$NAME/usr/." "$PKGDIR/"
   # also provide the non-wide names and the include/ncursesw/ layout that some configure scripts expect
-  for l in ncurses; do ln -sf lib${l}w.a "$DEPROOT/lib/lib$l.a"; done
-  ln -sf libncursesw.a "$DEPROOT/lib/libtinfo.a"
-  ln -sf libncursesw.a "$DEPROOT/lib/libtinfow.a"
-  ln -sf ncursesw.pc "$DEPROOT/lib/pkgconfig/ncurses.pc"
+  for l in ncurses; do ln -sf lib${l}w.a "$PKGDIR/lib/lib$l.a"; done
+  ln -sf libncursesw.a "$PKGDIR/lib/libtinfo.a"
+  ln -sf libncursesw.a "$PKGDIR/lib/libtinfow.a"
+  ln -sf ncursesw.pc "$PKGDIR/lib/pkgconfig/ncurses.pc"
   local d h
   for d in ncursesw ncurses; do
-    mkdir -p "$DEPROOT/include/$d"
+    mkdir -p "$PKGDIR/include/$d"
     for h in curses.h ncurses.h ncurses_dll.h term.h termcap.h unctrl.h; do
-      [ -f "$DEPROOT/include/$h" ] && ln -sf "../$h" "$DEPROOT/include/$d/$h"
+      [ -f "$PKGDIR/include/$h" ] && ln -sf "../$h" "$PKGDIR/include/$d/$h"
     done
   done
 }

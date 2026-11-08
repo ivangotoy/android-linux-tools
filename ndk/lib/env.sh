@@ -5,7 +5,10 @@ BUILD_TRIPLE=x86_64-pc-linux-gnu
 TC=/opt/ndk/toolchains/llvm/prebuilt/linux-x86_64
 SYSROOT=$TC/sysroot
 B=/work/build
-DEPROOT=$B/prefix
+# DEPROOT: private sysroot of the recipe being built (only its declared dependencies, set by build.sh)
+# PKGDIR:  where a library recipe installs its headers/.a/.pc for dependants
+DEPROOT=${DEPROOT:-$B/sysroot/none}
+PKGDIR=${PKGDIR:-$B/pkg/none}
 OUT=/work/out
 DL=/work/dl
 SRCROOT=/src
@@ -54,17 +57,17 @@ configure_std() {
   ./configure "${CONFIGURE_HOST[@]}" "$@"
 }
 
-# install_lib: make install DESTDIR into a scratch dir, then merge usr/ into $DEPROOT (headers, .a, .pc)
+# install_lib [make args/targets, default: install]: make DESTDIR into a scratch dir, then merge usr/ into $PKGDIR (headers, .a, .pc)
 install_lib() {
   local d="$B/destdir/$NAME"
   rm -rf "$d"
-  make DESTDIR="$d" "$@" install
+  [ $# -gt 0 ] || set -- install
+  make DESTDIR="$d" "$@"
   if [ -d "$d/usr" ]; then
-    mkdir -p "$DEPROOT"
-    cp -a "$d/usr/." "$DEPROOT/"
+    mkdir -p "$PKGDIR"
+    cp -a "$d/usr/." "$PKGDIR/"
   fi
-  find "$DEPROOT/lib" -name '*.la' -delete 2>/dev/null || true
-  sed -i "s|^prefix=.*|prefix=$DEPROOT|" "$DEPROOT"/lib/pkgconfig/*.pc 2>/dev/null || true
+  find "$PKGDIR" -name '*.la' -delete 2>/dev/null || true
 }
 
 # install_bin FILE [NAME]: strip and place a target executable into /work/out/bin
