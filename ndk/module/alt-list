@@ -3,7 +3,7 @@
 #   alt-list      installed command names, renamed ones annotated
 #   alt-list -m   machine map: "<tool> <installed-name> <device-path-or->" per line
 #   alt-list -r   renamed tools only
-# v2.2+: the map is in the mounted /system tree, readable by every uid (/data/adb is root-only)
+# v2.2+: the map is in the mounted /system tree, readable by every uid (the module directory is root-only)
 ALTDIR=/system/etc/android-linux-tools
 MAP="$ALTDIR/etc/alt-tools.map"
 if [ ! -r "$MAP" ]; then
