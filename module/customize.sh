@@ -75,17 +75,25 @@ set_perm_recursive "$MODPATH" 0 0 0755 0644
 set_perm_recursive "$MODPATH/system/bin" 0 2000 0755 0755
 set_perm_recursive "$MODPATH/libexec" 0 0 0755 0755
 set_perm_recursive "$MODPATH/share/android-linux-tools" 0 0 0755 0755
-set_perm "$MODPATH/lib/ld-musl-aarch64.so.1" 0 0 0755
-
-if [ ! -L "$MODPATH/lib/libc.musl-aarch64.so.1" ]; then
-  rm -f "$MODPATH/lib/libc.musl-aarch64.so.1"
-  ln -s ld-musl-aarch64.so.1 "$MODPATH/lib/libc.musl-aarch64.so.1"
+# Alpine (musl) tools only: bundled musl loader. NDK (bionic) tools use /system/bin/linker64 or are static.
+if [ -f "$MODPATH/lib/ld-musl-aarch64.so.1" ]; then
+  set_perm "$MODPATH/lib/ld-musl-aarch64.so.1" 0 0 0755
+  if [ ! -L "$MODPATH/lib/libc.musl-aarch64.so.1" ]; then
+    rm -f "$MODPATH/lib/libc.musl-aarch64.so.1"
+    ln -s ld-musl-aarch64.so.1 "$MODPATH/lib/libc.musl-aarch64.so.1"
+  fi
+  chcon -h u:object_r:system_file:s0 "$MODPATH/lib/libc.musl-aarch64.so.1" 2>/dev/null
 fi
-chcon -h u:object_r:system_file:s0 "$MODPATH/lib/libc.musl-aarch64.so.1" 2>/dev/null
 
 rm -f "$MODPATH/system/etc/resolv.conf"
+# The resolv.conf overlay is only needed by remaining Alpine (musl) network tools; NDK tools resolve
+# names through bionic/netd. The build ships share/android-linux-tools/resolv-refresh only then.
 alt_rc=""
-for alt_e in /system/etc/resolv.conf /etc/resolv.conf; do
+if [ ! -f "$MODPATH/share/android-linux-tools/resolv-refresh" ]; then
+  alt_rc=none
+  ui_print "- No musl network tools: no resolv.conf overlay (names resolve through Android netd)"
+fi
+[ -n "$alt_rc" ] || for alt_e in /system/etc/resolv.conf /etc/resolv.conf; do
   if [ -e "$alt_e" ] || [ -L "$alt_e" ]; then
     case "$(readlink "$alt_e" 2>/dev/null)" in
       "$ALT_MODDIR"/*) ;;
@@ -93,7 +101,9 @@ for alt_e in /system/etc/resolv.conf /etc/resolv.conf; do
     esac
   fi
 done
-if [ -n "$alt_rc" ]; then
+if [ "$alt_rc" = none ]; then
+  :
+elif [ -n "$alt_rc" ]; then
   ui_print "- Device already has $alt_rc: not overlaying it"
 else
   mkdir -p "$MODPATH/system/etc"

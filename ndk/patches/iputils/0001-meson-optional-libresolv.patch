@@ -1,0 +1,18 @@
+Subject: meson: libresolv is optional
+
+Why: bionic has its resolver in libc and the NDK ships no libresolv, so the required
+cc.find_library('resolv') makes meson setup fail for Android.
+Source: written for this module from the survey of iputils 20250605 (meson.build); same effect
+as the "empty libresolv.a" workaround, without adding a fake library.
+
+--- a/meson.build
++++ b/meson.build
+@@ -91,7 +91,7 @@
+ endif
+ 
+ m_dep = cc.find_library('m')
+-resolv_dep = cc.find_library('resolv')
++resolv_dep = cc.find_library('resolv', required : false)
+ if cc.has_function('clock_gettime')
+ 	rt_dep = cc.find_library('disabler-appears-to-disable-executable-build', required : false)
+ else

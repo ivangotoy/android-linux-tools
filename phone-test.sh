@@ -150,6 +150,24 @@ kchk() {
   fi
 }
 
+ORIGINS="$MODDIR/share/android-linux-tools/origins.txt"
+# origin TOOL: ndk|alpine (v2 modules); empty for v1 modules without origins.txt
+origin() {
+  [ -r "$ORIGINS" ] || return 0
+  while read -r ot oo ov ol; do
+    if [ "$ot" = "$1" ]; then
+      printf '%s\n' "$oo"
+      break
+    fi
+  done < "$ORIGINS"
+}
+if [ -r "$ORIGINS" ]; then
+  echo "== origins (tool installed-name origin version linkage)"
+  grep -v '^#' "$ORIGINS" | while read -r ot oo ov ol; do
+    echo "ORIGIN $ot $(tn "$ot") $oo $ov $ol"
+  done
+fi
+
 echo "== installed tools (alt-list)"
 W=/data/local/tmp/alttoolstest.$$
 mkdir -p "$W"
@@ -181,6 +199,7 @@ vchk conntrack 'conntrack v[0-9]' --version
 vchk nfct 'nfct|usage' --version
 vchk wg 'wireguard-tools v[0-9]' --version
 vchk bridge 'bridge utility, v?[0-9]' -V
+vchk ethtool-ng 'ethtool version [0-9]' --version
 vchk ip-ng 'utility, iproute2-v?[0-9]' -V
 vchk tc-ng 'utility, iproute2-v?[0-9]' -V
 vchk ss-ng 'utility, iproute2-v?[0-9]' -V
@@ -199,6 +218,7 @@ vchk blkid-ng 'blkid from util-linux' -V
 vchk findmnt 'findmnt from util-linux' --version
 vchk lscpu 'lscpu from util-linux' --version
 vchk curl 'curl [0-9]' --version
+vchk drill 'drill version [0-9]' -v
 vchk dig 'DiG [0-9]' -v
 vchk host 'host [0-9]' -V
 vchk mtr 'mtr [0-9]' --version
@@ -257,28 +277,52 @@ kchk conntrack-count "CONFIG_NF_CONNTRACK CONFIG_NF_CT_NETLINK" conntrack -C
 kchk wg-show "CONFIG_WIREGUARD" wg show all
 kchk bridge-link "CONFIG_BRIDGE" bridge link
 chk tc-ng-qdisc 'qdisc' tc-ng qdisc show dev lo
+chk ethtool-ng-lo 'Settings for lo|Link detected' ethtool-ng lo
 chk bpftool-version 'bpftool v[0-9]' bpftool version
 chk getfacl-dir 'owner' getfacl /data/local/tmp
 
 echo "== DNS"
-CURL=$(tn curl)
-[ -n "$CURL" ] && ALT_DNS_FORCE=1 "$CURL" --version >/dev/null 2>&1
-if grep -q '^nameserver ' "$MODDIR/etc/resolv.conf" 2>/dev/null; then
-  result ok "dns-resolvconf ($(grep '^nameserver ' "$MODDIR/etc/resolv.conf" | sed 's/^nameserver //' | tr '\n' ' '))"
-  if [ -L /system/etc/resolv.conf ] && grep -q '^nameserver ' /etc/resolv.conf 2>/dev/null; then
-    result ok dns-overlay
-  elif [ -e /system/etc/resolv.conf ] && [ ! -L /system/etc/resolv.conf ]; then
-    result skip dns-overlay "device ships its own /system/etc/resolv.conf"
+if [ -f "$MODDIR/share/android-linux-tools/resolv-refresh" ]; then
+  # v1 resolv.conf overlay, only shipped while some Alpine (musl) network tools remain
+  ALT_DNS_FORCE=1 /system/bin/sh "$MODDIR/share/android-linux-tools/resolv-refresh" >/dev/null 2>&1
+  if grep -q '^nameserver ' "$MODDIR/etc/resolv.conf" 2>/dev/null; then
+    result ok "dns-resolvconf ($(grep '^nameserver ' "$MODDIR/etc/resolv.conf" | sed 's/^nameserver //' | tr '\n' ' '))"
+    if [ -L /system/etc/resolv.conf ] && grep -q '^nameserver ' /etc/resolv.conf 2>/dev/null; then
+      result ok dns-overlay
+    elif [ -e /system/etc/resolv.conf ] && [ ! -L /system/etc/resolv.conf ]; then
+      result skip dns-overlay "device ships its own /system/etc/resolv.conf"
+    else
+      result bad dns-overlay 1 "/etc/resolv.conf does not point to $MODDIR/etc/resolv.conf (overlay not mounted?)"
+    fi
   else
-    result bad dns-overlay 1 "/etc/resolv.conf does not point to $MODDIR/etc/resolv.conf (overlay not mounted?)"
+    result skip dns-resolvconf "no DNS servers found on the active network (offline?)"
   fi
-  chk curl-https '^HTTP/' curl -sI --max-time 20 https://example.com
-  chk dig-short '^[0-9a-f:.]+$' dig +short example.com
 else
-  result skip dns-resolvconf "no DNS servers found on the active network (offline?)"
-  result skip curl-https "no DNS servers"
-  result skip dig-short "no DNS servers"
+  echo "no resolv.conf overlay in this build (all network tools use Android netd)"
 fi
+[ -e /etc/resolv.conf ] && echo "note: /etc/resolv.conf exists ($(readlink /etc/resolv.conf 2>/dev/null || echo file))"
+NS=""
+[ -f "$MODDIR/share/android-linux-tools/dns-servers" ] && NS=$(/system/bin/sh "$MODDIR/share/android-linux-tools/dns-servers" 2>/dev/null | tr '\n' ' ')
+echo "active network DNS servers: ${NS:-none found}"
+# dnschk LABEL REGEX TOOL ARGS...: like chk, but prints the tool origin; SKIP when offline
+dnschk() {
+  dl=$1
+  dp=$2
+  dt=$3
+  shift 3
+  if [ -z "$(tn "$dt")" ]; then
+    result skip "$dl" "$dt not installed"
+    return
+  fi
+  if [ -z "$NS" ] && ! ping -c 1 -W 3 example.com >/dev/null 2>&1; then
+    result skip "$dl" "offline (no DNS servers, ping example.com fails)"
+    return
+  fi
+  chk "$dl [$(origin "$dt")]" "$dp" "$dt" "$@"
+}
+dnschk curl-https '^HTTP/' curl -sI --max-time 20 https://example.com
+dnschk drill-example 'rcode: NOERROR' drill example.com
+dnschk dig-short '^[0-9a-f:.]+$' dig +short example.com
 out=$($TO ping -c 1 -W 3 example.com 2>&1)
 if printf '%s\n' "$out" | grep -qiE '^PING example\.com'; then
   result ok bionic-dns-unaffected

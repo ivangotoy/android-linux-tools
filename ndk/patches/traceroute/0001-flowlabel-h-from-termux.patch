@@ -1,0 +1,25 @@
+Subject: flowlabel.h: do not redefine struct in6_flowlabel_req on Android
+
+Why: bionic's <netinet/in.h> pulls in <linux/in6.h>, which already defines struct
+in6_flowlabel_req, so traceroute's private copy is a redefinition.
+Source: termux-packages packages/traceroute/traceroute-flowlabel.h.patch at commit
+53da8982ee353176c6d56a6a19f49a159305e02c (applied unchanged).
+
+--- a/traceroute/flowlabel.h
++++ b/traceroute/flowlabel.h
+@@ -6,6 +6,7 @@
+    conflicts with "netinet/in.h" .
+ */
+ 
++#ifndef __ANDROID__
+ struct in6_flowlabel_req
+ {
+ 	struct in6_addr	flr_dst;
+@@ -18,6 +19,7 @@
+ 	__u32	__flr_pad;
+ 	/* Options in format of IPV6_PKTOPTIONS */
+ };
++#endif
+ 
+ #define IPV6_FL_A_GET	0
+ #define IPV6_FL_A_PUT	1
