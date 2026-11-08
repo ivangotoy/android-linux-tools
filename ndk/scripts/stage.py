@@ -4,7 +4,7 @@ import sys, os, json, shutil, subprocess, re, hashlib
 
 sys.path.insert(0, '/src/scripts')
 import common
-from common import MODID, MODDIR, LDSO
+from common import MODID, MODDIR, ALTDIR, LDSO
 
 SRC = '/src'
 OUT = '/work/out'
@@ -14,7 +14,10 @@ NEEDS_ALPINE_ONLY = sys.argv[2:] == ['--needs-alpine']
 if FLAVOUR not in common.FLAVOURS:
     raise SystemExit('flavour must be lite or full')
 ST = os.path.join('/work/stage', FLAVOUR, MODID)
-SHARE = os.path.join(ST, 'share', MODID)
+# runtime tree: module system/etc/<MODID>/ = /system/etc/<MODID> on the device (ALTDIR)
+RT = os.path.join(ST, ALTDIR.lstrip('/'))
+LIBEXEC = os.path.join(RT, 'libexec')
+SHARE = os.path.join(RT, 'share', MODID)
 P1 = common.Paths(V1)
 LOCK = common.load(os.path.join(SRC, 'alpine.lock.json'))
 PK = LOCK['packages']
@@ -34,11 +37,11 @@ API = int(os.environ.get('API', '29'))
 NDK_RELEASE = os.environ.get('NDK_RELEASE', '')
 
 EXTRA_ENV = {
-    'mtr': ['export MTR_PACKET="$MODDIR/libexec/mtr-packet"'],
+    'mtr': ['export MTR_PACKET="$ALTDIR/libexec/mtr-packet"'],
     'tmux': ['[ -n "$TMUX_TMPDIR" ] || export TMUX_TMPDIR=/data/local/tmp',
              '[ -n "$SHELL" ] || export SHELL=/system/bin/sh'],
 }
-ALPINE_ENV = {'curl': ['export CURL_CA_BUNDLE="$MODDIR/etc/ssl/cert.pem"']}
+ALPINE_ENV = {'curl': ['export CURL_CA_BUNDLE="$ALTDIR/etc/ssl/cert.pem"']}
 TERMS = ['xterm', 'xterm-256color', 'xterm-color', 'screen', 'screen-256color', 'tmux', 'tmux-256color',
          'linux', 'vt100', 'vt220', 'dumb', 'ansi', 'rxvt', 'rxvt-unicode', 'rxvt-unicode-256color']
 
@@ -121,12 +124,14 @@ if CONF2.get('ALLOW_ALPINE', '1') != '1' and any(e['origin'] == 'alpine' for e i
 # ---- fresh stage
 if os.path.exists(os.path.dirname(ST)):
     shutil.rmtree(os.path.dirname(ST))
-for d in ('system/bin', 'libexec', 'share/terminfo', 'etc/ssl', 'share/' + MODID, 'share/licenses'):
-    os.makedirs(os.path.join(ST, d))
+os.makedirs(os.path.join(ST, 'system', 'bin'))
+os.makedirs(os.path.join(ST, 'share', 'licenses'))
+for d in ('libexec', 'share/terminfo', 'etc/ssl', 'share/' + MODID):
+    os.makedirs(os.path.join(RT, d))
 
 origin = {}
 for e in entries:
-    dst = os.path.join(ST, 'libexec', e['target'])
+    dst = os.path.join(LIBEXEC, e['target'])
     if os.path.exists(dst):
         continue
     if e['origin'] == 'ndk':
@@ -151,7 +156,7 @@ if alpine_targets:
     copyfile(os.path.realpath(os.path.join(P1.unp, 'musl', 'lib', LDSO)), os.path.join(ST, 'lib', LDSO), 0o755)
     origin['lib/' + LDSO] = 'alpine:musl'
     os.symlink(LDSO, os.path.join(ST, 'lib', 'libc.musl-aarch64.so.1'))
-    queue = [os.path.join(ST, 'libexec', t) for t in alpine_targets]
+    queue = [os.path.join(LIBEXEC, t) for t in alpine_targets]
     missing = []
     while queue:
         p = queue.pop(0)
@@ -171,7 +176,7 @@ if alpine_targets:
         raise SystemExit('missing libs: %r' % missing)
     for t in alpine_targets:
         run('patchelf', '--set-interpreter', MODDIR + '/lib/' + LDSO, '--set-rpath', MODDIR + '/lib',
-            os.path.join(ST, 'libexec', t))
+            os.path.join(LIBEXEC, t))
     for l in sorted(os.listdir(os.path.join(ST, 'lib'))):
         p = os.path.join(ST, 'lib', l)
         if os.path.islink(p) or l == LDSO:
@@ -185,9 +190,9 @@ for t in TERMS:
     s = os.path.join(tsrc, t[0], t)
     if not os.path.isfile(s):
         continue  # e.g. rxvt-unicode is no longer in ncurses' terminfo.src; check.py requires the core set
-    copyfile(s, os.path.join(ST, 'share', 'terminfo', t[0], t), 0o644)
+    copyfile(s, os.path.join(RT, 'share', 'terminfo', t[0], t), 0o644)
 origin['data:terminfo'] = 'ndk:ncurses'
-copyfile(os.path.join(OUT, 'data', 'cacert.pem'), os.path.join(ST, 'etc', 'ssl', 'cert.pem'), 0o644)
+copyfile(os.path.join(OUT, 'data', 'cacert.pem'), os.path.join(RT, 'etc', 'ssl', 'cert.pem'), 0o644)
 origin['data:etc/ssl/cert.pem'] = 'ndk:cacert'
 
 # ---- wrappers
@@ -197,19 +202,20 @@ wrappers = []
 for e in entries:
     if e['name'] is None:
         continue
-    lines = ['#!/system/bin/sh', 'MODDIR=' + MODDIR, 'export TERMINFO="$MODDIR/share/terminfo"']
+    # every path is under ALTDIR (/system/etc/<MODID>, mounted by the root manager), never /data/adb (root-only)
+    lines = ['#!/system/bin/sh', 'ALTDIR=' + ALTDIR, 'export TERMINFO="$ALTDIR/share/terminfo"']
     if e['origin'] == 'alpine':
-        lines.append('export SSL_CERT_FILE="$MODDIR/etc/ssl/cert.pem"')
+        lines.append('export SSL_CERT_FILE="$ALTDIR/etc/ssl/cert.pem"')
     lines.append('[ -n "$TMPDIR" ] || export TMPDIR=/data/local/tmp')
     lines += EXTRA_ENV.get(e['name'], [])
     if e['origin'] == 'alpine':
         lines += ALPINE_ENV.get(e['name'], [])
         if 'dns' in e['flags']:
-            lines.append('[ "${USER_ID:-$(id -u)}" = 0 ] && /system/bin/sh "$MODDIR/share/%s/resolv-refresh" >/dev/null 2>&1' % MODID)
-    exe = '"$MODDIR/libexec/%s" %s' % (e['target'], e['args'] + ' ' if e['args'] else '')
+            lines.append('[ "${USER_ID:-$(id -u)}" = 0 ] && /system/bin/sh "$ALTDIR/share/%s/resolv-refresh" >/dev/null 2>&1' % MODID)
+    exe = '"$ALTDIR/libexec/%s" %s' % (e['target'], e['args'] + ' ' if e['args'] else '')
     if e['origin'] == 'ndk' and e['name'] == 'curl':
         lines += ['# CA certificates: bundled Mozilla bundle plus the Android system store (mbedTLS loads every file in --capath)',
-                  'ALT_CA="--cacert $MODDIR/etc/ssl/cert.pem"',
+                  'ALT_CA="--cacert $ALTDIR/etc/ssl/cert.pem"',
                   'if [ -d /system/etc/security/cacerts ]; then',
                   '  ALT_CA="$ALT_CA --capath /system/etc/security/cacerts"',
                   'elif [ -d /apex/com.android.conscrypt/cacerts ]; then',
@@ -224,7 +230,7 @@ for e in entries:
         lines += ['# BIND dig/host: no resolv.conf on Android. Without @server (dig) or a server argument (host) they use',
                   '# ALT_DNS_SERVERS (patched dighost.c): the DNS servers of the active default network.',
                   'if [ -z "$ALT_DNS_SERVERS" ]; then',
-                  '  ALT_DNS_SERVERS=$(/system/bin/sh "$MODDIR/share/%s/dns-servers" 2>/dev/null | tr \'\\n\' \' \')' % MODID,
+                  '  ALT_DNS_SERVERS=$(/system/bin/sh "$ALTDIR/share/%s/dns-servers" 2>/dev/null | tr \'\\n\' \' \')' % MODID,
                   '  export ALT_DNS_SERVERS',
                   'fi',
                   'exec %s"$@"' % exe]
@@ -235,7 +241,7 @@ for e in entries:
                   'case " $* " in',
                   '  *" @"*) exec %s"$@" ;;' % exe,
                   'esac',
-                  'ALT_NS=$(/system/bin/sh "$MODDIR/share/%s/dns-servers" 2>/dev/null | head -n 1)' % MODID,
+                  'ALT_NS=$(/system/bin/sh "$ALTDIR/share/%s/dns-servers" 2>/dev/null | head -n 1)' % MODID,
                   'if [ -n "$ALT_NS" ]; then',
                   '  exec %s"$@" "@$ALT_NS"' % exe,
                   'fi',
@@ -244,7 +250,7 @@ for e in entries:
         lines.append('exec %s"$@"' % exe)
     write(os.path.join(ST, 'system', 'bin', e['name']), '\n'.join(lines) + '\n', 0o755)
     wrappers.append(e['name'])
-copyfile(os.path.join(SRC, 'module', 'share', 'alt-list'), os.path.join(ST, 'system', 'bin', 'alt-list'), 0o755)
+copyfile(os.path.join(SRC, 'ndk', 'module', 'alt-list'), os.path.join(ST, 'system', 'bin', 'alt-list'), 0o755)
 wrappers.append('alt-list')
 if need_resolv:
     copyfile(os.path.join(SRC, 'module', 'share', 'resolv-refresh'), os.path.join(SHARE, 'resolv-refresh'), 0o755)
@@ -258,7 +264,7 @@ copyfile(os.path.join(SRC, 'module', 'customize.sh') if alpine_targets else
 for f in ('update-binary', 'updater-script'):
     copyfile(os.path.join(SRC, 'module', 'META-INF', 'com', 'google', 'android', f),
              os.path.join(ST, 'META-INF', 'com', 'google', 'android', f), 0o644)
-write(os.path.join(ST, 'etc', 'alt-tools.map'), ''.join('%s %s -\n' % (w, w) for w in sorted(wrappers)), 0o644)
+write(os.path.join(RT, 'etc', 'alt-tools.map'), ''.join('%s %s -\n' % (w, w) for w in sorted(wrappers)), 0o644)
 
 # ---- per-tool records
 def linkage_of(path):
@@ -269,7 +275,7 @@ def linkage_of(path):
 tools_out = []
 for e in entries:
     rec = {'tool': e['name'], 'origin': e['origin'], 'libexec': e['target'], 'args': e['args']}
-    p = os.path.join(ST, 'libexec', e['target'])
+    p = os.path.join(LIBEXEC, e['target'])
     if e['origin'] == 'ndk':
         mt = meta[e['recipe']]
         rec.update(recipe=e['recipe'], version=mt['version'], source_url=mt['url'], source_sha256=mt['sha256'],
@@ -353,11 +359,11 @@ write(os.path.join(ST, 'module.prop'),
       % (MODID, VERSION, VCODE, fdesc, ndk_n, alp_desc, main, FLAVOUR), 0o644)
 
 manifest = {'module': MODID, 'version': VERSION, 'versionCode': VCODE, 'flavour': FLAVOUR, 'arch': 'aarch64',
-            'ndk': NDK_RELEASE, 'api': API, 'alpine_branch': LOCK['alpine_branch'], 'moddir': MODDIR,
+            'ndk': NDK_RELEASE, 'api': API, 'alpine_branch': LOCK['alpine_branch'], 'moddir': MODDIR, 'altdir': ALTDIR,
             'tools': tools_out, 'files': dict(sorted(origin.items())), 'licenses': lic_rows,
             'resolv_conf_overlay': need_resolv}
 common.dump(manifest, os.path.join(SHARE, 'MANIFEST.json'))
-common.dump({'flavour': FLAVOUR, 'version': VERSION, 'versionCode': VCODE, 'stage': ST, 'tools': tools_out,
+common.dump({'flavour': FLAVOUR, 'version': VERSION, 'versionCode': VCODE, 'stage': ST, 'altdir': ALTDIR, 'tools': tools_out,
              'wrappers': sorted(wrappers), 'origin': origin, 'need_resolv': need_resolv},
             os.path.join('/work/stage', 'stage-%s.json' % FLAVOUR))
 print('staged %s %s: %d wrappers (%d ndk, %d alpine), resolv overlay %s' % (

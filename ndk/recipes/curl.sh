@@ -10,7 +10,7 @@ build() {
   configure_std --with-mbedtls="$DEPROOT" --with-zlib --without-libpsl --without-libidn2 --without-nghttp2 \
     --without-brotli --without-zstd --without-libssh2 --without-librtmp --disable-ldap --disable-ldaps \
     --enable-threaded-resolver --disable-ares --disable-manual --disable-docs \
-    --with-ca-bundle=/data/adb/modules/android-linux-tools/etc/ssl/cert.pem \
+    --with-ca-bundle=/system/etc/android-linux-tools/etc/ssl/cert.pem \
     --without-ca-path --without-ca-fallback
   make -j"$JOBS" LDFLAGS="$LT_LDFLAGS"
   install_bin src/curl curl

@@ -8,7 +8,7 @@ build() {
   # OPENSSLDIR: default CA file is <dir>/cert.pem = the module's Mozilla bundle (dig +tls verification)
   env -u CFLAGS -u CXXFLAGS -u LDFLAGS ANDROID_NDK_ROOT=/opt/ndk PATH="$TC/bin:$PATH" CC=clang \
     ./Configure android-arm64 -D__ANDROID_API__=$API --prefix=/usr --libdir=lib \
-    --openssldir=/data/adb/modules/android-linux-tools/etc/ssl \
+    --openssldir=/system/etc/android-linux-tools/etc/ssl \
     no-shared no-module no-engine no-dso no-tests no-docs no-apps no-ui-console no-ssl3 no-comp \
     $CFLAGS
   # crypto/buildinf.h would embed the full compiler command line (including the build paths of

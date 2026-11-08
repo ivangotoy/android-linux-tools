@@ -3,7 +3,7 @@ URL=https://ftp.gnu.org/gnu/ncurses/ncurses-$VERSION.tar.gz
 SHA256=355b4cbbed880b0381a04c46617b7656e362585d52e9cf84a67e2009b749ff11
 CHECKSUM_SOURCE="GNU detached signature $URL.sig, Thomas E. Dickey key 19882D92DDA4C400C22C0D56CC2AF4472167BE03"
 LICENSE=X11
-MODTERMINFO=/data/adb/modules/android-linux-tools/share/terminfo
+MODTERMINFO=/system/etc/android-linux-tools/share/terminfo
 TERMS="xterm,xterm-256color,xterm-color,screen,screen-256color,tmux,tmux-256color,linux,vt100,vt220,dumb,ansi,rxvt,rxvt-unicode,rxvt-unicode-256color"
 build() {
   # host tic (same source) to compile the terminfo entries shipped in share/terminfo

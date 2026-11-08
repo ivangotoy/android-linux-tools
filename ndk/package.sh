@@ -48,6 +48,10 @@ for fl in lite full; do
     echo "unexpected entries in $zipf" >&2
     exit 1
   fi
+  log "layout test $fl (install simulation, non-root view of /system/etc/$MODID)"
+  rm -rf "$B/tmp/layout-$fl"
+  python3 -I /src/ndk/scripts/layout_test.py "$zipf" "$B/tmp/layout-$fl" | tee "$STAGE/layout_test-$fl.txt"
+  rm -rf "$B/tmp/layout-$fl"
 done
 cp /src/phone-test.sh "$DIST/phone-test.sh"
 chmod 0755 "$DIST/phone-test.sh"

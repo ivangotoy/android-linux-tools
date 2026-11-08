@@ -4,11 +4,15 @@ import sys, os, subprocess, re, itertools
 
 sys.path.insert(0, '/src/scripts')
 import common
-from common import MODID, MODDIR, LDSO
+from common import MODID, MODDIR, ALTDIR, LDSO
 
 FLAVOUR = sys.argv[1]
 SJ = common.load('/work/stage/stage-%s.json' % FLAVOUR)
 ST = SJ['stage']
+# runtime tree: module system/etc/<MODID>/ = ALTDIR on the device; every ELF must be in its libexec/
+RT = os.path.join(ST, ALTDIR.lstrip('/'))
+LIBEXEC = os.path.join(RT, 'libexec')
+SHARE = os.path.join(RT, 'share', MODID)
 MUSL_INTERP = MODDIR + '/lib/' + LDSO
 BIONIC_INTERP = '/system/bin/linker64'
 BIONIC_LIBS = {'libc.so', 'libm.so', 'libdl.so', 'liblog.so', 'libz.so'}
@@ -61,8 +65,8 @@ def syntax(path):
 origin = SJ['origin']
 libdir = os.path.join(ST, 'lib')
 present = set(os.listdir(libdir)) if os.path.isdir(libdir) else set()
-for f in sorted(os.listdir(os.path.join(ST, 'libexec'))):
-    p = os.path.join(ST, 'libexec', f)
+for f in sorted(os.listdir(LIBEXEC)):
+    p = os.path.join(LIBEXEC, f)
     o = origin.get('libexec/' + f, '?')
     e = elf(p)
     fo = sh('file', '-b', p).stdout.strip()
@@ -75,6 +79,9 @@ for f in sorted(os.listdir(os.path.join(ST, 'libexec'))):
     hp = [h.decode() for h in HOSTPATHS if h in data]
     if hp:
         err('%s contains host paths %s' % (f, hp))
+    # compiled-in runtime paths (terminfo, CA bundle, openssldir) must be under ALTDIR, not /data/adb (0700 root)
+    if o.startswith('ndk:') and b'/data/adb' in data:
+        err('%s contains a /data/adb path (unreadable for non-root users)' % f)
     if o.startswith('ndk:'):
         entry['android_api_note'] = android_api(p)
         if entry['android_api_note'] is None:
@@ -128,18 +135,24 @@ for f in sorted(present):
         err('lib needs rpath: ' + f)
     res['libs'][f] = e
 
-# every ELF of the module must be a libexec program (no stray binaries or libraries elsewhere)
+# every ELF of the module must be a program in ALTDIR/libexec (no stray binaries or libraries elsewhere)
 stray = []
 for dirpath, dirs, files in os.walk(ST):
     dirs.sort()
     for f in sorted(files):
         fp = os.path.join(dirpath, f)
-        if os.path.islink(fp) or os.path.dirname(fp) == os.path.join(ST, 'libexec'):
+        if os.path.islink(fp) or os.path.dirname(fp) == LIBEXEC:
             continue
         with open(fp, 'rb') as fh:
             if fh.read(4) == b'\x7fELF':
                 stray.append(os.path.relpath(fp, ST))
 res['elf_outside_libexec'] = stray
+if stray:
+    err('ELF files outside %s/libexec: %s' % (ALTDIR, ' '.join(stray)))
+# v2.1 layout leftovers: runtime files directly in the module directory (/data/adb, root-only)
+for old in ('libexec', 'share/terminfo', 'share/' + MODID, 'etc/ssl', 'etc/alt-tools.map'):
+    if os.path.lexists(os.path.join(ST, old)):
+        err('runtime path %s is in the module directory (root-only on the device), not under %s' % (old, ALTDIR))
 if not ALLOW_ALPINE:
     # ndk/build.conf ALLOW_ALPINE=0: no Alpine/musl program, library, loader or resolv.conf overlay
     for f, v in sorted(res['libexec'].items()):
@@ -147,14 +160,12 @@ if not ALLOW_ALPINE:
             err('ALLOW_ALPINE=0 but libexec/%s has origin %s' % (f, v['origin']))
     if os.path.isdir(libdir):
         err('ALLOW_ALPINE=0 but lib/ exists: %s' % ' '.join(sorted(present)))
-    if stray:
-        err('ELF files outside libexec: %s' % ' '.join(stray))
-    if os.path.exists(os.path.join(ST, 'share', MODID, 'resolv-refresh')) or SJ['need_resolv']:
+    if os.path.exists(os.path.join(SHARE, 'resolv-refresh')) or SJ['need_resolv']:
         err('ALLOW_ALPINE=0 but the resolv.conf overlay (resolv-refresh) is shipped')
     if re.search(r'ld-musl|system/etc/resolv\.conf', open(os.path.join(ST, 'customize.sh')).read()):
         err('ALLOW_ALPINE=0 but customize.sh still handles musl/resolv.conf')
 
-has_bpftool = os.path.exists(os.path.join(ST, 'libexec', 'bpftool'))
+has_bpftool = os.path.exists(os.path.join(LIBEXEC, 'bpftool'))
 has_llvm = any(n.startswith('libLLVM') for n in present)
 bpf_origin = origin.get('libexec/bpftool', '')
 res['bpftool'] = {'present': has_bpftool, 'origin': bpf_origin, 'libLLVM': has_llvm}
@@ -170,10 +181,13 @@ for w in sorted(os.listdir(os.path.join(ST, 'system', 'bin'))):
     if w == 'alt-list':
         target_ok = True
     else:
-        m = re.search(r'exec "\$MODDIR/libexec/([^"]+)"', txt)
-        target_ok = bool(m) and os.path.isfile(os.path.join(ST, 'libexec', m.group(1)))
-        if ('MODDIR=' + MODDIR + '\n') not in txt:
-            err('wrapper MODDIR wrong: ' + w)
+        m = re.search(r'exec "\$ALTDIR/libexec/([^"]+)"', txt)
+        target_ok = bool(m) and os.path.isfile(os.path.join(LIBEXEC, m.group(1)))
+        if ('ALTDIR=' + ALTDIR + '\n') not in txt:
+            err('wrapper ALTDIR wrong: ' + w)
+    # runtime files must be reachable by every uid: no $MODDIR and no /data/adb path in any wrapper
+    if 'MODDIR' in txt or '/data/adb' in txt:
+        err('wrapper %s references $MODDIR or /data/adb (root-only) for runtime files' % w)
     shadow = w in FORBID
     res['wrappers'][w] = {'syntax': syn, 'target_ok': target_ok, 'static_forbidden_name': shadow,
                           'resolv_refresh': 'resolv-refresh' in txt}
@@ -182,23 +196,28 @@ for w in sorted(os.listdir(os.path.join(ST, 'system', 'bin'))):
     if not os.access(p, os.X_OK):
         err('wrapper not executable: ' + w)
     if 'resolv-refresh' in txt:
-        t = re.search(r'exec "\$MODDIR/libexec/([^"]+)"', txt).group(1)
+        t = re.search(r'exec "\$ALTDIR/libexec/([^"]+)"', txt).group(1)
         if not origin.get('libexec/' + t, '').startswith('alpine:'):
             err('resolv-refresh used by NDK tool wrapper ' + w)
 
-scripts = ['customize.sh', 'META-INF/com/google/android/update-binary', 'share/%s/phone-test.sh' % MODID]
+RTREL = os.path.relpath(SHARE, ST)
+scripts = ['customize.sh', 'META-INF/com/google/android/update-binary', RTREL + '/phone-test.sh']
 for s in ('resolv-refresh', 'dns-servers'):
-    if os.path.exists(os.path.join(ST, 'share', MODID, s)):
-        scripts.append('share/%s/%s' % (MODID, s))
+    if os.path.exists(os.path.join(SHARE, s)):
+        scripts.append(RTREL + '/' + s)
 for s in scripts:
     res['scripts'][s] = syntax(os.path.join(ST, s))
-if SJ['need_resolv'] != os.path.exists(os.path.join(ST, 'share', MODID, 'resolv-refresh')):
+if SJ['need_resolv'] != os.path.exists(os.path.join(SHARE, 'resolv-refresh')):
     err('resolv-refresh presence does not match need_resolv')
 cz = open(os.path.join(ST, 'customize.sh')).read()
 for bad in (r'\bksud\b', r'\bmagisk\b\s+--', r'\bapd\b', r'\bbusybox\b'):
     if re.search(bad, cz):
         err('customize.sh uses manager-specific command ' + bad)
-pt = open(os.path.join(ST, 'share', MODID, 'phone-test.sh')).read()
+if os.path.exists(os.path.join(SHARE, 'dns-servers')) and '/data/adb' in open(os.path.join(SHARE, 'dns-servers')).read():
+    err('dns-servers references /data/adb')
+if not re.search(r'set_perm_recursive "\$ALT_RT/libexec" 0 0 0755 0755 "\$ALT_CTX"', cz) or 'ALT_CTX=u:object_r:system_file:s0' not in cz:
+    err('customize.sh does not set root:root 0755 system_file on the runtime libexec')
+pt = open(os.path.join(SHARE, 'phone-test.sh')).read()
 if re.search(r'^\s*(function\s+)?hash\s*\(\)', pt, re.M):
     err('phone-test.sh defines a function named hash')
 for bad in ('post-fs-data.sh', 'service.sh', 'post-mount.sh', 'boot-completed.sh', 'system.prop', 'sepolicy.rule'):
@@ -214,9 +233,9 @@ if not prop.get('versionCode', '').isdigit() or int(prop['versionCode']) <= 3240
     err('versionCode not numeric or not above v1 (32401)')
 res['module_prop'] = prop
 for t in ('xterm', 'xterm-256color', 'screen', 'tmux', 'linux', 'vt100'):
-    if not os.path.isfile(os.path.join(ST, 'share', 'terminfo', t[0], t)):
+    if not os.path.isfile(os.path.join(RT, 'share', 'terminfo', t[0], t)):
         err('terminfo missing ' + t)
-if os.path.getsize(os.path.join(ST, 'etc', 'ssl', 'cert.pem')) < 100000:
+if os.path.getsize(os.path.join(RT, 'etc', 'ssl', 'cert.pem')) < 100000:
     err('CA bundle too small')
 
 
@@ -278,7 +297,7 @@ for line in pt.splitlines():
         res['version_audit'][tool] = {'pattern': pat, 'status': 'not in flavour'}
         continue
     t = target_of[tool]
-    binp = os.path.join(ST, 'libexec', t['libexec'])
+    binp = os.path.join(LIBEXEC, t['libexec'])
     rx = re.compile(pat, re.I)
     files = closure(binp)
     allstr = [x for f in files for x in strings(f)]
