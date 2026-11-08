@@ -1,0 +1,50 @@
+Subject: build without pthread_cancel() (bionic)
+
+Why: bionic does not implement pthread_cancel()/pthread_testcancel(). configure's POSIX threads
+probe (config/pthread.c, pasted into configure) uses them, so configure aborts with "can't figure
+out how to compile with POSIX threads"; iftop.c only cancels the resolver thread right before
+main() returns, which process exit does anyway. On __ANDROID__ the probe detaches the worker
+instead and iftop.c skips the cancel.
+Source: written for this module, after the survey of Zackptg5/Cross-Compiled-Binaries-Android,
+which instead emulates pthread_cancel with a signal (build_script/patches/Bpthread.h); not doing
+that keeps the change to two #ifdefs.
+
+--- a/config/pthread.c
++++ b/config/pthread.c
+@@ -26,7 +26,9 @@
+     pthread_mutex_unlock(&mtx);
+     while (1) {
+         sleep(1);
++#ifndef __ANDROID__
+         pthread_testcancel();
++#endif
+     }
+ }
+ 
+@@ -55,8 +57,13 @@
+         return -1;
+     }
+ 
++#ifdef __ANDROID__
++    /* bionic has no pthread_cancel(): the worker is left running and ends with the process */
++    if ((res = pthread_detach(thr)) != 0) {
++#else
+     if ((res = pthread_cancel(thr)) != 0
+         || (res = pthread_join(thr, NULL)) != 0) {
++#endif
+         fprintf(stderr, "%s\n", strerror(res));
+         return -1;
+     }
+--- a/iftop.c
++++ b/iftop.c
+@@ -838,7 +838,10 @@
+       ui_loop();
+     }
+ 
++#ifndef __ANDROID__
++    /* bionic has no pthread_cancel(); the resolver thread ends when main() returns */
+     pthread_cancel(thread);
++#endif
+ 
+     ui_finish();
+     

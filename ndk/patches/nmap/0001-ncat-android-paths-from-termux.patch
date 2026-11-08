@@ -1,0 +1,67 @@
+Subject: ncat on Android: /system/bin/sh, /data/local/tmp, SUN_LEN
+
+Why: Android has no /bin/sh and no /tmp, so ncat -c/--sh-exec and the DGRAM unix-socket temp name
+fail; bionic's <sys/un.h> only defines SUN_LEN under __USE_BSD/__USE_GNU.
+Source: termux-packages packages/nmap/ncat-ncat_connect.c.patch, ncat-ncat_main.c.patch,
+ncat-ncat_posix.c.patch and ncat-sockaddr_u.h.patch at commit
+7687cc4fbd5dd833e3709e86c2cd8b9159c9e005, with @TERMUX_PREFIX@/bin/sh -> /system/bin/sh and
+@TERMUX_PREFIX@/tmp -> /data/local/tmp.
+
+--- a/ncat/ncat_connect.c
++++ b/ncat/ncat_connect.c
+@@ -1048,7 +1048,7 @@
+               char *tmpdir = getenv("TMPDIR");
+               size_t size=0, offset=0;
+               strbuf_sprintf(&tmp_name, &size, &offset, "%s/ncat.XXXXXX",
+-                  tmpdir ? tmpdir : "/tmp");
++                  tmpdir ? tmpdir : "/data/local/tmp");
+               if (mkstemp(tmp_name) == -1) {
+                 bye("Failed to create name for temporary DGRAM source Unix domain socket (mkstemp).");
+               }
+--- a/ncat/ncat_main.c
++++ b/ncat/ncat_main.c
+@@ -593,7 +593,7 @@
+ "      --vsock                Use vsock sockets only\n"
+ #endif
+ "  -C, --crlf                 Use CRLF for EOL sequence\n"
+-"  -c, --sh-exec <command>    Executes the given command via /bin/sh\n"
++"  -c, --sh-exec <command>    Executes the given command via /system/bin/sh\n"
+ "  -e, --exec <command>       Executes the given command\n"
+ #ifdef HAVE_LUA
+ "      --lua-exec <filename>  Executes the given Lua script\n"
+@@ -1049,8 +1049,8 @@
+ 
+ #ifndef WIN32
+     /* See if the shell is executable before we get deep into this */
+-    if (o.execmode == EXEC_SHELL && access("/bin/sh", X_OK) == -1)
+-        bye("/bin/sh is not executable, so `-c' won't work.");
++    if (o.execmode == EXEC_SHELL && access("/system/bin/sh", X_OK) == -1)
++        bye("/system/bin/sh is not executable, so `-c' won't work.");
+ #endif
+ 
+     if (targetaddrs->addr.storage.ss_family != AF_UNSPEC) {
+--- a/ncat/ncat_posix.c
++++ b/ncat/ncat_posix.c
+@@ -224,7 +224,7 @@
+         char **cmdargs;
+ 
+         case EXEC_SHELL:
+-            execl("/bin/sh", "sh", "-c", cmdexec, (void *) NULL);
++            execl("/system/bin/sh", "sh", "-c", cmdexec, (void *) NULL);
+             break;
+ #ifdef HAVE_LUA
+         case EXEC_LUA:
+--- a/ncat/sockaddr_u.h
++++ b/ncat/sockaddr_u.h
+@@ -75,6 +75,11 @@
+ #endif
+ #if HAVE_SYS_UN_H
+ # include <sys/un.h>
++# ifndef SUN_LEN
++#  include <string.h>
++#  define SUN_LEN(ptr) ((sizeof(*(ptr)) - sizeof((ptr)->sun_path)) \
++                        + strlen((ptr)->sun_path))
++# endif
+ #endif
+ #if HAVE_LINUX_VM_SOCKETS_H
+ #include <linux/vm_sockets.h>
