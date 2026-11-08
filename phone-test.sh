@@ -100,15 +100,22 @@ fchk() {
   fi
 }
 
+# The kernel config is ~190 KB: too big for one argument (MAX_ARG_STRLEN is
+# 128 KB and mksh runs printf as an external command), so keep it in a file.
 KCONF=""
+KCONF_FILE=/data/local/tmp/.alt-phone-test-kconfig.$$
 if [ -r /proc/config.gz ]; then
-  KCONF=$(gzip -dc /proc/config.gz 2>/dev/null || zcat /proc/config.gz 2>/dev/null)
+  if { gzip -dc /proc/config.gz || zcat /proc/config.gz; } > "$KCONF_FILE" 2>/dev/null && [ -s "$KCONF_FILE" ]; then
+    KCONF=$KCONF_FILE
+  else
+    rm -f "$KCONF_FILE"
+  fi
 fi
 # kfeat CONFIG_A [CONFIG_B...]: 0 = all present (y/m), 1 = one absent, 2 = unknown (no /proc/config.gz)
 kfeat() {
   [ -n "$KCONF" ] || return 2
   for k in "$@"; do
-    printf '%s\n' "$KCONF" | grep -qE "^$k=(y|m)$" || { KMISS=$k; return 1; }
+    grep -qE "^$k=(y|m)$" "$KCONF" || { KMISS=$k; return 1; }
   done
   return 0
 }
@@ -193,9 +200,9 @@ vchk nfct 'nfct|usage' --version
 vchk wg 'wireguard-tools v[0-9]' --version
 vchk bridge 'bridge utility, v?[0-9]' -V
 vchk ethtool-ng 'ethtool version [0-9]' --version
-vchk ip-ng 'utility, iproute2-[0-9]' -V
-vchk tc-ng 'utility, iproute2-[0-9]' -V
-vchk ss-ng 'utility, iproute2-[0-9]' -V
+vchk ip-ng 'utility, iproute2-v?[0-9]' -V
+vchk tc-ng 'utility, iproute2-v?[0-9]' -V
+vchk ss-ng 'utility, iproute2-v?[0-9]' -V
 vchk bpftool 'bpftool v[0-9]' version
 vchk getfacl 'getfacl [0-9]' --version
 vchk setfacl 'setfacl [0-9]' --version
@@ -359,5 +366,6 @@ rm -f /data/local/tmp/tmux-0/alttoolstest
 [ "$TMUXDIR_EXISTED" = 0 ] && rmdir /data/local/tmp/tmux-0 2>/dev/null
 echo "renamed on this device: $(alt-list -r 2>/dev/null | tr '\n' ';')"
 echo "SKIPPED $SKIP"
+[ -n "$KCONF" ] && rm -f "$KCONF"
 echo "TOTAL pass=$PASS fail=$FAIL"
 [ "$FAIL" -eq 0 ]
