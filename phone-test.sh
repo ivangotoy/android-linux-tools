@@ -439,7 +439,7 @@ if [ -n "$IPSET" ] && "$IPSET" list -n alttoolstest >/dev/null 2>&1; then
 fi
 kchk conntrack-count "CONFIG_NF_CONNTRACK CONFIG_NF_CT_NETLINK" conntrack -C
 kchk wg-show "CONFIG_WIREGUARD" wg show all
-# AmneziaWG: the kernel's amneziawg link type (e.g. built into a custom kernel); SKIP when absent
+# AmneziaWG: the kernel's amneziawg link type (e.g. built into a vendor kernel); SKIP when absent
 IPNG=$(tn ip-ng)
 if [ -z "$(tn awg)" ]; then
   missing awg awg-link

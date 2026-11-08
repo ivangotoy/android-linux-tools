@@ -277,11 +277,9 @@ Phone test: `sh /system/etc/android-linux-tools/share/android-linux-tools/phone-
 - Kernel features are read from `/proc/config.gz`; a missing feature is a SKIP, not a failure. The script
   cleans up everything it creates and ends with `TOTAL pass=N fail=M`.
 
-Tested devices (v2.2-r1, root manager KernelSU with NoMount; root run plus the uid 2000 run, 0 failures; the
-skips are kernel features the device lacks):
-
-| Device | Android | Kernel | Result |
-|---|---|---|---|
+Tested in v2.2-r1 on three rooted aarch64 phones running Android 15, 16 and 17 (root manager KernelSU with
+NoMount; root run plus the uid 2000 run, 0 failures). Device models and kernel versions are deliberately not
+published; a skip is a kernel feature that device's kernel lacks.
 
 ## Releases
 
