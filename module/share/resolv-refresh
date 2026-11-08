@@ -1,0 +1,70 @@
+#!/system/bin/sh
+# Writes $MODDIR/etc/resolv.conf from the DNS servers of the active default network.
+# Called by wrappers of name-resolving tools (root only). Cached for ALT_DNS_TTL seconds (default 30).
+# ALT_DNS_FORCE=1 bypasses the cache. Never writes a public resolver.
+MODDIR=/data/adb/modules/android-linux-tools
+CONF="$MODDIR/etc/resolv.conf"
+STAMP="$MODDIR/etc/.resolv.stamp"
+TTL=${ALT_DNS_TTL:-30}
+PATH="$PATH:/system/bin"
+
+[ -d "$MODDIR/etc" ] && [ -w "$MODDIR/etc" ] || exit 0
+now=$(date +%s 2>/dev/null)
+case "$now" in ''|*[!0-9]*) exit 0 ;; esac
+last=0
+[ -f "$STAMP" ] && read -r last < "$STAMP"
+case "$last" in ''|*[!0-9]*) last=0 ;; esac
+if [ "${ALT_DNS_FORCE:-0}" != 1 ] && [ "$now" -ge "$last" ] && [ $((now - last)) -lt "$TTL" ]; then
+  exit 0
+fi
+echo "$now" > "$STAMP.$$" && mv -f "$STAMP.$$" "$STAMP"
+
+servers=""
+add_server() {
+  a=${1##*/}
+  case "$a" in
+    ''|*[!0-9A-Za-z:.%_-]*) return ;;
+  esac
+  case "$a" in
+    *[.:]*) ;;
+    *) return ;;
+  esac
+  case " $servers " in
+    *" $a "*) return ;;
+  esac
+  servers="$servers $a"
+}
+
+src=""
+dump=$(dumpsys connectivity 2>/dev/null)
+net=$(printf '%s\n' "$dump" | sed -n 's/^ *Active default network: *\([0-9][0-9]*\).*/\1/p' | head -n 1)
+if [ -n "$net" ]; then
+  line=$(printf '%s\n' "$dump" | grep -F "network{$net}" | grep -F ' DnsAddresses: [' | head -n 1)
+  if [ -n "$line" ]; then
+    list=${line#* DnsAddresses: \[}
+    list=${list%%\]*}
+    for a in $(printf '%s\n' "$list" | tr ',' ' '); do
+      add_server "$a"
+    done
+    [ -n "$servers" ] && src="dumpsys connectivity, default network $net"
+  fi
+fi
+if [ -z "$servers" ]; then
+  for p in net.dns1 net.dns2; do
+    v=$(getprop "$p" 2>/dev/null)
+    [ -n "$v" ] && add_server "$v"
+  done
+  [ -n "$servers" ] && src="getprop net.dns1/net.dns2"
+fi
+[ -n "$servers" ] || exit 0
+
+tmp="$CONF.$$"
+{
+  echo "# written by android-linux-tools resolv-refresh from $src"
+  for a in $servers; do
+    echo "nameserver $a"
+  done
+} > "$tmp" || { rm -f "$tmp"; exit 0; }
+chmod 0644 "$tmp"
+mv -f "$tmp" "$CONF"
+exit 0
