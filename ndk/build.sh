@@ -6,7 +6,7 @@ set -euo pipefail
 . /src/ndk/lib/env.sh
 mkdir -p "$B/src" "$B/stamps" "$B/meta" "$B/logs" "$B/tmp" "$B/home" "$B/pkg" "$B/sysroot" "$OUT/bin" "$OUT/meta" "$DL"
 python3 -I /src/ndk/lib/api-site.py "$SYSROOT/usr/include" "$API" "$B/api-site.sh" >/dev/null
-export SOURCE_DATE_EPOCH=$(sed -n 's/^SOURCE_DATE_EPOCH=//p' /src/config/build.conf)
+export SOURCE_DATE_EPOCH=$(sed -n 's/^SOURCE_DATE_EPOCH=//p' /src/ndk/build.conf)
 
 log() { printf '%s %s\n' "$(date -u +%FT%TZ)" "$*" | tee -a "$B/logs/build.log"; }
 
@@ -139,7 +139,7 @@ for t in $(grep -v '^#' /src/ndk/recipes.list); do
 done
 printf '%s\n' "${FAILED[@]}" > "$OUT/failed.txt"
 if [ ${#FAILED[@]} -ne 0 ]; then
-  # A failed recipe must not silently drop a tool (or let it fall back to Alpine) in the ZIP.
+  # A failed recipe must not silently drop a tool from the ZIP.
   log "recipes failed: ${FAILED[*]}; not packaging"
   exit 1
 fi

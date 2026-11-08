@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# android-linux-tools v2: build the NDK builder image and run ndk/build.sh inside it.
+# android-linux-tools: build the NDK builder image and run ndk/build.sh inside it.
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -11,7 +11,7 @@ MEM=${MEM:-12G}
 usage() {
   echo "usage: ./build-ndk.sh [--clean] [--image-only] [--shell] [tool...]"
   echo "  --clean       delete .work/ndk/{build,out,stage} and dist/ before building (downloads are kept)"
-  echo "  --clean-all   like --clean and also delete downloaded sources and Alpine apks"
+  echo "  --clean-all   like --clean and also delete the downloaded sources"
   echo "  --image-only  only build the container image"
   echo "  --shell       open a shell in the builder"
   echo "  tool...       only build these recipes (and their dependencies); no module packaging"
@@ -44,9 +44,9 @@ if [ "$CLEAN" -ge 1 ]; then
   rm -f "$ROOT"/dist/android-linux-tools*-v2.* "$ROOT/dist/MANIFEST-v2.json"
 fi
 if [ "$CLEAN" -ge 2 ]; then
-  rm -rf "$WORK/dl" "$WORK/alpine"
+  rm -rf "$WORK/dl"
 fi
-mkdir -p "$WORK/build" "$WORK/out" "$WORK/dl" "$WORK/alpine" "$WORK/stage" "$ROOT/dist"
+mkdir -p "$WORK/build" "$WORK/out" "$WORK/dl" "$WORK/stage" "$ROOT/dist"
 
 run=(docker run --rm --init --network host
      --memory "$MEM" --memory-swap "$MEM"
@@ -54,7 +54,7 @@ run=(docker run --rm --init --network host
      -e JOBS="$JOBS" -e HOME=/work/build/home -e TMPDIR=/work/build/tmp
      -v "$ROOT:/src:ro"
      -v "$WORK/build:/work/build" -v "$WORK/out:/work/out" -v "$WORK/dl:/work/dl"
-     -v "$WORK/alpine:/work/alpine" -v "$WORK/stage:/work/stage" -v "$ROOT/dist:/work/dist")
+     -v "$WORK/stage:/work/stage" -v "$ROOT/dist:/work/dist")
 if [ "$SHELL_MODE" = 1 ]; then
   exec "${run[@]}" -it "$IMAGE" bash
 fi
