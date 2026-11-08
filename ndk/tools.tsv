@@ -1,33 +1,23 @@
-# v2 tools built with the NDK. A wrapper name listed here uses the NDK binary when its recipe built it;
-# every other wrapper of config/tools.tsv keeps the v1 Alpine binary (hybrid module).
-# name  recipe  binary(.work/ndk/out/bin = libexec name)  args(- = none)  flags(- = none; dns = needs a DNS server address,
+# Tools of the module, one wrapper (system/bin/NAME) per row, in module order (origins.txt, MANIFEST.json).
+# Every tool must be built by its recipe; stage.py fails otherwise.
+# name(- = libexec only)  recipe  binary(.work/ndk/out/bin = libexec name)  args(- = none)  flags(- = none; dns = needs a DNS server address,
 # not getaddrinfo: the wrapper adds @<server>; dnsenv = the wrapper exports ALT_DNS_SERVERS for BIND's dig/host)
 nft             nftables         nft          -     -
 ipset           ipset            ipset        -     -
 conntrack       conntrack-tools  conntrack    -     -
 nfct            conntrack-tools  nfct         -     -
 wg              wireguard-tools  wg           -     -
-wg-quick        wireguard-tools  wg-quick     -     -
-awg             amneziawg-tools  awg          -     -
-awg-quick       amneziawg-tools  awg-quick    -     -
 bridge          iproute2         bridge       -     -
 ip-ng           iproute2         ip           -     -
 tc-ng           iproute2         tc           -     -
 ss-ng           iproute2         ss           -     -
-iperf3          iperf3           iperf3       -     -
-tcpdump         tcpdump          tcpdump      -     -
-strace          strace           strace       -     -
-curl            curl             curl         -     -
-drill           ldns             drill        -     dns
-dig             bind             dig          -     dnsenv
-host            bind             host         -     dnsenv
-mtr             mtr              mtr          -     -
--               mtr              mtr-packet   -     -
-socat           socat            socat        -     -
-ethtool-ng      ethtool          ethtool      -     -
+bpftool         bpftool          bpftool      -     -
 getfacl         acl              getfacl      -     -
 setfacl         acl              setfacl      -     -
 mount.cifs      cifs-utils       mount.cifs   -     -
+iperf3          iperf3           iperf3       -     -
+tcpdump         tcpdump          tcpdump      -     -
+strace          strace           strace       -     -
 capsh           libcap           capsh        -     -
 getpcaps        libcap           getpcaps     -     -
 setpriv         util-linux       setpriv      -     -
@@ -35,11 +25,18 @@ lsblk           util-linux       lsblk        -     -
 blkid-ng        util-linux       blkid        -     -
 findmnt         util-linux       findmnt      -     -
 lscpu           util-linux       lscpu        -     -
+curl            curl             curl         -     -
+dig             bind             dig          -     dnsenv
+host            bind             host         -     dnsenv
+mtr             mtr              mtr          -     -
+-               mtr              mtr-packet   -     -
+socat           socat            socat        -     -
 htop            htop             htop         -     -
-tmux            tmux             tmux         -     -
-nano            nano             nano         -     -
-less            less             less         -     -
-jq              jq               jq           -     -
+iostat          sysstat          iostat       -     -
+pidstat         sysstat          pidstat      -     -
+mpstat          sysstat          mpstat       -     -
+sqlite3         sqlite           sqlite3      -     -
+rsync           rsync            rsync        -     -
 zstd            zstd             zstd         -     -
 unzstd          zstd             zstd         -d    -
 zstdcat         zstd             zstd         -dcf  -
@@ -49,16 +46,6 @@ xzcat           xz               xz           -dc   -
 lz4             lz4              lz4          -     -
 unlz4           lz4              lz4          -d    -
 lz4cat          lz4              lz4          -dc   -
-rsync           rsync            rsync        -     -
-sqlite3         sqlite           sqlite3      -     -
-tree            tree             tree         -     -
-pv              pv               pv           -     -
-bash            bash             bash         -     -
-ncat            nmap             ncat         -     -
-iftop           iftop            iftop        -     -
-iostat          sysstat          iostat       -     -
-pidstat         sysstat          pidstat      -     -
-mpstat          sysstat          mpstat       -     -
 e2fsck-ng       e2fsprogs        e2fsck       -     -
 mke2fs-ng       e2fsprogs        mke2fs       -     -
 tune2fs-ng      e2fsprogs        tune2fs      -     -
@@ -68,4 +55,17 @@ dump.f2fs-ng    f2fs-tools       dump.f2fs    -     -
 traceroute-ng   traceroute       traceroute   -     -
 arping-ng       iputils          arping       -     -
 tracepath-ng    iputils          tracepath    -     -
-bpftool         bpftool          bpftool      -     -
+tmux            tmux             tmux         -     -
+nano            nano             nano         -     -
+less            less             less         -     -
+jq              jq               jq           -     -
+bash            bash             bash         -     -
+ncat            nmap             ncat         -     -
+iftop           iftop            iftop        -     -
+tree            tree             tree         -     -
+pv              pv               pv           -     -
+wg-quick        wireguard-tools  wg-quick     -     -
+awg             amneziawg-tools  awg          -     -
+awg-quick       amneziawg-tools  awg-quick    -     -
+drill           ldns             drill        -     dns
+ethtool-ng      ethtool          ethtool      -     -

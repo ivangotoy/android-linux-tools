@@ -42,7 +42,7 @@ Builder facts (`ndk/Dockerfile`, `ndk/lib/env.sh`):
 
 ### Static vs dynamic linkage
 The default is fully static (`-static`, NDK `libc.a`; for libtool `-all-static`). A static binary cannot use
-Android's DNS, though, because static bionic has no netd client [V, `.work/ndk/survey/_bionic-static-dns.md`]:
+Android's DNS, though, because static bionic has no netd client (verified in the sources below):
 - bionic `libc/bionic/NetdClient.cpp` contains `#ifdef LIBC_STATIC #error NetdClient.cpp should NOT be included in
   static libc builds.`. This file is the one that dlopen()s `libnetd_client.so` and installs
   `netdClientInitDnsOpenProxy`.
@@ -70,19 +70,22 @@ The rule applied:
 - A dynamic binary is a PIE that links only the system bionic `libc.so`/`libm.so`/`libdl.so` (API 35 stubs),
   plus `libz.so` for curl. Every third-party library is linked statically from the build prefix. There is no
   `$MODDIR/lib` and no RUNPATH.
-- Dynamic: nft, ipset, wg, ip, tc, ss, bridge, tcpdump, curl, mtr, socat, iperf3.
-- Static: conntrack, drill, mtr-packet, strace.
+- Dynamic (v2.2): nft, ipset, wg, wg-quick, awg, awg-quick, ip, tc, ss, bridge, mount.cifs, iperf3, tcpdump,
+  curl, dig, host, mtr, socat, rsync, traceroute, arping, tracepath, ncat, iftop.
+- Static: everything else (for example conntrack, nfct, drill, mtr-packet, strace, bpftool).
 - Option (B) of the survey was rejected: a static binary with a `--wrap=getaddrinfo` shim speaking the dnsproxyd
   protocol would be new code with no upstream reference to cite.
 
 ### CONFIG_SITE generated from the NDK headers
 - `ndk/build.sh` runs `ndk/lib/api-site.py` on `$SYSROOT/usr/include`. For every function declared with
-  `__INTRODUCED_IN(N)` where N > 29, it writes `ac_cv_func_X=no` and `ac_cv_have_decl_X=no`, and `env.sh` exports
+  `__INTRODUCED_IN(N)` where N > API (35), it writes `ac_cv_func_X=no` and `ac_cv_have_decl_X=no`, and `env.sh` exports
   the result as `CONFIG_SITE`.
 - This is needed because a static link sees the whole `libc.a`, so autoconf's link-only `AC_CHECK_FUNCS` "finds"
   functions that the API-35 headers hide. Example: `memset_explicit` (API 34) broke curl.
-- Examples hidden at 29, from the survey: `renameat2`/`statx`/`memfd_create` (30), `preadv2` (33),
-  `copy_file_range`/`close_range` (34), `qsort_r`/`sig2str` (36), `sched_setattr`/`free_sized` (37).
+- Examples hidden at API 35: `qsort_r`/`sig2str` (36), `sched_setattr`/`free_sized` (37). The survey was done at
+  the earlier API 29 floor, where `renameat2`/`statx`/`memfd_create` (30), `preadv2` (33) and
+  `copy_file_range`/`close_range` (34) were hidden as well; per-tool notes below that say "at 29" or "post-29"
+  come from that survey.
 
 ### DNS without resolv.conf
 - Dynamic tools resolve with `getaddrinfo`, which goes through bionic `libc.so` to netd (dnsproxyd).
@@ -97,11 +100,9 @@ The rule applied:
   `setup_system()` use that list when neither `@server` / host's server argument nor a resolv.conf gave one.
   Server names given as `@dns.google` (or as host's server argument) are resolved with `getaddrinfo`, so both
   are dynamic (netd).
-- The v1 resolv.conf overlay (`resolv-refresh`) is staged only while Alpine (musl) tools with the `dns` flag
-  remain in the hybrid module (`need_resolv` in stage.py). `ndk/scripts/check.py` rejects any NDK tool wrapper
-  that uses it. Since v2.1 no Alpine tool remains, so neither the overlay nor the musl loader is shipped and the
-  module uses `ndk/module/customize.sh` (the v1 `module/customize.sh` minus the musl and resolv.conf code;
-  the v1 file is unchanged and still used by `./build.sh` and by a hybrid build).
+- The v1 resolv.conf overlay (`resolv-refresh`) was only needed by the Alpine (musl) tools. Since v2.1 no
+  Alpine tool remains, and since v2.2-r2 the Alpine build code is gone from the repository; `ndk/scripts/check.py`
+  fails if `resolv-refresh`, a `lib/` directory or musl/resolv.conf handling in `customize.sh` appears.
 
 ### CA store for curl
 - Android's `/system/etc/security/cacerts` names files by `openssl x509 -subject_hash_old` (MD5) as `<hash>.<n>`.
@@ -147,8 +148,8 @@ merge; NoMount: per-file rules plus synthesized directories), so no new top-leve
 A subdirectory of `/system/bin` would also work but would sit next to the wrappers in a `PATH` directory and in
 the rename loop of `customize.sh`. `/system/etc` is where Android keeps non-`PATH` system files, and the
 `etc/`, `share/` and `libexec/` names inside keep the v2.1 relative layout. The only `/data/adb` path left is
-`$MODDIR` in `phone-test.sh` (root checks of `module.prop` and old-layout leftovers) and in the hybrid-only
-`resolv-refresh`.
+`$MODDIR` in `phone-test.sh` (root checks of `module.prop` and old-layout leftovers, and the v1 resolv.conf check,
+which runs only if a module still ships `resolv-refresh`).
 
 Checks: `ndk/scripts/check.py` fails on `$MODDIR` or `/data/adb` in a wrapper, `/data/adb` in an NDK ELF, an ELF
 outside `$ALTDIR/libexec`, or a v2.1 runtime path in the module root. `ndk/scripts/layout_test.py` (run by
@@ -414,7 +415,7 @@ Sources checked:
 | Source | Observed |
 |---|---|
 | AOSP platform/external/iproute2 | c6cfbd7d (2025-03-26), METADATA v4.14.1 (stale). Android.bp: `-DNO_SHARED_LIBS`, `-Dstrdupa(__S)=...`, `-fcommon`, generated static-syms.h |
-| Termux packages/iproute2 | 7.3.0, commit e187f140fbaf3539de31549c1fed8211a2ac94d2 (2026-11-01). 6 patches; dynamic with libandroid-glob/libandroid-support. Raw copies in `.work/ndk/ref/termux/iproute2/` |
+| Termux packages/iproute2 | 7.3.0, commit e187f140fbaf3539de31549c1fed8211a2ac94d2 (2026-11-01). 6 patches; dynamic with libandroid-glob/libandroid-support |
 | LineageOS | stale (cm-14.1 / lineage-15.0 staging) |
 | Alpine | 7.3.0, no patches |
 | buildroot | 7.3.0; `--libbpf_force`, `SHARED_LIBS=n` when static |
@@ -641,7 +642,7 @@ generated one embeds the whole compiler command line including the `-ffile-prefi
 (reproducibility and the host-path check). No patches. CHECKSUM_SOURCE: `.asc`, OpenSSL key
 `C46ED3F2CBEFDA1FDAADA44264ED7B1DCCE71CB2` (and the published `.sha256`).
 
-Why: BIND 9.20 requires OpenSSL (≥1.1.1) for its crypto (DNSSEC, TSIG, DoT); it cannot use mbedTLS, which curl
+Why: BIND 9.20 requires OpenSSL (>= 1.1.1) for its crypto (DNSSEC, TSIG, DoT); it cannot use mbedTLS, which curl
 keeps. LTS 3.5 instead of 3.6. `--openssldir` makes OpenSSL's default CA file the module's Mozilla bundle
 (`$ALTDIR/etc/ssl/cert.pem`) for `dig +tls` certificate checks.
 
@@ -709,7 +710,7 @@ Sources checked:
 | Source | Observed |
 |---|---|
 | AOSP, LineageOS | absent |
-| Termux root-packages/mtr | 0.96 from the GitHub tag archive (sha256 `73e6aef3...`), `--without-gtk`, dep ncurses, `./bootstrap.sh`. Patches: hsearch bundle + hsearch.patch, index_to_strchr.patch, packet.c.patch. Raw copy (commit 5628ffe85dc4a70916543752fe81ad3c1066ea32) in `.work/ndk/ref/termux/mtr/` |
+| Termux root-packages/mtr | 0.96 from the GitHub tag archive (sha256 `73e6aef3...`), `--without-gtk`, dep ncurses, `./bootstrap.sh`. Patches: hsearch bundle + hsearch.patch, index_to_strchr.patch, packet.c.patch. Read at commit 5628ffe85dc4a70916543752fe81ad3c1066ea32 |
 | Alpine (925c34ed) | 0.96 `--without-gtk` |
 | buildroot (261a30b2), OpenWrt (7eef26d5) | 0.95; OpenWrt `--without-jansson ac_cv_lib_cap_cap_set_proc=no` |
 | bitwizard.nl | 0.96 tarball re-rolled (the first upload is kept as `mtr-0.96.tar.gz_misses_utils.h`); no checksum or signature published |
@@ -783,7 +784,7 @@ Sources checked:
 | Source | Observed |
 |---|---|
 | AOSP platform/external/strace | 3dacaecd (2025-02-03), frozen at 4.25 |
-| Termux packages/strace | 7.3 `--with-libdw`, `-Dfputs_unlocked=fputs`, 8 patches. Raw copy (commit bcea3c1434a95a0bbd2a55e8aa8413450b459163) in `.work/ndk/ref/termux/strace/` |
+| Termux packages/strace | 7.3 `--with-libdw`, `-Dfputs_unlocked=fputs`, 8 patches. Read at commit bcea3c1434a95a0bbd2a55e8aa8413450b459163 |
 | LineageOS | stale (lineage-16.0, 2018) |
 | Alpine 7.2, buildroot 7.3, OpenWrt 6.18 | all `--enable-mpers=no` |
 | GitHub search "strace android ndk static" | no results |
@@ -905,7 +906,7 @@ Sources checked:
 | Source | Observed |
 |---|---|
 | AOSP platform/external/util-linux | absent (HTTP 404). platform/external/libcap-ng 8dd5e09d (2024-07-31), 0.8.5 |
-| Termux packages/util-linux | 2.42.4, 16 patches. Bionic-relevant: versionsort.patch (strverscmp/versionsort in libmount tab_parse.c), sys-utils-irq-common.patch, schedutils-sched_attr.h.patch, lib-sysfs.c.patch (`/dev/block/` names), SysV IPC stubs, nsenter; cache vars include `ac_cv_type_struct_fanotify_event_info_header=no`; links libandroid-glob/libandroid-posix-semaphore. Raw copy of versionsort.patch (commit 433f5e9e9d6de387f7e37ba41ce9e81356861531) in `.work/ndk/ref/termux/util-linux/` |
+| Termux packages/util-linux | 2.42.4, 16 patches. Bionic-relevant: versionsort.patch (strverscmp/versionsort in libmount tab_parse.c), sys-utils-irq-common.patch, schedutils-sched_attr.h.patch, lib-sysfs.c.patch (`/dev/block/` names), SysV IPC stubs, nsenter; cache vars include `ac_cv_type_struct_fanotify_event_info_header=no`; links libandroid-glob/libandroid-posix-semaphore. versionsort.patch at commit 433f5e9e9d6de387f7e37ba41ce9e81356861531 |
 | Termux packages/libcap-ng | 0.9.6, `--without-python --without-python3` |
 | people.redhat.com (libcap-ng) | lists only up to 0.8.5; 0.9.6 is on github.com/stevegrubb/libcap-ng |
 | Alpine main/util-linux | 2.42.4, musl patches |
@@ -941,6 +942,9 @@ Why:
   prefix. The optional lib-sysfs.c.patch is not applied, so lsblk may print `/dev/<name>` instead of the
   `/dev/block/` path [I, survey].
 - setpriv needs libcap-ng, so libcap-ng 0.9.6 is built for it.
+- setpriv (v2.2): bionic `getpwuid()` returns NULL `pw_passwd`/`pw_gecos` for Android IDs; upstream `passwd_copy()`
+  `xstrdup()`s every field and aborts (xalloc.h assertion) on any `--reuid`/`--regid`. Patch 0002 copies NULL
+  fields as NULL. Found on an Android 15 vendor ROM.
 
 ### htop 3.5.3
 Sources checked:
@@ -1245,7 +1249,7 @@ Sources checked:
 | Source | Observed |
 |---|---|
 | AOSP | no external/nmap |
-| Termux packages/nmap | 7.993, `--enable-static --with-liblua --without-nmap-update --without-zenmap --without-ndiff`; ncat patches: sockaddr_u.h (SUN_LEN fallback), ncat_posix.c/ncat_main.c (`/bin/sh` -> prefix), ncat_connect.c (`/tmp` -> prefix). Raw copy (commit 7687cc4fbd5dd833e3709e86c2cd8b9159c9e005) in `.work/ndk/ref/termux/nmap/` |
+| Termux packages/nmap | 7.993, `--enable-static --with-liblua --without-nmap-update --without-zenmap --without-ndiff`; ncat patches: sockaddr_u.h (SUN_LEN fallback), ncat_posix.c/ncat_main.c (`/bin/sh` -> prefix), ncat_connect.c (`/tmp` -> prefix). Read at commit 7687cc4fbd5dd833e3709e86c2cd8b9159c9e005 |
 | Alpine main/nmap | 7.992 (fortify-source.patch) |
 | buildroot | 7.992 (+libdnet static, traceroute.cc cstddef) |
 | OpenWrt packages net/nmap | 7.993, 2 patches; PKG_HASH equals the published SHA256 |
@@ -1276,7 +1280,7 @@ Sources checked:
 | AOSP | no external/iftop; external/libpcap dd978ad5 (2025-01-13), 1.10.5 |
 | Termux, TUR | absent |
 | Alpine main/iftop | 1.0_pre4; gcc15 cfgfile.h prototype fix, MAC address patch |
-| buildroot package/iftop | 1.0pre4; 0001 ui_common.h `-fno-common` (extern globals), 0002 rename `pcap_filter` ("multiple definition" in static builds), 0003 function args (gcc 15, from Fedora). Raw copy (commit fcf8bdc62aa419991273ff120d408273c8f85f1e) in `.work/ndk/ref/buildroot/iftop/` |
+| buildroot package/iftop | 1.0pre4; 0001 ui_common.h `-fno-common` (extern globals), 0002 rename `pcap_filter` ("multiple definition" in static builds), 0003 function args (gcc 15, from Fedora). Read at commit fcf8bdc62aa419991273ff120d408273c8f85f1e |
 | OpenWrt packages net/iftop | 010-gcc10.patch |
 | Zackptg5 | 1.0pre4 at API >= 28; forces the configure pthread test and injects Bpthread.h (pthread_cancel emulation with SIGUSR1); `--with-resolver=netdb` |
 
@@ -1304,7 +1308,7 @@ Sources checked:
 | Source | Observed |
 |---|---|
 | AOSP | absent (the AOSP iputils fork has traceroute6 only, s20121221) |
-| Termux packages/traceroute | 2.1.6, `make prefix=$PREFIX -e`; traceroute-flowlabel.h.patch. Raw copy (commit 53da8982ee353176c6d56a6a19f49a159305e02c) in `.work/ndk/ref/termux/traceroute/` |
+| Termux packages/traceroute | 2.1.6, `make prefix=$PREFIX -e`; traceroute-flowlabel.h.patch. Read at commit 53da8982ee353176c6d56a6a19f49a159305e02c |
 | Alpine community/traceroute | 2.1.6, reproducible-build.patch |
 | buildroot | 2.1.6, no patches |
 | OpenWrt | not found under that name |
@@ -1479,8 +1483,7 @@ Chosen approach:
 - Flavours: v2.0 shipped this NDK bpftool in lite and kept v1's Alpine bpftool with libLLVM (about 172 MB) in
   full. Since v2.1 both flavours ship this NDK bpftool, and the Alpine one is gone with the musl runtime. Only JIT
   disassembly (`bpftool prog dump jited`, which needs LLVM or libbfd) and skeleton-based features are missing.
-  `ndk/scripts/check.py` rejects a lite flavour that contains an Alpine bpftool or libLLVM, and a full flavour
-  without bpftool.
+  `ndk/scripts/check.py` rejects a flavour without bpftool.
 
 Why:
 - `SKIP_LLVM`, `SKIP_LIBBFD` and `SKIP_CRYPTO` mean no LLVM, no libbfd and no libcrypto (signing).
@@ -1542,9 +1545,7 @@ used by the DFS cldap ping in `resolve_host`), not patched out. Many Android ker
 phone test checks only the version and help output.
 
 ### Not ported
-None since v2.1: every tool of `config/tools.tsv` (and wg-quick, awg, awg-quick, drill, ethtool-ng) is an NDK
-build, `ndk/build.conf` has `ALLOW_ALPINE=0`, and `ndk/scripts/check.py` fails on any Alpine/musl ELF, a `lib/`
-directory, the resolv.conf overlay, or ELF files outside `$ALTDIR/libexec/`. Setting `ALLOW_ALPINE=1` restores the v2.0
-hybrid fallback (v1 Alpine binary for a tool whose recipe is missing from `ndk/tools.tsv`).
-
-- util-linux setpriv: bionic getpwuid() returns NULL pw_passwd/pw_gecos for Android IDs; upstream passwd_copy() xstrdup()s every field and aborts (xalloc.h assertion) on any --reuid/--regid. Patch 0002 copies NULL fields as NULL. Found on an Android 15 vendor ROM.
+None since v2.1: every tool of v1 (and wg-quick, awg, awg-quick, drill, ethtool-ng) is an NDK build. Since
+v2.2-r2 there is no Alpine fallback: `ndk/scripts/stage.py` fails if a tool of `ndk/tools.tsv` has no NDK build,
+and `ndk/scripts/check.py` fails on a `lib/` directory, the resolv.conf overlay, or ELF files outside
+`$ALTDIR/libexec/`.

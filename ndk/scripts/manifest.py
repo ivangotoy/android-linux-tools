@@ -1,6 +1,6 @@
-# Write dist/MANIFEST-v2.json and the .sha256 files for both v2 ZIPs (inside the builder).
+# Write dist/MANIFEST-v2.json and the .sha256 files for both ZIPs (inside the builder).
 import sys, os, hashlib
-sys.path.insert(0, '/src/scripts')
+sys.path.insert(0, '/src/ndk/scripts')
 import common
 from common import MODID
 
@@ -27,7 +27,7 @@ for fl in common.FLAVOURS:
 full = common.load('/work/stage/stage-full.json')
 man = {'module': MODID, 'version': version, 'versionCode': vcode, 'arch': 'aarch64',
        'ndk': os.environ.get('NDK_RELEASE'), 'api': int(os.environ.get('API', '29')), 'flavours': flv,
-       'tools': full['tools'], 'resolv_conf_overlay': full['need_resolv']}
+       'tools': full['tools']}
 common.dump(man, '/work/dist/MANIFEST-v2.json')
 for f in flv:
     print(f['zip'], f['zip_sha256'], f['unpacked_mb'], 'MB')

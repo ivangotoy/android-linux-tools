@@ -1,10 +1,10 @@
-# Host checks for one staged v2 flavour (no aarch64 code is executed). Runs inside the builder.
+# Host checks for one staged flavour (no aarch64 code is executed). Runs inside the builder.
 #   python3 -I /src/ndk/scripts/check.py FLAVOUR
 import sys, os, subprocess, re, itertools
 
-sys.path.insert(0, '/src/scripts')
+sys.path.insert(0, '/src/ndk/scripts')
 import common
-from common import MODID, MODDIR, ALTDIR, LDSO
+from common import MODID, ALTDIR
 
 FLAVOUR = sys.argv[1]
 SJ = common.load('/work/stage/stage-%s.json' % FLAVOUR)
@@ -13,16 +13,13 @@ ST = SJ['stage']
 RT = os.path.join(ST, ALTDIR.lstrip('/'))
 LIBEXEC = os.path.join(RT, 'libexec')
 SHARE = os.path.join(RT, 'share', MODID)
-MUSL_INTERP = MODDIR + '/lib/' + LDSO
 BIONIC_INTERP = '/system/bin/linker64'
 BIONIC_LIBS = {'libc.so', 'libm.so', 'libdl.so', 'liblog.so', 'libz.so'}
 FORBID = set('iptables ip6tables ip tc ss ethtool nsenter unshare chroot lsof nc file vmstat getfattr setfattr'.split())
 HOSTPATHS = [b'/home/ivan', b'/work/build', b'/work/out', b'/opt/ndk', b'/.work/']
 API = int(os.environ.get('API', '29'))
-CONF2 = dict(l.strip().split('=', 1) for l in open('/src/ndk/build.conf') if '=' in l and not l.lstrip().startswith('#'))
-ALLOW_ALPINE = CONF2.get('ALLOW_ALPINE', '1') == '1'
 
-res = {'flavour': FLAVOUR, 'errors': [], 'libexec': {}, 'libs': {}, 'wrappers': {}, 'scripts': {}, 'version_audit': {}}
+res = {'flavour': FLAVOUR, 'errors': [], 'libexec': {}, 'wrappers': {}, 'scripts': {}, 'version_audit': {}}
 err = res['errors'].append
 
 
@@ -63,8 +60,6 @@ def syntax(path):
 
 
 origin = SJ['origin']
-libdir = os.path.join(ST, 'lib')
-present = set(os.listdir(libdir)) if os.path.isdir(libdir) else set()
 for f in sorted(os.listdir(LIBEXEC)):
     p = os.path.join(LIBEXEC, f)
     o = origin.get('libexec/' + f, '?')
@@ -103,37 +98,9 @@ for f in sorted(os.listdir(LIBEXEC)):
             entry['linkage'] = 'static'
             if 'statically linked' not in fo or e['needed']:
                 err('ndk static wrong: ' + f)
-    elif o.startswith('alpine:'):
-        entry['linkage'] = 'musl'
-        miss = [n for n in e['needed'] if n not in present]
-        if miss:
-            err('%s missing %s' % (f, miss))
-        if e['interp'] != [MUSL_INTERP] or ('interpreter ' + MUSL_INTERP) not in fo:
-            err('alpine interp wrong: ' + f)
-        if e['runpath'] != [MODDIR + '/lib']:
-            err('alpine rpath wrong: ' + f)
     else:
         err('unknown origin for libexec/' + f)
     res['libexec'][f] = entry
-
-for f in sorted(present):
-    p = os.path.join(libdir, f)
-    if os.path.islink(p):
-        tgt = os.readlink(p)
-        ok = '/' not in tgt and os.path.isfile(os.path.join(libdir, tgt))
-        res['libs'][f] = {'symlink': tgt, 'ok': ok}
-        if not ok:
-            err('bad symlink ' + f)
-        continue
-    e = elf(p)
-    miss = [n for n in e['needed'] if n not in present]
-    if e['machine'] != 'AArch64':
-        err('lib not aarch64: ' + f)
-    if miss:
-        err('lib %s missing %s' % (f, miss))
-    if f != LDSO and [n for n in e['needed'] if n != 'libc.musl-aarch64.so.1'] and e['runpath'] != [MODDIR + '/lib']:
-        err('lib needs rpath: ' + f)
-    res['libs'][f] = e
 
 # every ELF of the module must be a program in ALTDIR/libexec (no stray binaries or libraries elsewhere)
 stray = []
@@ -153,26 +120,18 @@ if stray:
 for old in ('libexec', 'share/terminfo', 'share/' + MODID, 'etc/ssl', 'etc/alt-tools.map'):
     if os.path.lexists(os.path.join(ST, old)):
         err('runtime path %s is in the module directory (root-only on the device), not under %s' % (old, ALTDIR))
-if not ALLOW_ALPINE:
-    # ndk/build.conf ALLOW_ALPINE=0: no Alpine/musl program, library, loader or resolv.conf overlay
-    for f, v in sorted(res['libexec'].items()):
-        if not v['origin'].startswith('ndk:'):
-            err('ALLOW_ALPINE=0 but libexec/%s has origin %s' % (f, v['origin']))
-    if os.path.isdir(libdir):
-        err('ALLOW_ALPINE=0 but lib/ exists: %s' % ' '.join(sorted(present)))
-    if os.path.exists(os.path.join(SHARE, 'resolv-refresh')) or SJ['need_resolv']:
-        err('ALLOW_ALPINE=0 but the resolv.conf overlay (resolv-refresh) is shipped')
-    if re.search(r'ld-musl|system/etc/resolv\.conf', open(os.path.join(ST, 'customize.sh')).read()):
-        err('ALLOW_ALPINE=0 but customize.sh still handles musl/resolv.conf')
+# every program is an NDK build: no musl loader or libraries (lib/), no resolv.conf overlay
+if os.path.lexists(os.path.join(ST, 'lib')):
+    err('lib/ exists in the module directory')
+if os.path.exists(os.path.join(SHARE, 'resolv-refresh')):
+    err('the v1 resolv.conf overlay (resolv-refresh) is shipped')
+if re.search(r'ld-musl|system/etc/resolv\.conf', open(os.path.join(ST, 'customize.sh')).read()):
+    err('customize.sh handles musl/resolv.conf')
 
 has_bpftool = os.path.exists(os.path.join(LIBEXEC, 'bpftool'))
-has_llvm = any(n.startswith('libLLVM') for n in present)
-bpf_origin = origin.get('libexec/bpftool', '')
-res['bpftool'] = {'present': has_bpftool, 'origin': bpf_origin, 'libLLVM': has_llvm}
-if FLAVOUR == 'lite' and (has_llvm or (has_bpftool and bpf_origin.startswith('alpine:'))):
-    err('lite flavour contains Alpine bpftool/libLLVM')
-if FLAVOUR == 'full' and not has_bpftool:
-    err('full flavour lacks bpftool')
+res['bpftool'] = {'present': has_bpftool, 'origin': origin.get('libexec/bpftool', '')}
+if not has_bpftool:
+    err('%s flavour lacks bpftool' % FLAVOUR)
 
 for w in sorted(os.listdir(os.path.join(ST, 'system', 'bin'))):
     p = os.path.join(ST, 'system', 'bin', w)
@@ -193,26 +152,18 @@ for w in sorted(os.listdir(os.path.join(ST, 'system', 'bin'))):
     if 'MODDIR' in txt or '/data/adb' in txt:
         err('wrapper %s references $MODDIR or /data/adb (root-only) for runtime files' % w)
     shadow = w in FORBID
-    res['wrappers'][w] = {'syntax': syn, 'target_ok': target_ok, 'static_forbidden_name': shadow,
-                          'resolv_refresh': 'resolv-refresh' in txt}
+    res['wrappers'][w] = {'syntax': syn, 'target_ok': target_ok, 'static_forbidden_name': shadow}
     if not target_ok or shadow:
         err('wrapper bad: ' + w)
     if not os.access(p, os.X_OK):
         err('wrapper not executable: ' + w)
-    if 'resolv-refresh' in txt:
-        t = re.search(r'exec "\$ALTDIR/libexec/([^"]+)"', txt).group(1)
-        if not origin.get('libexec/' + t, '').startswith('alpine:'):
-            err('resolv-refresh used by NDK tool wrapper ' + w)
 
 RTREL = os.path.relpath(SHARE, ST)
 scripts = ['customize.sh', 'META-INF/com/google/android/update-binary', RTREL + '/phone-test.sh']
-for s in ('resolv-refresh', 'dns-servers'):
-    if os.path.exists(os.path.join(SHARE, s)):
-        scripts.append(RTREL + '/' + s)
+if os.path.exists(os.path.join(SHARE, 'dns-servers')):
+    scripts.append(RTREL + '/dns-servers')
 for s in scripts:
     res['scripts'][s] = syntax(os.path.join(ST, s))
-if SJ['need_resolv'] != os.path.exists(os.path.join(SHARE, 'resolv-refresh')):
-    err('resolv-refresh presence does not match need_resolv')
 cz = open(os.path.join(ST, 'customize.sh')).read()
 for bad in (r'\bksud\b', r'\bmagisk\b\s+--', r'\bapd\b', r'\bbusybox\b'):
     if re.search(bad, cz):
@@ -249,21 +200,6 @@ def strings(p, cache={}):
         data = open(p, 'rb').read()
         cache[p] = [m.decode('latin-1') for m in re.findall(rb'[\x20-\x7e\t]{3,}', data)]
     return cache[p]
-
-
-def closure(p):
-    out = [p]
-    seen = set()
-    queue = [p]
-    while queue:
-        q = queue.pop(0)
-        for n in elf(q)['needed']:
-            lp = os.path.realpath(os.path.join(libdir, n))
-            if n not in seen and os.path.isfile(lp):
-                seen.add(n)
-                out.append(lp)
-                queue.append(lp)
-    return out
 
 
 RUNTIME = {'getpcaps': 'output is "<pid>: <caps>" built at run time from argv'}
@@ -303,23 +239,19 @@ for line in pt.splitlines():
     t = target_of[tool]
     binp = os.path.join(LIBEXEC, t['libexec'])
     rx = re.compile(pat, re.I)
-    files = closure(binp)
-    allstr = [x for f in files for x in strings(f)]
+    allstr = strings(binp)
     pver = re.sub(r'-r\d+$', '', t['version'])
     vers = sorted({x for x in allstr if re.fullmatch(r'\d+(\.\d+)*[a-z]?', x) and pver.startswith(x[:2])})
-    cands = [t['libexec'], t.get('recipe') or t.get('package'), pver] + [x for x in vers if x != pver][:4] + [x for x in allstr if pver in x and len(x) < 40][:4]
+    cands = [t['libexec'], t['recipe'], pver] + [x for x in vers if x != pver][:4] + [x for x in allstr if pver in x and len(x) < 40][:4]
     entry = {'pattern': pat, 'binary': t['libexec'], 'origin': t['origin']}
     own = [x for x in strings(binp) if rx.search(x)]
     rend = [] if own else [x for x in renders(strings(binp), cands) if rx.search(x)]
-    libs = [] if own or rend else [x for f in files[1:] for x in strings(f) if rx.search(x)]
     if tool in RUNTIME:
         entry.update(status='runtime', evidence=RUNTIME[tool])
     elif own:
         entry.update(status='ok', evidence='literal in %s: %s' % (t['libexec'], own[0][:100]))
     elif rend:
         entry.update(status='ok', evidence='printf-rendered from %s: %s' % (t['libexec'], rend[0][:100]))
-    elif libs:
-        entry.update(status='ok', evidence='literal in linked library: ' + libs[0][:100])
     else:
         entry.update(status='NO MATCH', evidence=None)
         err('version pattern %r for %s not found in ELF strings' % (pat, tool))
@@ -328,12 +260,11 @@ for t in target_of:
     if t not in res['version_audit']:
         err('no version check in phone-test.sh for ' + t)
 
-res['summary'] = {'flavour': FLAVOUR, 'libexec_elfs': len(res['libexec']), 'libs': len(res['libs']),
+res['summary'] = {'flavour': FLAVOUR, 'libexec_elfs': len(res['libexec']),
                   'wrappers': len(res['wrappers']), 'errors': len(res['errors']),
                   'ndk_static': sum(1 for v in res['libexec'].values() if v.get('linkage') == 'static'),
                   'ndk_dynamic': sum(1 for v in res['libexec'].values() if v.get('linkage') == 'dynamic'),
-                  'allow_alpine': ALLOW_ALPINE, 'elf_outside_libexec': len(stray),
-                  'alpine_musl': sum(1 for v in res['libexec'].values() if v.get('linkage') == 'musl'),
+                  'elf_outside_libexec': len(stray),
                   'version_checks_ok': sum(1 for v in res['version_audit'].values() if v['status'] == 'ok')}
 common.dump(res, '/work/stage/host_checks-%s.json' % FLAVOUR)
 print(__import__('json').dumps(res['summary'], sort_keys=True))
