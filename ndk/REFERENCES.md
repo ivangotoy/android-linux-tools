@@ -91,9 +91,17 @@ The rule applied:
   server comes from `share/android-linux-tools/dns-servers`, which reads the `DnsAddresses` of the
   "Active default network" from `dumpsys connectivity`, falls back to `getprop net.dns1/net.dns2`, and never prints
   a public resolver. Nothing reads or writes resolv.conf.
+- BIND's dig and host (v2.1) read `/etc/resolv.conf` and otherwise fall back to `::1`/`127.0.0.1`. Their flag
+  in `ndk/tools.tsv` is `dnsenv`: the wrapper exports `ALT_DNS_SERVERS` (all servers from `dns-servers`, space
+  separated) unless already set, and `ndk/patches/bind/0002-dighost-android-dns-servers.patch` makes
+  `setup_system()` use that list when neither `@server` / host's server argument nor a resolv.conf gave one.
+  Server names given as `@dns.google` (or as host's server argument) are resolved with `getaddrinfo`, so both
+  are dynamic (netd).
 - The v1 resolv.conf overlay (`resolv-refresh`) is staged only while Alpine (musl) tools with the `dns` flag
   remain in the hybrid module (`need_resolv` in stage.py). `ndk/scripts/check.py` rejects any NDK tool wrapper
-  that uses it.
+  that uses it. Since v2.1 no Alpine tool remains, so neither the overlay nor the musl loader is shipped and the
+  module uses `ndk/module/customize.sh` (the v1 `module/customize.sh` minus the musl and resolv.conf code;
+  the v1 file is unchanged and still used by `./build.sh` and by a hybrid build).
 
 ### CA store for curl
 - Android's `/system/etc/security/cacerts` names files by `openssl x509 -subject_hash_old` (MD5) as `<hash>.<n>`.
@@ -253,7 +261,21 @@ Chosen approach: `configure_std`, `install_lib`. No patches. CHECKSUM_SOURCE: ne
 Why: buildroot's musl fix is already in 1.1.1, AOSP builds an older version unmodified, and nothing is missing at
 API 29.
 
-### conntrack-tools 1.4.9 (conntrack only)
+### libnetfilter_cttimeout 1.0.1 and libnetfilter_cthelper 1.0.1 (libraries for nfct)
+Sources checked:
+| Source | Observed |
+|---|---|
+| Other distributions | not surveyed separately: small autotools libraries of the same family as libnetfilter_conntrack (built here the same way) |
+| netfilter.org | 1.0.1 is the latest release of both (directory listings, 2026-11-08) |
+
+Chosen approach: `configure_std`, `make`, `install_lib` (static archives + `.pc`), the same as
+libnetfilter_conntrack. No patches. CHECKSUM_SOURCE: netfilter.org `.sig`, key
+`37D964ACC04981C75500FB9BD55D978A8A1420E4` (the older Netfilter Core Team key that signed both 1.0.1 releases;
+gpg reports it expired, the signatures are good).
+
+Why: nfct's `timeout` and `helper` subsystems are built only with these libraries; Alpine's nfct has both.
+
+### conntrack-tools 1.4.9 (conntrack, nfct)
 Sources checked:
 | Source | Observed |
 |---|---|
@@ -264,39 +286,82 @@ Sources checked:
 | GitHub search "conntrack android ndk" | nothing found (rate-limited) |
 
 Chosen approach:
-- `ac_cv_header_rpc_rpc_msg_h=yes configure_std --disable-cthelper --disable-cttimeout --disable-systemd`.
-- `make -C extensions`, then `make -C src conntrack LDFLAGS="$LT_LDFLAGS"`. Only the `conntrack` binary is built,
-  not conntrackd or nfct.
-- Static: conntrack does no name resolution. libmnl, libnfnetlink and libnetfilter_conntrack are linked in.
+- `ac_cv_header_rpc_rpc_msg_h=yes LIBNETFILTER_QUEUE_CFLAGS=" " LIBNETFILTER_QUEUE_LIBS=" " configure_std
+  --enable-cthelper --enable-cttimeout --disable-systemd`.
+- `make -C extensions`, then `make -C src conntrack nfct LDFLAGS="$LT_LDFLAGS"`. conntrackd is not built.
+- Static: neither tool does name resolution. libmnl, libnfnetlink, libnetfilter_conntrack, libnetfilter_cttimeout
+  and libnetfilter_cthelper are linked in.
 - No patches. CHECKSUM_SOURCE: netfilter.org `.sig`, key `8C5F7146A1757A65E2422A94D70D1A666ACF2B21`.
 
 Why:
 - configure.ac line 52 checks `rpc/rpc_msg.h` unconditionally and otherwise requires libtirpc. Bionic has no
   `<rpc/>`, and RPC is used only by conntrackd's cthelper RPC helper, which is not built.
-- The survey suggested `LIBTIRPC_CFLAGS=" " LIBTIRPC_LIBS=" "`. The recipe presets the header cache variable
-  instead, which avoids the same check.
-- `--disable-cthelper --disable-cttimeout` removes the need for libnetfilter_cthelper/cttimeout/queue.
+- `--enable-cthelper` also requires libnetfilter_queue, which only conntrackd links; presetting both
+  `LIBNETFILTER_QUEUE_*` variables skips that pkg-config probe instead of building an unused library.
+- nfct (v2.1): `timeout` and `helper` subsystems as in Alpine. `nfct helper add` looks for conntrackd's
+  userspace helper objects with `dlopen()`; they are not shipped (v1's Alpine nfct shipped none either), and in
+  the static binary `dlopen()` is the NDK libdl.a stub, so that one command reports the helper as not found.
+  `nfct timeout ...` and `nfct helper list/get/delete/flush` are pure netlink.
 
 ## WireGuard and iproute2
 
-### wireguard-tools 1.0.20260223 (wg)
+### wireguard-tools 1.0.20260223 (wg, wg-quick)
 Sources checked:
 | Source | Observed |
 |---|---|
 | AOSP, LineageOS | absent |
-| Termux packages/wireguard-tools | 1.0.20260223 (29174fae, 2026-09-27); android.c.patch is for wg-quick only |
+| Termux packages/wireguard-tools | 1.0.20260223 (29174fae, 2026-09-27); `make -C src WITH_WGQUICK=no`, then compiles `src/wg-quick/android.c` with `-DWG_CONFIG_SEARCH_PATHS=...` and installs it as `wg-quick` (android.c.patch is for wg-quick only) |
 | Alpine | 1.0.20260223; `make -C src`; wg-quick patch only |
 | buildroot, OpenWrt | 1.0.20260223, `make -C src`, no patches |
-| Upstream | ships src/wg-quick/android.c; `wg` itself has no Android special-casing |
+| Upstream | ships src/wg-quick/android.c (the Android wg-quick: "a shell script written in C"); wireguard-android builds the same file as libwg-quick.so for its root/kernel backend |
 
-Chosen approach: `make -C src wg PLATFORM=linux`. CFLAGS and LDFLAGS come from the environment, so the
-Makefile's own `CFLAGS +=` lines are kept. `LINKAGE=dynamic`: wg resolves endpoint host names with
-`getaddrinfo`. No patches. CHECKSUM_SOURCE: cgit signed snapshot `.asc` over the uncompressed tar, Jason A.
-Donenfeld key `AB9942E6D4A4CFC3412620A749FC7012A5DE03AE`. The same sha256 appears in the signed announcement
-(lists.zx2c4.com 2026-February/009514).
+Chosen approach: `make -C src wg PLATFORM=linux`; then `wg-quick` = `$CC $CFLAGS -std=gnu11 -o wg-quick
+src/wg-quick/android.c $LDFLAGS -ldl` with upstream's default config search paths (`/data/misc/wireguard`,
+`/data/data/com.wireguard.android/files`). `LINKAGE=dynamic`: wg resolves endpoint host names with
+`getaddrinfo`, and wg-quick `dlopen()`s `libbinder_ndk.so`. No patches. CHECKSUM_SOURCE: cgit signed snapshot
+`.asc` over the uncompressed tar, Jason A. Donenfeld key `AB9942E6D4A4CFC3412620A749FC7012A5DE03AE`. The same
+sha256 appears in the signed announcement (lists.zx2c4.com 2026-February/009514).
 
 Why: wg has its own netlink code and no external libs. genkey falls back to `syscall(__NR_getrandom)` on bionic.
-wg-quick is not built. The survey recommended static; the recipe is dynamic because of the DNS rule.
+wg-quick (v2.1, for parity with awg-quick) is the upstream Android variant, not linux.bash: it needs no bash,
+runs `ip`, `iptables`/`ip6tables`, `ndc` and `wg` through `system()`/`popen()` (PATH, so the stock Android `ip`
+and the module's `wg` wrapper), and sets the tunnel's DNS through the netd DnsResolver binder service. Checked
+against AOSP main for Android 15-17 (2026-11-08):
+- packages/modules/DnsResolver `binder/android/net/IDnsResolver.aidl`: `setResolverConfiguration` is method 2 and
+  `createNetworkCache` method 7, which are the transaction codes android.c uses (`FIRST_CALL_TRANSACTION + 2/+7`);
+  `ResolverParamsParcel` fields 1-12 are in the order android.c writes them (later fields keep their defaults).
+- system/netd `server/NdcDispatcher.cpp`: `network create <id> vpn <secure>`, `network interface add`,
+  `network users add`, `network route add`, `network destroy`, `interface setcfg`, `interface setmtu`,
+  `interface ipv6 <if> enable` all exist; `resolver setnetdns` does not, but android.c uses it only when
+  `libbinder_ndk.so` cannot be loaded (never on Android 10+). `server/Android.bp` still builds `ndc`.
+- The wg-quick for `wg` and the awg-quick for `awg` differ only in names (see amneziawg-tools).
+
+### amneziawg-tools 3.1.20260812 (awg, awg-quick)
+Sources checked:
+| Source | Observed |
+|---|---|
+| Upstream github.com/amnezia-vpn/amneziawg-tools tag v3.1.20260812 (commit ee0f0a9a) | fork of wireguard-tools: `src/` with `WG_GENL_NAME "amneziawg"`, `make -C src` builds `wg` installed as `awg`; Android wg-quick is `src/wg-quick/android.c` (C, not bash), renamed to `awg`/`amneziawg`/`org.amnezia.awg` |
+| amnezia-vpn/amneziawg-openwrt amneziawg-tools/Makefile | v1.0.20240213; `make -C src PLATFORM=linux`, installs `src/wg` as `/usr/bin/awg`; no wg-quick |
+| AOSP, LineageOS, Termux (packages/amneziawg-tools), OpenWrt openwrt/packages | absent |
+| Alpine community/amneziawg-tools | not read (gitlab raw returned HTTP 403 to the survey) |
+
+Chosen approach:
+- `make -C src wg PLATFORM=linux`, installed as `awg`; `awg-quick` = `src/wg-quick/android.c` compiled like
+  wg-quick above (default search paths `/data/misc/amneziawg`, `/data/data/org.amnezia.awg/files`).
+- `LINKAGE=dynamic` (endpoint `getaddrinfo`; `dlopen("libbinder_ndk.so")`).
+- `ndk/patches/amneziawg-tools/0001-awg-quick-prefer-kernel-module.patch`: upstream android.c runs userspace
+  `amneziawg-go` whenever the config has any AmneziaWG parameter (Jc, Jmin, Jmax, S1-S4, H1-H4, I1-I5), and only
+  plain configs use `ip link add <if> type amneziawg`. The patch tries the kernel link type first and falls back
+  to amneziawg-go only when that fails and `/sys/module/amneziawg` is absent, which is what upstream's own
+  `linux.bash` `add_if()` does. Without it a kernel with built-in AmneziaWG (a custom kernel) would never be
+  used for obfuscated configs, and amneziawg-go is not shipped.
+- CHECKSUM_SOURCE: no signed tarball or published checksum upstream; the GitHub tag archive for v3.1.20260812
+  (tag ref resolved to commit `ee0f0a9aa34ff0a0da4b3433b9512781cfe02843` via the GitHub API) is pinned by sha256.
+
+Why: the task's brief named `src/wg-quick/android.bash`; upstream ships no such file at this tag. The Android
+variant is `android.c` (also in wireguard-tools), which needs neither bash nor ip-ng: it calls the stock `ip`,
+`iptables`, `ndc` and the module's `awg`. Notes: it calls `awg` by name, so it needs the `awg` wrapper under that
+name (not renamed to `awg-ng`); it re-executes itself through `su -p -c` when not root.
 
 ### iproute2 7.3.0 (ip, tc, ss, bridge)
 Sources checked:
@@ -480,24 +545,92 @@ Why:
 - The survey also listed `--without-p5-dns-ldns --disable-ldns-config`, which the recipe does not pass.
 - The survey's option (b), a source patch reading getprop, was rejected. The server lookup lives in the wrapper.
 
-### BIND 9.20.30 (dig, host): surveyed, not built
+### libuv 1.53.0 (library for BIND)
+Sources checked:
+| Source | Observed |
+|---|---|
+| AOSP platform/external/libuv | present (listing of platform/external, 2026-11-08) |
+| Termux packages/libuv | 1.53.0; `PLATFORM=android`, `-landroid-spawn`, autogen; patches: io_uring wrappers return ENOSYS on Android, no FICLONE/statx (seccomp) |
+| buildroot, OpenWrt, Alpine | shared library builds [U] |
+
+Chosen approach: CMake with the NDK toolchain file (as for mbedtls), `-DLIBUV_BUILD_SHARED=OFF
+-DLIBUV_BUILD_TESTS=OFF -DLIBUV_BUILD_BENCH=OFF`; only `libuv.a` and the headers are kept, plus a written
+`libuv.pc` (the static-only install has just `libuv-static.pc`; BIND asks for `libuv`). No patches.
+CHECKSUM_SOURCE: `.sign`, Santiago Gimeno key `612F0EAD9401622379DF4402F28C3C8DA33C03BE`.
+
+Why: 1.53.0's `src/unix/linux.c` already returns 0 from `uv__use_io_uring()` for `__ANDROID_API__` ("blocked by
+seccomp") and uses statx only from API 30, so Termux's two patches are not needed at API 35. libandroid-spawn
+is only needed below API 28 (`posix_spawn`).
+
+### liburcu 0.15.7 (library for BIND)
 Sources checked:
 | Source | Observed |
 |---|---|
 | AOSP, LineageOS | absent |
-| Termux packages/dnsutils (e14ba437) | 9.20.30, dynamic; deps include libuv, liburcu (qsbr, `--enable-developer`), openssl, libcap, libandroid-glob/execinfo; `-DRESOLV_CONF=$PREFIX/etc/resolv.conf`; 3 patches (delv RESOLV_CONF, socklen_t cast, qsbr shutdown deadlock) |
-| Alpine, buildroot (261a30b2), OpenWrt (7eef26d5) | 9.20.30, all shared; buildroot `depends on !BR2_STATIC_LIBS` |
-| ISC GitLab bind9 tag v9.20.30 | configure.ac, bin/dig/dighost.c, lib/dns/resconf.c read |
-| GitHub search "bind9 dig android" | no results |
+| Termux packages/liburcu | 0.15.7; default configure; disable-tests.patch only |
+| OpenWrt, buildroot, Alpine | default configure [U] |
 
-Decision: not built.
-- configure.ac refuses `--enable-static` without `--enable-developer` ("Static linking is not supported ...").
-- It hard-requires libuv, OpenSSL, liburcu, and libcap on `*-linux*` hosts (which `aarch64-linux-android`
-  matches).
-- A build would therefore be either shared BIND libs in `$MODDIR/lib` with RUNPATH, or an ISC-unsupported
-  developer-mode static build. Both mean four or five extra libraries to maintain.
-- Without resolv.conf, dig falls back to `::1`/`127.0.0.1`, where nothing listens on Android.
-- drill covers the use case. `dig` and `host` stay the v1 Alpine binaries in the hybrid module.
+Chosen approach: `configure_std --disable-numa`; only `include/` and `src/` are built and installed. No patches.
+CHECKSUM_SOURCE: `.asc`, Mathieu Desnoyers key `2A0B4ED915F2D3FA45F5B16217280A9781186ACF` (and the published
+`.sha256`).
+
+Why: `include/urcu/syscall-compat.h` already handles `__ANDROID__`. BIND's default flavour (`liburcu`, the
+membarrier one) is used; Termux's `--with-liburcu=qsbr` needs `--enable-developer` and a qsbr shutdown patch.
+
+### OpenSSL 3.5.9 (libcrypto/libssl for BIND)
+Sources checked:
+| Source | Observed |
+|---|---|
+| AOSP platform/external/openssl | present (AOSP itself uses BoringSSL) |
+| Termux packages/openssl | 3.6.5; `./Configure android-arm64 shared zlib-dynamic no-ssl no-hw no-srp no-tests enable-tls1_3`, `-DNO_SYSLOG` |
+| Upstream | 3.5 is the current LTS branch (3.5.9 released 2026-09-29) |
+
+Chosen approach: `ANDROID_NDK_ROOT=/opt/ndk ./Configure android-arm64 -D__ANDROID_API__=35 --prefix=/usr
+--libdir=lib --openssldir=/data/adb/modules/android-linux-tools/etc/ssl no-shared no-module no-engine no-dso
+no-tests no-docs no-apps no-ui-console no-ssl3 no-comp $CFLAGS`, `make build_libs`, `make install_dev`.
+`crypto/buildinf.h` is regenerated with `util/mkbuildinf.pl` and a fixed compiler description, because the
+generated one embeds the whole compiler command line including the `-ffile-prefix-map` build paths
+(reproducibility and the host-path check). No patches. CHECKSUM_SOURCE: `.asc`, OpenSSL key
+`C46ED3F2CBEFDA1FDAADA44264ED7B1DCCE71CB2` (and the published `.sha256`).
+
+Why: BIND 9.20 requires OpenSSL (≥1.1.1) for its crypto (DNSSEC, TSIG, DoT); it cannot use mbedTLS, which curl
+keeps. LTS 3.5 instead of 3.6. `--openssldir` makes OpenSSL's default CA file the module's Mozilla bundle
+(`etc/ssl/cert.pem`) for `dig +tls` certificate checks.
+
+### BIND 9.20.30 (dig, host)
+Sources checked:
+| Source | Observed |
+|---|---|
+| AOSP, LineageOS | absent (platform/external has no bind; LineageOS android_external_bind 404) |
+| Termux packages/dnsutils (master, 2026-11-08) | 9.20.30, dynamic shared BIND libs; `--disable-static --with-json-c --with-libxml2 --with-liburcu=qsbr --enable-developer`, attribute cache answers, `-DRESOLV_CONF=$PREFIX/etc/resolv.conf`, `-landroid-glob`, libtool soname fix; patches: delv RESOLV_CONF, socklen_t cast in lib/dns/resconf.c, qsbr shutdown deadlock |
+| buildroot package/bind/bind.mk | 9.20.30 `--without-cmocka --without-lmdb --disable-doh --disable-static --with-openssl`; `depends on !BR2_STATIC_LIBS` |
+| OpenWrt packages net/bind | 9.20.30 `--disable-geoip --with-openssl --without-lmdb --without-readline`, doh/jemalloc/gssapi toggles; deps libuv, liburcu |
+| Nix pkgs/by-name/bi/bind | 9.20.30 `--without-lmdb --enable-dnstap --with-libidn2`; dont-keep-configure-flags.patch |
+| Alpine main/bind | 9.20.30, shared (v1 bind-tools); APKBUILD not re-read (HTTP 403) |
+| ISC GitLab bind9 tag v9.20.30 | configure.ac, bin/dig/dighost.c, lib/dns/resconf.c read |
+
+Chosen approach:
+- Deps: libuv, liburcu, openssl, libcap (static archives; configure requires libcap on `*-linux*`; the libcap
+  recipe has no `.pc`, so `LIBCAP_CFLAGS=" " LIBCAP_LIBS=-lcap`).
+- `configure_std --disable-doh --without-libnghttp2 --without-jemalloc --without-libxml2 --without-json-c
+  --without-lmdb --without-gssapi --without-libidn2 --without-readline --without-zlib --disable-geoip
+  --without-cmocka --disable-dnstap --disable-tracing --disable-fips-mode --disable-chroot`;
+  `make -C lib`; `make -C bin/dig dig host`.
+- `LINKAGE=dynamic`: PIEs against the system libc/libm/libdl only; libisc/libdns/libisccfg and all deps static.
+- Patches: `0001-configure-allow-static-libraries.patch` removes configure's refusal of `--enable-static`
+  outside `--enable-developer` (named loses dlopen() plugins; dig/host load none, and they stay PIE with RELRO);
+  `0002-dighost-android-dns-servers.patch` (`ALT_DNS_SERVERS`, see "DNS without resolv.conf").
+- CHECKSUM_SOURCE: `.asc`, ISC code-signing key (Michal Nowak) `D99CCEAF879747014F038D63182E23579462EFAA`.
+
+Why:
+- v2.0 left dig/host on Alpine because configure refuses static builds and a shared build would need
+  `$MODDIR/lib` + RUNPATH. Static archives inside a dynamic PIE avoid both and keep the module's linkage rule.
+- DoH is off (no nghttp2); `+tls` (DoT) works with OpenSSL. No IDN, no readline (nslookup is not shipped).
+- Termux's socklen_t and qsbr patches are not needed: the build compiled without the cast at API 35, and the
+  qsbr flavour is not used. Its RESOLV_CONF change is replaced by the ALT_DNS_SERVERS fallback, so no
+  resolv.conf with public resolvers is shipped.
+- Cost: dig and host are about 8 MB each (each carries libisc/libdns/libisccfg and libcrypto/libssl). v1 shipped a
+  133 KB Alpine dig plus 3.2 MB of shared bind-libs and the shared libcrypto/libssl/libuv/liburcu.
 
 ## Diagnostics
 
@@ -1275,7 +1408,7 @@ Why:
 - libelf needs those four libeu objects. The rest of libeu needs argp.
 - AOSP does the same thing by listing the sources. This avoids Termux's full-elfutils patch set.
 
-### bpftool 7.8.1 (lite flavour; no LLVM)
+### bpftool 7.8.1 (both flavours; no LLVM)
 Sources checked:
 | Source | Observed |
 |---|---|
@@ -1295,9 +1428,11 @@ Chosen approach:
 - Static, against libelf.a from elfutils, libcap.a and the NDK `libz.a`. No patches.
 - CHECKSUM_SOURCE: upstream publishes no checksum for the sources tarball. The sha256 equals the GitHub release
   asset digest.
-- Flavours: the lite flavour now ships this NDK bpftool. The full flavour keeps v1's Alpine bpftool with libLLVM,
-  for JIT disassembly. `ndk/scripts/check.py` rejects a lite flavour that contains an Alpine bpftool or libLLVM, and
-  a full flavour without bpftool.
+- Flavours: v2.0 shipped this NDK bpftool in lite and kept v1's Alpine bpftool with libLLVM (about 172 MB) in
+  full. Since v2.1 both flavours ship this NDK bpftool, and the Alpine one is gone with the musl runtime. Only JIT
+  disassembly (`bpftool prog dump jited`, which needs LLVM or libbfd) and skeleton-based features are missing.
+  `ndk/scripts/check.py` rejects a lite flavour that contains an Alpine bpftool or libLLVM, and a full flavour
+  without bpftool.
 
 Why:
 - `SKIP_LLVM`, `SKIP_LIBBFD` and `SKIP_CRYPTO` mean no LLVM, no libbfd and no libcrypto (signing).
@@ -1308,12 +1443,58 @@ Why:
   `libc.a`, so a prototype is enough and the code is unchanged.
 - On older Android kernels BTF is usually absent, but `prog show`/`map show` still work as root [survey].
 
+### talloc 2.5.0 (library for mount.cifs)
+Sources checked:
+| Source | Observed |
+|---|---|
+| AOSP platform/external, LineageOS android_external_talloc | absent |
+| buildroot package/libtalloc/libtalloc.mk | 2.4.4 waf-package: `--cross-compile --cross-answers=cache.txt --disable-stack-protector --hostcc=gcc`, `--disable-python`; cache file answers the run-time checks for glibc/musl |
+| Termux | no talloc package |
+
+Chosen approach:
+- `./configure --prefix=/usr --disable-python --disable-rpath --cross-compile --cross-answers=cross-answers.txt
+  --hostcc=gcc`, with `LDFLAGS` without `-static`, so waf's link tests use the API-35 `libc.so` stubs (waf does not
+  read the generated CONFIG_SITE). The answers file in the recipe gives the 17 results for aarch64 bionic (uname,
+  large file support, strtoll, strptime, C99 vsnprintf, shared mmap, mremap, no incoherent mmap, secure mkstemp);
+  the recipe fails if waf adds an UNKNOWN entry.
+- waf builds only a shared `libtalloc.so`, so the recipe compiles `talloc.c` and `lib/replace/replace.c` against
+  waf's `bin/default/config.h` and archives them as `libtalloc.a`; it installs `talloc.h` and a written
+  `talloc.pc`. No patches.
+- CHECKSUM_SOURCE: `.asc` over the uncompressed tar, Samba Library Distribution Key
+  `9147A339719518EE9011BCB54793916113084025`.
+
+### cifs-utils 7.9 (mount.cifs)
+Sources checked:
+| Source | Observed |
+|---|---|
+| AOSP, LineageOS, Termux (packages/, root-packages/, x11-packages/) | absent |
+| buildroot package/cifs-utils | 7.8, `--disable-pie --disable-man`, `-std=gnu11`, depends on libtalloc; no patches |
+| OpenWrt packages net/cifs-utils | 7.7, `--disable-cifsupcall --disable-cifscreds --disable-cifsidmap --disable-cifsacl --disable-pam --disable-pie --disable-relro --disable-systemd --disable-man --without-libcap`, depends on libtalloc |
+| Nix pkgs/by-name/ci/cifs-utils | 7.5; cross: `ac_cv_func_malloc_0_nonnull=yes ac_cv_func_realloc_0_nonnull=yes` |
+| Alpine main/cifs-utils | 7.5 (v1 binary); APKBUILD not re-read (HTTP 403) |
+
+Chosen approach:
+- Deps: talloc, libcap (static). `LINKAGE=dynamic`: mount.cifs resolves the server name with `getaddrinfo`.
+- `ndk/patches/cifs-utils/0001-bionic-compat.patch` adds `android_compat.{c,h}`: `addmntent()` and `getpass()`
+  (as in musl 1.2.5, MIT), `_PATH_MNTTAB` (`/etc/fstab`, only read for non-root user mounts) and
+  `_PATH_MOUNTED_LOCK`; `mtab_unusable()` treats bionic's `_PATH_MOUNTED` (`/proc/mounts` itself) like an mtab
+  symlink, so mount.cifs never tries to lock or append to the kernel table; `cldap_ping.c` uses `memset()`
+  instead of `bzero()`, which bionic removed.
+- The recipe compiles `android_compat.c` into `compat/libandroidcompat.a` passed in `LIBS` (so configure's
+  `getpass` check passes) and creates an empty `compat/libresolv.a` (Makefile.am hard-codes `-lresolv`; bionic
+  has `res_query` in libc).
+- `configure_std --disable-cifsupcall --disable-cifscreds --disable-cifsidmap --disable-cifsacl --disable-smbinfo
+  --disable-pythontools --disable-pam --disable-systemd --disable-man --with-libcap=yes` (as OpenWrt, but with
+  libcap so mount.cifs drops capabilities as upstream intends), `ac_cv_func_malloc_0_nonnull=yes
+  ac_cv_func_realloc_0_nonnull=yes` (as Nix for cross), `make mount.cifs`.
+- CHECKSUM_SOURCE: `.asc`, cifs-utils Distribution Verification Key `C699981A31F338706C817650DF5BA9D30642D5A0`.
+
+Why: v2.0 left mount.cifs on Alpine because of talloc and the missing addmntent/getpass. talloc is kept (it is
+used by the DFS cldap ping in `resolve_host`), not patched out. Many Android kernels lack `CONFIG_CIFS`; the
+phone test checks only the version and help output.
+
 ### Not ported
-These stay as v1 Alpine binaries in the hybrid module:
-- cifs-utils 7.9 (mount.cifs):
-  - configure 7.9 requires libtalloc unconditionally, and mount.cifs's resolve_host/cldap_ping objects use talloc.
-  - bionic lacks `addmntent()`/`_PATH_MNTTAB` and `getpass()`. The survey caught only the getpass blocker.
-  - A port would need a cross build of samba's talloc (waf) plus mtab patches.
-  - Many Android kernels lack `CONFIG_CIFS` anyway.
-- nfct (conntrack-tools): the brief asked for `conntrack` only (see conntrack-tools above).
-- BIND dig/host: see "BIND 9.20.30 (dig, host): surveyed, not built" above.
+None since v2.1: every tool of `config/tools.tsv` (and wg-quick, awg, awg-quick, drill, ethtool-ng) is an NDK
+build, `ndk/build.conf` has `ALLOW_ALPINE=0`, and `ndk/scripts/check.py` fails on any Alpine/musl ELF, a `lib/`
+directory, the resolv.conf overlay, or ELF files outside `libexec/`. Setting `ALLOW_ALPINE=1` restores the v2.0
+hybrid fallback (v1 Alpine binary for a tool whose recipe is missing from `ndk/tools.tsv`).
