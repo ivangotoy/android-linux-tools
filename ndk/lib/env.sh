@@ -1,6 +1,6 @@
 # Sourced by ndk/build.sh inside the builder container. Cross environment for aarch64-linux-android.
 TARGET=aarch64-linux-android
-API=29
+API=35
 BUILD_TRIPLE=x86_64-pc-linux-gnu
 TC=/opt/ndk/toolchains/llvm/prebuilt/linux-x86_64
 SYSROOT=$TC/sysroot

@@ -138,7 +138,11 @@ for t in $(grep -v '^#' /src/ndk/recipes.list); do
   if ! ( build_one "$t" ); then FAILED+=("$t"); fi
 done
 printf '%s\n' "${FAILED[@]}" > "$OUT/failed.txt"
-[ ${#FAILED[@]} -eq 0 ] || log "recipes failed: ${FAILED[*]}"
+if [ ${#FAILED[@]} -ne 0 ]; then
+  # A failed recipe must not silently drop a tool (or let it fall back to Alpine) in the ZIP.
+  log "recipes failed: ${FAILED[*]}; not packaging"
+  exit 1
+fi
 log "package"
 bash /src/ndk/package.sh
 log "done"

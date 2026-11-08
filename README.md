@@ -26,10 +26,9 @@ records per tool its origin (`ndk` or `alpine`), upstream version, source sha256
 
 - Toolchain: Android NDK r30 (LTS, 30.0.16248370) from dl.google.com, verified with Google's published SHA-1
   and a pinned SHA-256, in a Debian trixie-slim image pinned by digest (packages from snapshot.debian.org).
-- Target: `aarch64-linux-android29`. API 29 (Android 10) is the floor so one build runs on Android 13-16;
-  it is also the first level with native ELF TLS and with `glob`/`hsearch`/`getloadavg`/`reallocarray` in bionic.
-  Dynamic binaries carry an Android ELF note of 29. The NDK only ships `crtbegin_static.o` for its newest level,
-  so static binaries' notes read 37; they carry their own libc and depend only on the kernel.
+- Target: `aarch64-linux-android35`. API 35 (Android 15) is the floor: the oldest of the phones this
+  is built for runs Android 15 (the others run 16 and 17), so bionic functions up to API 35 are used
+  directly instead of compatibility fallbacks.
 - Linkage rule: fully static (`-static`, NDK `libc.a`) unless the tool resolves host names. Static bionic has
   no netd client, so `getaddrinfo()` in a static binary cannot reach Android's resolver. Tools that call the
   libc resolver are PIEs linked against the system `libc.so`/`libm.so`/`libdl.so` (`libz.so` for curl) only,
@@ -68,7 +67,7 @@ JOBS=8 MEM=12G ./build-ndk.sh  # make -j and memory limit (defaults)
 - Everything else (NDK, autotools, meson, python, zip, patchelf) is inside the image. Scratch space is
   `.work/ndk/` (`dl/` sources, `build/` trees and logs, `out/` binaries, `stage/`, `alpine/` v1 apks).
 - `ndk/Dockerfile` builder image; `ndk/build.sh` driver; `ndk/lib/env.sh` cross environment;
-  `ndk/lib/api-site.py` generates a `CONFIG_SITE` that marks every bionic function introduced after API 29 as
+  `ndk/lib/api-site.py` generates a `CONFIG_SITE` that marks every bionic function introduced after API 35 as
   unavailable (the static `libc.a` contains them, so configure link tests would otherwise find them).
 - `ndk/recipes/<name>.sh`: `VERSION`, `URL`, `SHA256`, `CHECKSUM_SOURCE` (signature key fingerprint or the
   published checksum the sha256 was verified against when pinning), `LICENSE`, `DEPS`, optional `LINKAGE=dynamic`,
@@ -84,7 +83,7 @@ JOBS=8 MEM=12G ./build-ndk.sh  # make -j and memory limit (defaults)
 - `ndk/package.sh` stages, checks and zips both flavours (`ndk/scripts/stage.py`, `check.py`, `manifest.py`).
   The host checks run no aarch64 code: AArch64 machine; NDK static binaries `statically linked` with no
   `DT_NEEDED`; NDK dynamic binaries PIE with interpreter `/system/bin/linker64`, `DT_NEEDED` only libc/libm/libdl/
-  liblog/libz, no RUNPATH and an Android note of API 29; Alpine binaries with the v1 musl interpreter, RUNPATH and
+  liblog/libz, no RUNPATH and an Android note of API 35; Alpine binaries with the v1 musl interpreter, RUNPATH and
   library closure; no builder or home paths in any ELF or ZIP; `sh -n` and `bash --posix -n` on every script;
   version patterns of `phone-test.sh` found in the ELF strings.
 - Reproducible: two `./build-ndk.sh --clean` runs give byte-identical binaries, ZIPs and MANIFEST

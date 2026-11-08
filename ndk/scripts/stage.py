@@ -213,12 +213,13 @@ for e in entries:
     elif e['origin'] == 'ndk' and 'dns' in e['flags']:
         lines += ['# DNS query tool: talks to a DNS server directly (not via getaddrinfo). Without @server, use the',
                   '# first DNS server of the active default network; no resolv.conf is read or written.',
+                  '# @server goes last: drill stops option parsing at the first operand.',
                   'case " $* " in',
                   '  *" @"*) exec %s"$@" ;;' % exe,
                   'esac',
                   'ALT_NS=$(/system/bin/sh "$MODDIR/share/%s/dns-servers" 2>/dev/null | head -n 1)' % MODID,
                   'if [ -n "$ALT_NS" ]; then',
-                  '  exec %s"@$ALT_NS" "$@"' % exe,
+                  '  exec %s"$@" "@$ALT_NS"' % exe,
                   'fi',
                   'exec %s"$@"' % exe]
     else:

@@ -20,7 +20,7 @@ Builder facts (`ndk/Dockerfile`, `ndk/lib/env.sh`):
   dl.google.com/android/repository/repository2-3.xml (the Dockerfile also checks the size and a SHA-256 recorded
   at pin time).
 - Debian trixie-slim base pinned by digest, packages from snapshot.debian.org `20261101T000000Z`.
-- Target `aarch64-linux-android`, API 29, compiler `aarch64-linux-android29-clang`, `llvm-ar`/`ld.lld`.
+- Target `aarch64-linux-android`, API 35, compiler `aarch64-linux-android35-clang`, `llvm-ar`/`ld.lld`.
 - CFLAGS `-O2 -g0 -fPIC -fstack-protector-strong -D_FORTIFY_SOURCE=2 -ffunction-sections -fdata-sections` plus
   `-ffile-prefix-map` for the build paths; LDFLAGS `-Wl,--gc-sections -Wl,--build-id=sha1`; `pkgconf --static`
   with `PKG_CONFIG_LIBDIR` limited to the build prefix.
@@ -32,18 +32,13 @@ Builder facts (`ndk/Dockerfile`, `ndk/lib/env.sh`):
   differed: mtr's configure auto-detected libcap when libcap happened to be built earlier. With the private sysroots
   two `./build-ndk.sh --clean` runs give byte-identical binaries and ZIPs.
 
-### API level 29
-- API 29 is Android 10. That is well below current devices (Android 13-16 = API 33-36), so one build runs on
-  all of them.
-- Native ELF TLS needs API >= 29. Below 29 the NDK uses emulated TLS.
-- The bionic functions these tools need are all available at 29: `glob`/`globfree` and `hcreate`/`hsearch` since
-  API 28, `getloadavg` and `reallocarray` since API 29. Termux builds at `TERMUX_PKG_API_LEVEL=24`
-  (scripts/build/termux_step_setup_variables.sh), so it needs workarounds this repo does not: libandroid-glob,
-  the hsearch shim, the `sethostent` patch, `-Dfputs_unlocked=fputs`.
-- Dynamic binaries carry `.note.android.ident` = 29.
-- Static binaries are compiled against API-29 headers, but their ELF note reads 37. The NDK only ships
-  `crtbegin_static.o` for its newest API level (37), and that file supplies the note. A static binary carries
-  its own libc, so it only depends on the kernel.
+### API level 35
+- API 35 is Android 15, the oldest Android version on the target phones (Android 15 to 17). A lower floor only hides newer bionic functions and
+  forces fallbacks (API 29 needed a curl workaround for `memset_explicit`, API 34).
+- From API 33 bionic has `backtrace()`; in a static link `backtrace_symbols()` needs `dladdr()`
+  from libdl, so the htop recipe hides `execinfo.h` (crash-handler backtraces are not needed).
+- Static binaries carry the NDK's newest Android note (37) because r30 ships `crtbegin_static.o`
+  only for its newest level; they are compiled against API-35 headers.
 
 ### Static vs dynamic linkage
 The default is fully static (`-static`, NDK `libc.a`; for libtool `-all-static`). A static binary cannot use
@@ -72,7 +67,7 @@ Android's DNS, though, because static bionic has no netd client [V, `.work/ndk/s
 The rule applied:
 - Any binary that calls the libc resolver is built `LINKAGE=dynamic`. Calls were checked with `llvm-nm` on the
   unstripped binaries, for `getaddrinfo`, `gethostbyname2`, `gethostbyaddr` and `getnameinfo`.
-- A dynamic binary is a PIE that links only the system bionic `libc.so`/`libm.so`/`libdl.so` (API 29 stubs),
+- A dynamic binary is a PIE that links only the system bionic `libc.so`/`libm.so`/`libdl.so` (API 35 stubs),
   plus `libz.so` for curl. Every third-party library is linked statically from the build prefix. There is no
   `$MODDIR/lib` and no RUNPATH.
 - Dynamic: nft, ipset, wg, ip, tc, ss, bridge, tcpdump, curl, mtr, socat, iperf3.
@@ -85,7 +80,7 @@ The rule applied:
   `__INTRODUCED_IN(N)` where N > 29, it writes `ac_cv_func_X=no` and `ac_cv_have_decl_X=no`, and `env.sh` exports
   the result as `CONFIG_SITE`.
 - This is needed because a static link sees the whole `libc.a`, so autoconf's link-only `AC_CHECK_FUNCS` "finds"
-  functions that the API-29 headers hide. Example: `memset_explicit` (API 34) broke curl.
+  functions that the API-35 headers hide. Example: `memset_explicit` (API 34) broke curl.
 - Examples hidden at 29, from the survey: `renameat2`/`statx`/`memfd_create` (30), `preadv2` (33),
   `copy_file_range`/`close_range` (34), `qsort_r`/`sig2str` (36), `sched_setattr`/`free_sized` (37).
 
@@ -1028,7 +1023,7 @@ CHECKSUM_SOURCE: a detached signature `.txt` exists, but its key could not be ob
 sha256 was pinned at download.
 
 Why:
-- `copy_file_range` (API 34) is in `libc.a` but hidden by the API-29 headers. A probe that says yes would mean an
+- `copy_file_range` (API 34) is in `libc.a`; it was hidden by the API-29 headers of the first v2 build and is visible at API 35. A probe that says yes would mean an
   implicit declaration in src/pv/transfer.c. Termux's syscall patch is not taken.
 - `--remote` and `-d` use SysV shm/msg, which Android does not offer, so IPC is off as in Termux.
 
@@ -1309,7 +1304,7 @@ Why:
 - Skeletons need a host clang bootstrap and a `VMLINUX_BTF`. An empty `VMLINUX_BTF` builds without skeletons, the
   same as AOSP's `-DBPFTOOL_WITHOUT_SKELETONS`. That means no `prog profile` and no pid info in `map/prog show`
   [per survey].
-- src/btf.c calls `qsort_r`, which is API 36. It is hidden by the API-29 headers but present in the static
+- src/btf.c calls `qsort_r`, which is API 36. It is hidden by the API-35 headers but present in the static
   `libc.a`, so a prototype is enough and the code is unchanged.
 - On older Android kernels BTF is usually absent, but `prog show`/`map show` still work as root [survey].
 
