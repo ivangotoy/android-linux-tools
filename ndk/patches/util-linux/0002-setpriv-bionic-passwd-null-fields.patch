@@ -6,7 +6,7 @@ on NULL, so every --reuid/--regid/--ruid use aborts with
 `include/xalloc.h:92: char *xstrdup(const char *): assertion "str" failed`.
 Copy NULL fields as NULL instead (setpriv only reads pw_name, pw_uid, pw_gid, pw_dir, pw_shell
 and handles missing values).
-Source: written for this module (see ndk/REFERENCES.md); seen on Android 15.
+Source: written for this module (see ndk/REFERENCES.md); seen on an Android 15 vendor ROM.
 
 --- a/sys-utils/setpriv.c
 +++ b/sys-utils/setpriv.c

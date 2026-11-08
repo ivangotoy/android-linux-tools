@@ -33,8 +33,7 @@ Builder facts (`ndk/Dockerfile`, `ndk/lib/env.sh`):
   two `./build-ndk.sh --clean` runs give byte-identical binaries and ZIPs.
 
 ### API level 35
-- API 35 is Android 15, the oldest Android version on the test phones (newer ones run 16 and 17).
-  A lower floor only hides newer bionic functions and
+- API 35 is Android 15, the oldest Android version on the target phones (Android 15 to 17). A lower floor only hides newer bionic functions and
   forces fallbacks (API 29 needed a curl workaround for `memset_explicit`, API 34).
 - From API 33 bionic has `backtrace()`; in a static link `backtrace_symbols()` needs `dladdr()`
   from libdl, so the htop recipe hides `execinfo.h` (crash-handler backtraces are not needed).
@@ -401,7 +400,7 @@ Chosen approach:
   `amneziawg-go` whenever the config has any AmneziaWG parameter (Jc, Jmin, Jmax, S1-S4, H1-H4, I1-I5), and only
   plain configs use `ip link add <if> type amneziawg`. The patch tries the kernel link type first and falls back
   to amneziawg-go only when that fails and `/sys/module/amneziawg` is absent, which is what upstream's own
-  `linux.bash` `add_if()` does. Without it a kernel with built-in AmneziaWG would never be
+  `linux.bash` `add_if()` does. Without it a kernel with built-in AmneziaWG (a custom kernel) would never be
   used for obfuscated configs, and amneziawg-go is not shipped.
 - CHECKSUM_SOURCE: no signed tarball or published checksum upstream; the GitHub tag archive for v3.1.20260812
   (tag ref resolved to commit `ee0f0a9aa34ff0a0da4b3433b9512781cfe02843` via the GitHub API) is pinned by sha256.
@@ -945,7 +944,7 @@ Why:
 - setpriv needs libcap-ng, so libcap-ng 0.9.6 is built for it.
 - setpriv (v2.2): bionic `getpwuid()` returns NULL `pw_passwd`/`pw_gecos` for Android IDs; upstream `passwd_copy()`
   `xstrdup()`s every field and aborts (xalloc.h assertion) on any `--reuid`/`--regid`. Patch 0002 copies NULL
-  fields as NULL. Found on Android 15.
+  fields as NULL. Found on an Android 15 vendor ROM.
 
 ### htop 3.5.3
 Sources checked:
