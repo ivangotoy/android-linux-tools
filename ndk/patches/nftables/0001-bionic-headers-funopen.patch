@@ -1,0 +1,157 @@
+Subject: build with bionic: header clashes, rthdr0 addresses, fopencookie before API 32
+
+Why:
+- bionic's <netinet/in.h> includes <linux/ipv6.h>, so nft's own struct ipv6hdr is a redefinition;
+  use the layout-identical kernel struct.
+- bionic's <netinet/ip.h> already defines ip_auth_hdr, ip_esp_hdr, ip_comp_hdr (same layout), and
+  <netinet/tcp.h> includes <linux/tcp.h> whose TCP_FLAG_* enumerators clash with nft's
+  (src/ipopt.c includes both); include them first and rename nft's enumerators via macros.
+- bionic's <netinet/ip6.h> (from OpenBSD) has no ip6r0_addr[] in struct ip6_rthdr0.
+- fopencookie() is __INTRODUCED_IN(32) in bionic; use funopen() below API 32.
+- bionic's <netinet/igmp.h> lacks IGMP_V1/V2_MEMBERSHIP_REPORT and IGMP_V2_LEAVE_GROUP (added
+  with #ifndef, values from RFC 1112/2236 as in glibc).
+All other changes are under __ANDROID__ only; byte offsets used by nft payload templates are unchanged.
+Source: written for this module. No Android/bionic build of nftables exists in AOSP or
+termux-packages (see ndk/REFERENCES.md); the funopen() substitution is the usual BSD/bionic
+replacement for fopencookie() (bionic libc/include/stdio.h documents both).
+
+--- a/include/headers.h
++++ b/include/headers.h
+@@ -7,6 +7,22 @@
+ # define IPPROTO_UDPLITE	136
+ #endif
+ 
++#ifdef __ANDROID__
++/* bionic's <netinet/ip.h> defines ip_auth_hdr/ip_esp_hdr/ip_comp_hdr (same layout) and
++ * <netinet/tcp.h> pulls in <linux/tcp.h>, whose TCP_FLAG_* enumerators (32-bit word masks)
++ * clash with nft's one-byte TCP_FLAG_* values: include them first, rename nft's enumerators. */
++#include <netinet/ip.h>
++#include <netinet/tcp.h>
++#define TCP_FLAG_FIN NFT_TCP_FLAG_FIN
++#define TCP_FLAG_SYN NFT_TCP_FLAG_SYN
++#define TCP_FLAG_RST NFT_TCP_FLAG_RST
++#define TCP_FLAG_PSH NFT_TCP_FLAG_PSH
++#define TCP_FLAG_ACK NFT_TCP_FLAG_ACK
++#define TCP_FLAG_URG NFT_TCP_FLAG_URG
++#define TCP_FLAG_ECN NFT_TCP_FLAG_ECN
++#define TCP_FLAG_CWR NFT_TCP_FLAG_CWR
++#endif
++
+ enum tcp_hdr_flags {
+ 	TCP_FLAG_FIN	= 0x01,
+ 	TCP_FLAG_SYN	= 0x02,
+@@ -18,6 +34,7 @@
+ 	TCP_FLAG_CWR	= 0x80,
+ };
+ 
++#ifndef __ANDROID__
+ struct ip_auth_hdr {
+ 	uint8_t 	nexthdr;
+ 	uint8_t 	hdrlen;
+@@ -36,6 +53,7 @@
+ 	uint8_t		flags;
+ 	uint16_t	cpi;
+ };
++#endif
+ 
+ #ifndef IPPROTO_DCCP
+ # define IPPROTO_DCCP 33
+@@ -92,6 +110,10 @@
+ 	uint32_t	tpa;
+ } __attribute__((__packed__));
+ 
++#ifdef __ANDROID__
++/* bionic <netinet/in.h> already pulls in <linux/ipv6.h> and its struct ipv6hdr (same layout). */
++#include <linux/ipv6.h>
++#else
+ struct ipv6hdr {
+ 	uint8_t		version:4,
+ 			priority:4;
+@@ -104,6 +126,7 @@
+ 	struct in6_addr	saddr;
+ 	struct in6_addr	daddr;
+ };
++#endif
+ 
+ struct vlan_hdr {
+ 	uint16_t	vlan_id:12,
+--- a/src/exthdr.c
++++ b/src/exthdr.c
+@@ -470,8 +470,22 @@
+ 	},
+ };
+ 
++#ifdef __ANDROID__
++/* bionic <netinet/ip6.h> (from OpenBSD) has no ip6r0_addr[] in struct ip6_rthdr0. */
++struct nft_ip6_rthdr0 {
++	uint8_t		ip6r0_nxt;
++	uint8_t		ip6r0_len;
++	uint8_t		ip6r0_type;
++	uint8_t		ip6r0_segleft;
++	uint32_t	ip6r0_reserved;
++	struct in6_addr	ip6r0_addr[2];
++} __attribute__((__packed__));
++#define RT0_FIELD(__name, __member, __dtype) \
++	HDR_TEMPLATE(__name, __dtype, struct nft_ip6_rthdr0, __member)
++#else
+ #define RT0_FIELD(__name, __member, __dtype) \
+ 	HDR_TEMPLATE(__name, __dtype, struct ip6_rthdr0, __member)
++#endif
+ 
+ const struct exthdr_desc exthdr_rt0 = {
+ 	.name           = "rt0",
+--- a/src/libnftables.c
++++ b/src/libnftables.c
+@@ -295,11 +295,21 @@
+ 	return buflen;
+ }
+ 
++#if defined(__ANDROID__) && __ANDROID_API__ < 32
++/* fopencookie() is only in bionic from API 32; funopen() has always been there. */
++static int cookie_write_funopen(void *cookie, const char *buf, int buflen)
++{
++	return cookie_write(cookie, buf, buflen);
++}
++#endif
++
+ static int init_cookie(struct cookie *cookie)
+ {
++#if !defined(__ANDROID__) || __ANDROID_API__ >= 32
+ 	cookie_io_functions_t cookie_fops = {
+ 		.write = cookie_write,
+ 	};
++#endif
+ 
+ 	if (cookie->orig_fp) { /* just rewind buffer */
+ 		if (cookie->buflen) {
+@@ -311,7 +321,11 @@
+ 
+ 	cookie->orig_fp = cookie->fp;
+ 
++#if defined(__ANDROID__) && __ANDROID_API__ < 32
++	cookie->fp = funopen(cookie, NULL, cookie_write_funopen, NULL, NULL);
++#else
+ 	cookie->fp = fopencookie(cookie, "w", cookie_fops);
++#endif
+ 	if (!cookie->fp) {
+ 		cookie->fp = cookie->orig_fp;
+ 		cookie->orig_fp = NULL;
+--- a/src/proto.c
++++ b/src/proto.c
+@@ -481,6 +481,16 @@
+ #ifndef IGMP_V3_MEMBERSHIP_REPORT
+ #define IGMP_V3_MEMBERSHIP_REPORT	0x22
+ #endif
++/* bionic's <netinet/igmp.h> lacks the BSD/glibc message type names (RFC 1112/2236 values). */
++#ifndef IGMP_V1_MEMBERSHIP_REPORT
++#define IGMP_V1_MEMBERSHIP_REPORT	0x12
++#endif
++#ifndef IGMP_V2_MEMBERSHIP_REPORT
++#define IGMP_V2_MEMBERSHIP_REPORT	0x16
++#endif
++#ifndef IGMP_V2_LEAVE_GROUP
++#define IGMP_V2_LEAVE_GROUP		0x17
++#endif
+ 
+ static const struct symbol_table igmp_type_tbl = {
+ 	.base		= BASE_DECIMAL,
