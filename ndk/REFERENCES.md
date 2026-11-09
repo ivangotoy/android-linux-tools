@@ -34,7 +34,7 @@ Builder facts (`ndk/Dockerfile`, `ndk/lib/env.sh`):
   two `./build-ndk.sh --clean` runs give byte-identical binaries and ZIP.
 
 ### API level 35
-- API 35 is Android 15, the Android version of the oldest tested phone. A lower floor only hides newer
+- API 35 is Android 15, the oldest Android version the module targets. A lower floor only hides newer
   bionic functions and forces fallbacks (API 29 needed a curl workaround for `memset_explicit`, API 34).
 - From API 33 bionic has `backtrace()`; in a static link `backtrace_symbols()` needs `dladdr()`
   from libdl, so the htop recipe hides `execinfo.h` (crash-handler backtraces are not needed).
@@ -122,8 +122,7 @@ Problem (KernelSU with the NoMount metamodule): `/data/adb` is `0700 root`, so f
 adb shell (uid 2000), Termux and apps every wrapper failed when it exec'd `$MODDIR/libexec/<tool>`:
 `/system/bin/dig[11]: /data/adb/modules/android-linux-tools/libexec/dig: inaccessible or not found`. The wrapper
 itself, a new file in the module's `system/bin`, ran fine as uid 2000: what the manager mounts from `system/`
-is readable by every uid; what the wrapper read directly from `/data/adb` was not. v2.1's phone test ran
-everything as root and missed it.
+is readable by every uid; what the wrapper read directly from `/data/adb` was not.
 
 Chosen approach: everything a wrapper uses at run time is in the module's `system/etc/android-linux-tools/`,
 which is `ALTDIR=/system/etc/android-linux-tools` on the device: `libexec/` (every ELF), `share/terminfo/`,
@@ -149,19 +148,10 @@ merge; NoMount: per-file rules plus synthesized directories), so no new top-leve
 A subdirectory of `/system/bin` would also work but would sit next to the wrappers in a `PATH` directory and in
 the rename loop of `customize.sh`. `/system/etc` is where Android keeps non-`PATH` system files, and the
 `etc/`, `share/` and `libexec/` names inside keep the v2.1 relative layout. The only `/data/adb` path left is
-`$MODDIR` in `phone-test.sh` (root checks of `module.prop` and old-layout leftovers, and the v1 resolv.conf check,
-which runs only if a module still ships `resolv-refresh`).
+`$MODDIR` in `phone-test.sh`.
 
 Checks: `ndk/scripts/check.py` fails on `$MODDIR` or `/data/adb` in a wrapper, `/data/adb` in an NDK ELF, an ELF
-outside `$ALTDIR/libexec`, or a v2.1 runtime path in the module root. `ndk/scripts/layout_test.py` (run by
-`ndk/package.sh` on the ZIP) unzips it under a simulated `data/adb/modules/android-linux-tools` (0700), runs
-its `customize.sh` with `set_perm` stubs, and checks the view of a non-root user: every `$ALTDIR` path in every
-wrapper exists and is readable (programs: executable) by "other" through every directory, nothing refers to
-`/data/adb`, and owner, label and mode of every file under `system/`. Run against the v2.1 ZIP it reports 274
-errors. On the phone, `phone-test.sh` run as root repeats the non-root checks as uid 2000 (`su 2000 -c`,
-`su shell -c`, `su -s /system/bin/sh 2000 -c`, or the module's `setpriv --reuid=2000`); `su`/`setpriv` keep
-the root SELinux domain, so that run tests file permissions, not the `shell` domain policy (run the script from
-`adb shell` for that).
+outside `$ALTDIR/libexec`, or a v2.1 runtime path in the module root.
 
 ### Source verification
 - Every recipe pins `SHA256` and records in `CHECKSUM_SOURCE` how that value was verified: a detached signature
@@ -1612,8 +1602,7 @@ Chosen approach:
 - CHECKSUM_SOURCE: `.asc`, cifs-utils Distribution Verification Key `C699981A31F338706C817650DF5BA9D30642D5A0`.
 
 Why: v2.0 left mount.cifs on Alpine because of talloc and the missing addmntent/getpass. talloc is kept (it is
-used by the DFS cldap ping in `resolve_host`), not patched out. Many Android kernels lack `CONFIG_CIFS`; the
-phone test checks only the version and help output.
+used by the DFS cldap ping in `resolve_host`), not patched out. Many Android kernels lack `CONFIG_CIFS`.
 
 ### Not ported
 None since v2.1: every tool of v1 (and wg-quick, awg, awg-quick, drill, ethtool-ng) is an NDK build. Since

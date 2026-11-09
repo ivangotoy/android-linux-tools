@@ -19,15 +19,13 @@ mounts from its `system/` tree.
 - Command line, as root: `ksud module install /sdcard/Download/android-linux-tools-v2.3-r2.zip` (KernelSU).
   Magisk (`magisk --install-module ZIP`) and APatch (`apd module install ZIP`) have the same module interface.
 - Upgrading: install the new ZIP over the old one and reboot. The installer recognises wrappers of this
-  module (also of v1/v2.0/v2.1 and of the `prototype-tools` prototype) and never renames them as device binaries.
-- If the prototype module `prototype-tools` is installed, the installer creates its `remove` file and the manager
-  deletes it on the next reboot. No other module is touched.
+  module (also of v1/v2.0/v2.1) and never renames them as device binaries. No other module is touched.
 - The ZIP has the standard Magisk `META-INF/com/google/android/update-binary`; KernelSU and APatch use their own
   installer and run the same `customize.sh`. It uses only `ui_print`, `set_perm` and `set_perm_recursive` (with
   fallbacks if they are missing) and no manager-specific command (`ndk/scripts/check.py` enforces that).
 
-Root managers: KernelSU (with a metamodule such as NoMount or meta-overlayfs), Magisk and APatch; the details are in
-`ndk/REFERENCES.md`, "Runtime layout".
+Root managers: KernelSU (with a metamodule such as NoMount or meta-overlayfs), Magisk and APatch; how each
+mounts the module's files is in `ndk/REFERENCES.md`, "Runtime layout".
 
 ## Runtime layout
 
@@ -54,9 +52,7 @@ for data. `/system/etc` exists on every device, so no new top-level `/system` di
 ## Non-root use
 
 Because wrappers and runtime files are under `/system` (readable and executable by every uid), the tools
-also run without root, with the permissions of the calling user. Tested: uid 2000 from a real `adb shell` and
-through `phone-test.sh` (see "Testing"); Termux and apps use the same files but are not tested separately.
-Operations that need root or capabilities (nft, ipset, conntrack, `bpftool prog list`, creating links with
+also run without root (`adb shell`, Termux, apps), with the permissions of the calling user. Operations that need root or capabilities (nft, ipset, conntrack, `bpftool prog list`, creating links with
 `ip-ng`/`awg`, tcpdump capture, ...) still need `su`.
 
 ## Never shadowing device binaries: the `-ng` rule and `alt-list`
@@ -69,7 +65,7 @@ Operations that need root or capabilities (nft, ipset, conntrack, `bpftool prog 
    /system/xbin /system_ext/bin /product/bin /vendor/bin /vendor/xbin /odm/bin /apex/*/bin`. If the device
    already has that name, the wrapper is renamed to `<name>-ng` (or `<name>-ng-ng` if that is also taken) and
    the installer prints the rename. Files of this module are recognised by the `ALTDIR=` (v2.2+) or `MODDIR=`
-   (older versions, `prototype-tools`) line in their first 400 bytes, so an upgrade never renames a wrapper because
+   (older versions) line in their first 400 bytes, so an upgrade never renames a wrapper because
    of the previous version's copy (`check.py` requires that marker in every wrapper).
 3. `alt-list` prints the installed command names and marks the renamed ones; `alt-list -r` prints only the
    renames; `alt-list -m` prints the map (`tool installed-name device-path-or--`).
@@ -95,7 +91,7 @@ libLLVM, about 172 MB). The module id is unchanged, so the ZIP installs over eit
 
 | ZIP | Bytes | Unpacked |
 |---|---|---|
-| `android-linux-tools-v2.3-r2.zip` | 60852845 | 135.7 MB |
+| `android-linux-tools-v2.3-r2.zip` | 60852774 | 135.7 MB |
 
 | Command | Recipe | Version | Linkage | libexec (KB) | Licence (SPDX) |
 |---|---|---|---|---|---|
@@ -170,14 +166,13 @@ libLLVM, about 172 MB). The module id is unchanged, so the ZIP installs over eit
 
 `$ALTSHARE/MANIFEST.json` (and `dist/MANIFEST-v2.json`) records per tool the recipe, upstream version, source
 URL and sha256, how the checksum was verified, licence, patches, dependencies, linkage and DNS method;
-`$ALTSHARE/origins.txt` has one line per tool for `phone-test.sh`.
+`$ALTSHARE/origins.txt` has one line per tool (origin, version, linkage).
 
 ## Build and runtime details
 
 - Toolchain: Android NDK r30 (LTS, 30.0.16248370) from dl.google.com, verified with Google's published SHA-1
   and a pinned SHA-256, in a Debian trixie-slim image pinned by digest (packages from snapshot.debian.org).
-- Target `aarch64-linux-android35`. API 35 (Android 15) is the floor: the oldest tested phone runs Android 15,
-  so bionic functions up to API 35 are used directly. `ndk/lib/api-site.py` generates a `CONFIG_SITE` that
+- Target `aarch64-linux-android35`. API 35 (Android 15) is the floor, so bionic functions up to API 35 are used directly. `ndk/lib/api-site.py` generates a `CONFIG_SITE` that
   marks every bionic function introduced after API 35 as unavailable (the static `libc.a` contains them, so
   configure link tests would otherwise find them).
 - Linkage rule: fully static (`-static`, NDK `libc.a`) unless the tool resolves host names. Static bionic has no
@@ -238,7 +233,7 @@ JOBS=8 MEM=12G ./build-ndk.sh  # make -j and memory limit (defaults)
   `ndk/recipes.list` (build order), `ndk/recipes/<name>.sh`, `ndk/patches/<name>/*.patch`, `ndk/tools.tsv`
   (wrapper name, recipe, program, fixed arguments, DNS flag; in module order), `ndk/module/` (`customize.sh`,
   `alt-list`, `dns-servers`, `META-INF/`), `ndk/package.sh` and `ndk/scripts/` (`stage.py`, `check.py`,
-  `manifest.py`, `layout_test.py`, `common.py`), `phone-test.sh`.
+  `manifest.py`, `layout_test.py`, `common.py`), `phone-test.sh` (self-check script).
 - Recipes: `VERSION`, `URL`, `SHA256`, `CHECKSUM_SOURCE` (signature key fingerprint or the published checksum
   the sha256 was verified against when pinning), `LICENSE`, `DEPS`, optional `LINKAGE=dynamic`, `EXTRA_SRCS`
   (e.g. bash's official patch series) and a `build()` function. Each recipe builds against a private sysroot
@@ -248,45 +243,6 @@ JOBS=8 MEM=12G ./build-ndk.sh  # make -j and memory limit (defaults)
   buildroot, or written for this module).
 - Reproducible: two `./build-ndk.sh --clean` runs give byte-identical binaries, ZIP and MANIFEST
   (`SOURCE_DATE_EPOCH`, `-ffile-prefix-map`, sorted ZIP entries, fixed mtimes, `zip -X -D` in TZ=UTC).
-
-## Testing
-
-Host checks (`ndk/package.sh`, every build, no aarch64 code is executed):
-- `ndk/scripts/check.py`: every program is AArch64 in `$ALTDIR/libexec` (no ELF elsewhere, no
-  `lib/`); static programs are `statically linked` with no `DT_NEEDED`; dynamic ones are PIE with interpreter
-  `/system/bin/linker64`, `DT_NEEDED` only libc/libm/libdl/liblog/libz, no RUNPATH and an Android note of API
-  35; no builder or home paths and no `/data/adb` path in any ELF; every wrapper's target exists, its `ALTDIR`
-  marker is in the first 400 bytes and it has no `$MODDIR`/`/data/adb` path; `sh -n` and `bash --posix -n` on
-  every script; no boot scripts; no manager-specific commands in `customize.sh`; `module.prop` fields; terminfo
-  and CA bundle present; every version pattern of `phone-test.sh` found in the program's ELF strings.
-- `ndk/package.sh`: `unzip -t`, `zip -T`, no host paths and no `.work`/`__pycache__` entries in the ZIP.
-- `ndk/scripts/layout_test.py`: unzips the ZIP under a simulated `data/adb/modules/android-linux-tools`
-  (0700), runs its `customize.sh` with `set_perm` stubs and checks, as a non-root user would see it, that every
-  `$ALTDIR` path of every wrapper exists and is readable (programs: executable) through every directory, that
-  nothing refers to `/data/adb`, and owner, label and mode of every file under `system/`. Also usable on the
-  host: `python3 -I ndk/scripts/layout_test.py ZIP NEW-EMPTY-DIR`.
-
-Phone test: `sh /system/etc/android-linux-tools/share/android-linux-tools/phone-test.sh` (also
-`dist/phone-test.sh`).
-- As root it runs every check: installed tools (from `alt-list -m`) and that renamed ones do not shadow device
-  binaries, origins (all `ndk`, no musl loader), no v2.1 runtime leftovers in the module directory, version
-  banners, functional tests (nft, ipset, conntrack, `nfct timeout list`, `wg show`, `bridge link`,
-  `tc-ng qdisc`, `ethtool-ng lo`, getfacl, `mount.cifs -h`, `bpftool prog list`, bpftrace `BEGIN` and
-  four bpftrace probes that must fire in the `-c` child (`tracepoint:sched:sched_process_exec`,
-  `tracepoint:raw_syscalls:sys_enter`, a uprobe on libc `malloc`, `kprobe:do_sys_openat2` with `--unsafe`), an
-  `amneziawg` link when the kernel has that link type, zstd/xz/lz4 round trips, jq, sqlite3, bash, a tmux session, lsblk, findmnt) and DNS without resolv.conf (`curl -sI https://example.com`, `drill example.com`, `dig +short
-  example.com`, `host example.com`).
-- It then repeats the non-root checks as uid 2000: first with the module's `setpriv --reuid=2000 --regid=2000
-  --groups=3003,3009` (inet and readproc, as a real adb shell has; without inet netd refuses DNS), else
-  `su 2000 -c`, `su shell -c` or `su -s /system/bin/sh 2000 -c`; SKIP if none gives uid 2000. `setpriv`/`su`
-  keep root's SELinux domain, so this tests file permissions; running the script from `adb shell` also tests
-  the `shell` domain.
-- As a non-root user (`adb shell`, Termux) or with `--nonroot` it runs only the non-root checks: every wrapper
-  resolves in `PATH`, has no `/data/adb` path and its `$ALTDIR/libexec` target is readable and executable; the
-  runtime data is readable; versions of dig, drill, curl, jq, htop, tmux, nano, less, awg and bpftool; the DNS
-  checks.
-- Kernel features are read from `/proc/config.gz`; a missing feature is a SKIP, not a failure. The script
-  cleans up everything it creates and ends with `TOTAL pass=N fail=M`.
 
 ## Releases
 
@@ -309,7 +265,8 @@ Phone test: `sh /system/etc/android-linux-tools/share/android-linux-tools/phone-
 - v2.2-r2: same programs as v2.2-r1; adds the MIT `LICENSE` and drops the dead Alpine build code.
 - v2.3-r1: adds bpftrace 0.27.1; the builder image gains `g++` and `xxd`; one ZIP instead of the lite/full
   flavours.
-- v2.3-r2: same programs as v2.3-r1; removes device details from docs and shipped files.
+- v2.3-r2: same programs as v2.3-r1; removes device details from docs and shipped files; the installer no
+  longer handles the old prototype module.
 
 ## Licences
 

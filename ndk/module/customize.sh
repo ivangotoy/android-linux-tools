@@ -22,19 +22,14 @@ fi
 alt_version=$(sed -n 's/^version=//p' "$MODPATH/module.prop" 2>/dev/null)
 ui_print "- Android Linux tools $alt_version"
 
-if [ -d /data/adb/modules/prototype-tools ]; then
-  touch /data/adb/modules/prototype-tools/remove
-  ui_print "- Prototype module prototype-tools marked for removal (gone after reboot)"
-fi
-
 ALT_DIRS="/system/bin /system/xbin /system_ext/bin /product/bin /vendor/bin /vendor/xbin /odm/bin"
 for alt_d in /apex/*/bin; do
   [ -d "$alt_d" ] && ALT_DIRS="$ALT_DIRS $alt_d"
 done
 
-# wrappers of this module: v2.2+ (ALTDIR=/system/etc/...), older versions and the prototype-tools prototype (MODDIR=...)
+# wrappers of this module: v2.2+ (ALTDIR=/system/etc/...) and older versions (MODDIR=...)
 alt_is_module_file() {
-  head -c 400 "$1" 2>/dev/null | grep -qE 'ALTDIR=/system/etc/android-linux-tools|MODDIR=/data/adb/modules/(android-linux-tools|prototype-tools)'
+  head -c 400 "$1" 2>/dev/null | grep -qE 'ALTDIR=/system/etc/android-linux-tools|MODDIR=/data/adb/modules/android-linux-tools'
 }
 
 alt_device_path() {
