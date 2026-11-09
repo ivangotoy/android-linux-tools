@@ -1,5 +1,5 @@
-# Stage the module for one flavour from the NDK builds in /work/out. Runs inside the builder.
-#   python3 -I /src/ndk/scripts/stage.py FLAVOUR
+# Stage the module from the NDK builds in /work/out. Runs inside the builder.
+#   python3 -I /src/ndk/scripts/stage.py
 import sys, os, shutil, subprocess, re
 
 sys.path.insert(0, '/src/ndk/scripts')
@@ -8,10 +8,7 @@ from common import MODID, MODDIR, ALTDIR
 
 SRC = '/src'
 OUT = '/work/out'
-FLAVOUR = sys.argv[1]
-if FLAVOUR not in common.FLAVOURS:
-    raise SystemExit('flavour must be lite or full')
-ST = os.path.join('/work/stage', FLAVOUR, MODID)
+ST = os.path.join(common.STAGE, 'module', MODID)
 # runtime tree: module system/etc/<MODID>/ = /system/etc/<MODID> on the device (ALTDIR)
 RT = os.path.join(ST, ALTDIR.lstrip('/'))
 LIBEXEC = os.path.join(RT, 'libexec')
@@ -71,10 +68,6 @@ for line in open(os.path.join(SRC, 'ndk', 'tools.tsv')):
     entries.append(e)
 if missing:
     raise SystemExit('no NDK build for: %s' % ' '.join(missing))
-if FLAVOUR == 'lite':
-    # the lite tool list ends with bpftool (lite had no bpftool before v2.1); keeps origins.txt and
-    # MANIFEST.json in the order of earlier releases
-    entries = [e for e in entries if e['name'] != 'bpftool'] + [e for e in entries if e['name'] == 'bpftool']
 
 # ---- fresh stage
 if os.path.exists(os.path.dirname(ST)):
@@ -205,7 +198,7 @@ for rname in sorted({e['recipe'] for e in entries} | {d for e in entries for d i
             files.append('share/licenses/ndk/%s/%s' % (rname, f))
     lic_rows.append({'source': 'ndk', 'name': rname, 'version': mt['version'], 'license': mt['license'],
                      'url': mt['url'], 'sha256': mt['sha256'], 'patches': mt['patches'], 'license_files': files})
-notice = ['Android Linux tools %s (%s flavour) - third-party licences' % (VERSION, FLAVOUR), '',
+notice = ['Android Linux tools %s - third-party licences' % VERSION, '',
           'The module\'s own files (wrappers, alt-list, customize.sh, dns-servers, phone-test.sh) and the build',
           'scripts in %s are MIT licensed:' % REPO_URL,
           'share/licenses/%s/LICENSE. Each bundled package below keeps its own upstream licence; the' % MODID,
@@ -223,15 +216,15 @@ ndk_n = sum(1 for e in entries if e['name'])
 main = 'nft, ipset, conntrack, wg/awg (+wg-quick/awg-quick), ip-ng/tc-ng/ss-ng, bridge, ethtool-ng, bpftool, bpftrace, tcpdump, strace, curl, dig, drill, mtr, socat, iperf3, htop, tmux, bash, rsync, sqlite3, jq and more'
 write(os.path.join(ST, 'module.prop'),
       'id=%s\nname=Android Linux tools\nversion=%s\nversionCode=%d\nauthor=Ivan Angelov\n'
-      'description=[%s flavour: bpftool without LLVM disassembler] %d tools built with the Android NDK (bionic): %s. '
-      'Names that exist on the device get an -ng suffix (alt-list).\nflavour=%s\n'
-      % (MODID, VERSION, VCODE, FLAVOUR, ndk_n, main, FLAVOUR), 0o644)
+      'description=%d tools built with the Android NDK (bionic): %s. '
+      'Names that exist on the device get an -ng suffix (alt-list).\n'
+      % (MODID, VERSION, VCODE, ndk_n, main), 0o644)
 
-manifest = {'module': MODID, 'version': VERSION, 'versionCode': VCODE, 'flavour': FLAVOUR, 'arch': 'aarch64',
+manifest = {'module': MODID, 'version': VERSION, 'versionCode': VCODE, 'arch': 'aarch64',
             'ndk': NDK_RELEASE, 'api': API, 'moddir': MODDIR, 'altdir': ALTDIR,
             'tools': tools_out, 'files': dict(sorted(origin.items())), 'licenses': lic_rows}
 common.dump(manifest, os.path.join(SHARE, 'MANIFEST.json'))
-common.dump({'flavour': FLAVOUR, 'version': VERSION, 'versionCode': VCODE, 'stage': ST, 'altdir': ALTDIR, 'tools': tools_out,
+common.dump({'version': VERSION, 'versionCode': VCODE, 'stage': ST, 'altdir': ALTDIR, 'tools': tools_out,
              'wrappers': sorted(wrappers), 'origin': origin},
-            os.path.join('/work/stage', 'stage-%s.json' % FLAVOUR))
-print('staged %s %s: %d wrappers (%d ndk)' % (FLAVOUR, VERSION, len(wrappers), ndk_n))
+            os.path.join(common.STAGE, 'stage.json'))
+print('staged %s: %d wrappers (%d ndk)' % (VERSION, len(wrappers), ndk_n))

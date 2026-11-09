@@ -8,7 +8,8 @@ MODDIR = '/data/adb/modules/' + MODID
 # system/etc/<MODID>/ tree, which the root manager mounts at /system/etc/<MODID> (readable by every uid);
 # /data/adb is root-only (0700)
 ALTDIR = '/system/etc/' + MODID
-FLAVOURS = ('lite', 'full')
+# one module ZIP since the bpftrace branch (the lite/full flavours of v2.0-v2.2 are gone)
+STAGE = '/work/stage'
 
 
 def read_conf(root):

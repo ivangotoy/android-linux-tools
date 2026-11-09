@@ -31,7 +31,7 @@ Builder facts (`ndk/Dockerfile`, `ndk/lib/env.sh`):
 - **Per-recipe sysroot:** each recipe builds against a private prefix that contains only its declared (transitive)
   dependencies (`ndk/build.sh` `mk_sysroot`). A first version used one shared prefix, and two clean builds then
   differed: mtr's configure auto-detected libcap when libcap happened to be built earlier. With the private sysroots
-  two `./build-ndk.sh --clean` runs give byte-identical binaries and ZIPs.
+  two `./build-ndk.sh --clean` runs give byte-identical binaries and ZIP.
 
 ### API level 35
 - API 35 is Android 15, the oldest Android version on the target phones (Android 15 to 17). A lower floor only hides newer bionic functions and
@@ -154,7 +154,7 @@ which runs only if a module still ships `resolv-refresh`).
 
 Checks: `ndk/scripts/check.py` fails on `$MODDIR` or `/data/adb` in a wrapper, `/data/adb` in an NDK ELF, an ELF
 outside `$ALTDIR/libexec`, or a v2.1 runtime path in the module root. `ndk/scripts/layout_test.py` (run by
-`ndk/package.sh` on each ZIP) unzips it under a simulated `data/adb/modules/android-linux-tools` (0700), runs
+`ndk/package.sh` on the ZIP) unzips it under a simulated `data/adb/modules/android-linux-tools` (0700), runs
 its `customize.sh` with `set_perm` stubs, and checks the view of a non-root user: every `$ALTDIR` path in every
 wrapper exists and is readable (programs: executable) by "other" through every directory, nothing refers to
 `/data/adb`, and owner, label and mode of every file under `system/`. Run against the v2.1 ZIP it reports 274
@@ -1462,7 +1462,7 @@ Why:
 - libelf needs those four libeu objects. The rest of libeu needs argp.
 - AOSP does the same thing by listing the sources. This avoids Termux's full-elfutils patch set.
 
-### bpftool 7.8.1 (both flavours; no LLVM)
+### bpftool 7.8.1 (no LLVM)
 Sources checked:
 | Source | Observed |
 |---|---|
@@ -1482,10 +1482,11 @@ Chosen approach:
 - Static, against libelf.a from elfutils, libcap.a and the NDK `libz.a`. No patches.
 - CHECKSUM_SOURCE: upstream publishes no checksum for the sources tarball. The sha256 equals the GitHub release
   asset digest.
-- Flavours: v2.0 shipped this NDK bpftool in lite and kept v1's Alpine bpftool with libLLVM (about 172 MB) in
-  full. Since v2.1 both flavours ship this NDK bpftool, and the Alpine one is gone with the musl runtime. Only JIT
+- Flavours (history): v2.0 shipped this NDK bpftool in lite and kept v1's Alpine bpftool with libLLVM (about
+  172 MB) in full. v2.1-v2.2 shipped this NDK bpftool in both flavours, and the Alpine one is gone with the musl
+  runtime; the flavours are now merged into one ZIP. Only JIT
   disassembly (`bpftool prog dump jited`, which needs LLVM or libbfd) and skeleton-based features are missing.
-  `ndk/scripts/check.py` rejects a flavour without bpftool.
+  `ndk/scripts/check.py` rejects a module without bpftool.
 
 Why:
 - `SKIP_LLVM`, `SKIP_LIBBFD` and `SKIP_CRYPTO` mean no LLVM, no libbfd and no libcrypto (signing).

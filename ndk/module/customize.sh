@@ -18,8 +18,9 @@ if ! command -v set_perm_recursive >/dev/null 2>&1; then
 fi
 [ -n "$MODPATH" ] || { ui_print "! MODPATH not set by the root manager"; exit 1; }
 
-alt_flavour=$(sed -n 's/^flavour=//p' "$MODPATH/module.prop" 2>/dev/null)
-ui_print "- Android Linux tools ($alt_flavour flavour)"
+# one ZIP since the lite/full flavours were merged; it installs over either of them (same module id)
+alt_version=$(sed -n 's/^version=//p' "$MODPATH/module.prop" 2>/dev/null)
+ui_print "- Android Linux tools $alt_version"
 
 if [ -d /data/adb/modules/prototype-tools ]; then
   touch /data/adb/modules/prototype-tools/remove

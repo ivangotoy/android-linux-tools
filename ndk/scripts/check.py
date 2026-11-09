@@ -1,13 +1,12 @@
-# Host checks for one staged flavour (no aarch64 code is executed). Runs inside the builder.
-#   python3 -I /src/ndk/scripts/check.py FLAVOUR
+# Host checks for the staged module (no aarch64 code is executed). Runs inside the builder.
+#   python3 -I /src/ndk/scripts/check.py
 import sys, os, subprocess, re, itertools
 
 sys.path.insert(0, '/src/ndk/scripts')
 import common
 from common import MODID, ALTDIR
 
-FLAVOUR = sys.argv[1]
-SJ = common.load('/work/stage/stage-%s.json' % FLAVOUR)
+SJ = common.load(os.path.join(common.STAGE, 'stage.json'))
 ST = SJ['stage']
 # runtime tree: module system/etc/<MODID>/ = ALTDIR on the device; every ELF must be in its libexec/
 RT = os.path.join(ST, ALTDIR.lstrip('/'))
@@ -19,7 +18,7 @@ FORBID = set('iptables ip6tables ip tc ss ethtool nsenter unshare chroot lsof nc
 HOSTPATHS = [b'/home/ivan', b'/work/build', b'/work/out', b'/opt/ndk', b'/.work/']
 API = int(os.environ.get('API', '29'))
 
-res = {'flavour': FLAVOUR, 'errors': [], 'libexec': {}, 'wrappers': {}, 'scripts': {}, 'version_audit': {}}
+res = {'errors': [], 'libexec': {}, 'wrappers': {}, 'scripts': {}, 'version_audit': {}}
 err = res['errors'].append
 
 
@@ -131,7 +130,7 @@ if re.search(r'ld-musl|system/etc/resolv\.conf', open(os.path.join(ST, 'customiz
 has_bpftool = os.path.exists(os.path.join(LIBEXEC, 'bpftool'))
 res['bpftool'] = {'present': has_bpftool, 'origin': origin.get('libexec/bpftool', '')}
 if not has_bpftool:
-    err('%s flavour lacks bpftool' % FLAVOUR)
+    err('module lacks bpftool')
 
 for w in sorted(os.listdir(os.path.join(ST, 'system', 'bin'))):
     p = os.path.join(ST, 'system', 'bin', w)
@@ -234,7 +233,7 @@ for line in pt.splitlines():
         continue
     tool, pat = m.group(1), m.group(2)
     if tool not in target_of:
-        res['version_audit'][tool] = {'pattern': pat, 'status': 'not in flavour'}
+        res['version_audit'][tool] = {'pattern': pat, 'status': 'not in module'}
         continue
     t = target_of[tool]
     binp = os.path.join(LIBEXEC, t['libexec'])
@@ -260,13 +259,13 @@ for t in target_of:
     if t not in res['version_audit']:
         err('no version check in phone-test.sh for ' + t)
 
-res['summary'] = {'flavour': FLAVOUR, 'libexec_elfs': len(res['libexec']),
+res['summary'] = {'libexec_elfs': len(res['libexec']),
                   'wrappers': len(res['wrappers']), 'errors': len(res['errors']),
                   'ndk_static': sum(1 for v in res['libexec'].values() if v.get('linkage') == 'static'),
                   'ndk_dynamic': sum(1 for v in res['libexec'].values() if v.get('linkage') == 'dynamic'),
                   'elf_outside_libexec': len(stray),
                   'version_checks_ok': sum(1 for v in res['version_audit'].values() if v['status'] == 'ok')}
-common.dump(res, '/work/stage/host_checks-%s.json' % FLAVOUR)
+common.dump(res, os.path.join(common.STAGE, 'host_checks.json'))
 print(__import__('json').dumps(res['summary'], sort_keys=True))
 for e in res['errors']:
     print('ERR', e)

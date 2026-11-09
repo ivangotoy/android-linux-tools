@@ -24,15 +24,13 @@ if [ "$NONROOT" = 1 ]; then
     echo "module runtime files not readable at $ALTSHARE (module not installed or not mounted?)"
     exit 2
   fi
-  FLAVOUR=$(sed -n 's/^ "flavour": "\([a-z]*\)".*/\1/p' "$ALTSHARE/MANIFEST.json")
-  echo "== $(sed -n 's/^ "version": "\([^"]*\)".*/\1/p' "$ALTSHARE/MANIFEST.json") flavour=$FLAVOUR uid=$(id -u) (non-root checks only)"
+  echo "== $(sed -n 's/^ "version": "\([^"]*\)".*/\1/p' "$ALTSHARE/MANIFEST.json") uid=$(id -u) (non-root checks only)"
 else
   if [ ! -r "$MODDIR/module.prop" ]; then
     echo "module not installed at $MODDIR"
     exit 2
   fi
-  FLAVOUR=$(sed -n 's/^flavour=//p' "$MODDIR/module.prop")
-  echo "== $(sed -n 's/^version=//p' "$MODDIR/module.prop") flavour=$FLAVOUR kernel=$(uname -r)"
+  echo "== $(sed -n 's/^version=//p' "$MODDIR/module.prop") kernel=$(uname -r)"
 fi
 
 result() {
@@ -61,11 +59,7 @@ tn() {
 
 # missing TOOL LABEL: report a tool that is not installed
 missing() {
-  if [ "$1" = bpftool ] && [ "$FLAVOUR" = lite ]; then
-    result skip "$2" "bpftool is only in the full flavour"
-  else
-    result bad "$2" 127 "$1 not installed"
-  fi
+  result bad "$2" 127 "$1 not installed"
 }
 
 # chk LABEL REGEX TOOL ARGS... : pass if exit<126 and output matches REGEX (case-insensitive)

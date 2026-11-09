@@ -11,7 +11,7 @@ mounts from its `system/` tree.
   <https://github.com/ivangotoy/android-linux-tools>.
 - Module id `android-linux-tools`, module directory `/data/adb/modules/android-linux-tools`.
 - Version `v2.M-rN`, versionCode `major*100000 + minor*1000 + N` (`v2.2-r2` = `202002`), set in `ndk/build.conf`.
-- Two ZIPs (flavours `lite` and `full`, see "Flavours"); tool list in "Contents".
+- One ZIP (see "One ZIP"); tool list in "Contents".
 
 ## Install
 
@@ -77,18 +77,14 @@ Operations that need root or capabilities (nft, ipset, conntrack, `bpftool prog 
 The set of command names can therefore differ between phones (for example `curl` becomes `curl-ng` on a
 phone that ships a `curl`). Use `alt-list` to see what a phone has.
 
-## Flavours
+## One ZIP
 
-| ZIP | Contents |
-|---|---|
-| `android-linux-tools-<ver>.zip` | flavour `lite` |
-| `android-linux-tools-full-<ver>.zip` | flavour `full` |
-
-Since v2.1 both flavours contain the same programs and wrappers (including bpftool, built without LLVM, and
-bpftrace with its statically linked LLVM/clang). They
-differ only in the `flavour=` key and description of `module.prop`, the `flavour` field of `MANIFEST.json`
-and the NOTICE header. Both use the same module id and versionCode, so installing one replaces the other.
-(Up to v2.0 the full flavour added the Alpine bpftool with libLLVM, about 172 MB.)
+The module is a single ZIP, `android-linux-tools-<ver>.zip`, with every tool (including bpftool, built without
+LLVM, and bpftrace with its statically linked LLVM/clang). Up to v2.2-r2 there were two flavours,
+`android-linux-tools-<ver>.zip` (`lite`) and `android-linux-tools-full-<ver>.zip` (`full`); since v2.1 they had
+the same programs and differed only in metadata (up to v2.0 the full flavour added the Alpine bpftool with
+libLLVM, about 172 MB). The module id is unchanged, so the ZIP installs over either flavour like any upgrade;
+`module.prop` and `MANIFEST.json` no longer have a `flavour` field.
 
 ## Contents (v2.2-r2)
 
@@ -99,8 +95,8 @@ and the NOTICE header. Both use the same module id and versionCode, so installin
 
 | ZIP | Bytes | Unpacked |
 |---|---|---|
-| `android-linux-tools-v2.2-r2.zip` (release) | 26140651 | 53.6 MB |
-| `android-linux-tools-v2.2-r2.zip` (branch `bpftrace`, with bpftrace) | 60851827 | 135.7 MB |
+| `android-linux-tools-v2.2-r2.zip` (release, lite flavour) | 26140651 | 53.6 MB |
+| `android-linux-tools-v2.2-r2.zip` (branch `bpftrace`: one ZIP, with bpftrace) | 60851825 | 135.7 MB |
 
 | Command | Recipe | Version | Linkage | libexec (KB) | Licence (SPDX) |
 |---|---|---|---|---|---|
@@ -215,7 +211,7 @@ URL and sha256, how the checksum was verified, licence, patches, dependencies, l
 ## Building
 
 ```
-./build-ndk.sh                 # build the image, all recipes, stage + check + zip both flavours into dist/
+./build-ndk.sh                 # build the image, all recipes, stage + check + zip the module into dist/
 ./build-ndk.sh --clean         # same after deleting .work/ndk/{build,out,stage} and the v2 files in dist/ (downloads kept)
 ./build-ndk.sh --clean-all     # like --clean and also delete the downloaded sources (.work/ndk/dl)
 ./build-ndk.sh curl strace     # only these recipes (and their dependencies), no packaging
@@ -230,8 +226,7 @@ JOBS=8 MEM=12G ./build-ndk.sh  # make -j and memory limit (defaults)
   which is what actually bounds the compilers. Network access is needed for the image and the source downloads.
 - Everything else (NDK, autotools, meson, python, zip) is inside the image. Scratch space is `.work/ndk/`
   (`dl/` sources, `build/` trees and logs, `out/` binaries, `stage/`). Output: `dist/android-linux-tools-<ver>.zip`,
-  `dist/android-linux-tools-full-<ver>.zip`, their `.sha256` files, `dist/MANIFEST-v2.json` and
-  `dist/phone-test.sh`.
+  its `.sha256` file, `dist/MANIFEST-v2.json` and `dist/phone-test.sh`.
 - Files: `build-ndk.sh` (host entry point), `ndk/Dockerfile` (builder image), `ndk/build.sh` (driver),
   `ndk/lib/env.sh` (cross environment), `ndk/build.conf` (`V2_VERSION`, `MODULE_RELEASE`, `SOURCE_DATE_EPOCH`),
   `ndk/recipes.list` (build order), `ndk/recipes/<name>.sh`, `ndk/patches/<name>/*.patch`, `ndk/tools.tsv`
@@ -245,21 +240,21 @@ JOBS=8 MEM=12G ./build-ndk.sh  # make -j and memory limit (defaults)
   hashes. A failed recipe stops the build before packaging.
 - Patches are applied in order; each starts with a header saying why and citing its source (termux-packages,
   buildroot, or written for this module).
-- Reproducible: two `./build-ndk.sh --clean` runs give byte-identical binaries, ZIPs and MANIFEST
+- Reproducible: two `./build-ndk.sh --clean` runs give byte-identical binaries, ZIP and MANIFEST
   (`SOURCE_DATE_EPOCH`, `-ffile-prefix-map`, sorted ZIP entries, fixed mtimes, `zip -X -D` in TZ=UTC).
 
 ## Testing
 
 Host checks (`ndk/package.sh`, every build, no aarch64 code is executed):
-- `ndk/scripts/check.py`, per flavour: every program is AArch64 in `$ALTDIR/libexec` (no ELF elsewhere, no
+- `ndk/scripts/check.py`: every program is AArch64 in `$ALTDIR/libexec` (no ELF elsewhere, no
   `lib/`); static programs are `statically linked` with no `DT_NEEDED`; dynamic ones are PIE with interpreter
   `/system/bin/linker64`, `DT_NEEDED` only libc/libm/libdl/liblog/libz, no RUNPATH and an Android note of API
   35; no builder or home paths and no `/data/adb` path in any ELF; every wrapper's target exists, its `ALTDIR`
   marker is in the first 400 bytes and it has no `$MODDIR`/`/data/adb` path; `sh -n` and `bash --posix -n` on
   every script; no boot scripts; no manager-specific commands in `customize.sh`; `module.prop` fields; terminfo
   and CA bundle present; every version pattern of `phone-test.sh` found in the program's ELF strings.
-- `ndk/package.sh`: `unzip -t`, `zip -T`, no host paths and no `.work`/`__pycache__` entries in the ZIPs.
-- `ndk/scripts/layout_test.py`, per ZIP: unzips it under a simulated `data/adb/modules/android-linux-tools`
+- `ndk/package.sh`: `unzip -t`, `zip -T`, no host paths and no `.work`/`__pycache__` entries in the ZIP.
+- `ndk/scripts/layout_test.py`: unzips the ZIP under a simulated `data/adb/modules/android-linux-tools`
   (0700), runs its `customize.sh` with `set_perm` stubs and checks, as a non-root user would see it, that every
   `$ALTDIR` path of every wrapper exists and is readable (programs: executable) through every directory, that
   nothing refers to `/data/adb`, and owner, label and mode of every file under `system/`. Also usable on the
@@ -294,7 +289,8 @@ skips are kernel features the device lacks):
 ## Releases
 
 - Releases are published on Forgejo (<https://git.digtvbg.com/ivangotoy/android-linux-tools/releases>) with
-  both ZIPs and their `.sha256` files as assets. A release tag is never moved; a fix gets a new `-rN`.
+  the ZIP and its `.sha256` file as assets (releases up to v2.2-r2 have both flavour ZIPs). A release tag is
+  never moved; a fix gets a new `-rN`.
 - Git refs reach GitHub through the Forgejo push mirror. `.forgejo/workflows/github-release.yml` runs when a
   `v*` tag is pushed, waits for that tag's Forgejo release to be published, and `ci/github-release.py` copies it to
   <https://github.com/ivangotoy/android-linux-tools/releases>: it waits for the mirrored tag at the same commit,
@@ -309,13 +305,14 @@ skips are kernel features the device lacks):
 - v2.1: every tool is an NDK build; no musl runtime, no resolv.conf overlay.
 - v2.2: runtime files under `/system/etc/android-linux-tools`, so the tools work for non-root users.
 - v2.2-r2: same programs as v2.2-r1; adds the MIT `LICENSE` and drops the dead Alpine build code.
-- Branch `bpftrace` (unreleased): adds bpftrace 0.27.1; the builder image gains `g++` and `xxd`.
+- Branch `bpftrace` (unreleased): adds bpftrace 0.27.1; the builder image gains `g++` and `xxd`; one ZIP
+  instead of the lite/full flavours.
 
 ## Licences
 
 The repository's own code (build scripts, recipes, staging and check scripts, and the module's own scripts:
 the wrappers, `alt-list`, `customize.sh`, `dns-servers` and `phone-test.sh`) is MIT licensed, see `LICENSE`
-(Copyright (c) 2026 Ivan Angelov). The ZIPs ship it as `share/licenses/android-linux-tools/LICENSE`.
+(Copyright (c) 2026 Ivan Angelov). The ZIP ships it as `share/licenses/android-linux-tools/LICENSE`.
 
 The bundled third-party tools keep their upstream licences. Their SPDX identifiers are listed in
 `share/licenses/NOTICE.txt` inside the module and in `MANIFEST.json`; the licence files each package ships
