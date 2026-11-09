@@ -10,13 +10,13 @@ mounts from its `system/` tree.
 - Repository: <https://git.digtvbg.com/ivangotoy/android-linux-tools> (Forgejo), mirrored to
   <https://github.com/ivangotoy/android-linux-tools>.
 - Module id `android-linux-tools`, module directory `/data/adb/modules/android-linux-tools`.
-- Version `v2.M-rN`, versionCode `major*100000 + minor*1000 + N` (`v2.2-r2` = `202002`), set in `ndk/build.conf`.
+- Version `v2.M-rN`, versionCode `major*100000 + minor*1000 + N` (`v2.3-r1` = `203001`), set in `ndk/build.conf`.
 - One ZIP (see "One ZIP"); tool list in "Contents".
 
 ## Install
 
 - In the root manager app: Modules, Install from storage, pick the ZIP. Then reboot.
-- Command line, as root: `ksud module install /sdcard/Download/android-linux-tools-v2.2-r2.zip` (KernelSU).
+- Command line, as root: `ksud module install /sdcard/Download/android-linux-tools-v2.3-r1.zip` (KernelSU).
   Magisk (`magisk --install-module ZIP`) and APatch (`apd module install ZIP`) have the same module interface.
 - Upgrading: install the new ZIP over the old one and reboot. The installer recognises wrappers of this
   module (also of v1/v2.0/v2.1 and of the `prototype-tools` prototype) and never renames them as device binaries.
@@ -79,24 +79,23 @@ phone that ships a `curl`). Use `alt-list` to see what a phone has.
 
 ## One ZIP
 
-The module is a single ZIP, `android-linux-tools-<ver>.zip`, with every tool (including bpftool, built without
+Since v2.3-r1 the module is a single ZIP, `android-linux-tools-<ver>.zip`, with every tool (including bpftool, built without
 LLVM, and bpftrace with its statically linked LLVM/clang). Up to v2.2-r2 there were two flavours,
 `android-linux-tools-<ver>.zip` (`lite`) and `android-linux-tools-full-<ver>.zip` (`full`); since v2.1 they had
 the same programs and differed only in metadata (up to v2.0 the full flavour added the Alpine bpftool with
 libLLVM, about 172 MB). The module id is unchanged, so the ZIP installs over either flavour like any upgrade;
 `module.prop` and `MANIFEST.json` no longer have a `flavour` field.
 
-## Contents (v2.2-r2)
+## Contents (v2.3-r1)
 
 67 commands plus `alt-list`, 62 ELF programs; there is no `lib/` directory. Sizes are of the stripped
 `$ALTDIR/libexec/` programs. Linkage `dynamic` = PIE against the system `libc.so`/`libm.so`/`libdl.so`
 (`libz.so` for curl) only, every third-party library linked in statically. Generated from
-`dist/MANIFEST-v2.json` of the v2.2-r2 build, plus bpftrace from branch `bpftrace`.
+`dist/MANIFEST-v2.json` of the v2.3-r1 build.
 
 | ZIP | Bytes | Unpacked |
 |---|---|---|
-| `android-linux-tools-v2.2-r2.zip` (release, lite flavour) | 26140651 | 53.6 MB |
-| `android-linux-tools-v2.2-r2.zip` (branch `bpftrace`: one ZIP, with bpftrace) | 60852403 | 135.7 MB |
+| `android-linux-tools-v2.3-r1.zip` | 60852843 | 135.7 MB |
 
 | Command | Recipe | Version | Linkage | libexec (KB) | Licence (SPDX) |
 |---|---|---|---|---|---|
@@ -272,8 +271,10 @@ Phone test: `sh /system/etc/android-linux-tools/share/android-linux-tools/phone-
 - As root it runs every check: installed tools (from `alt-list -m`) and that renamed ones do not shadow device
   binaries, origins (all `ndk`, no musl loader), no v2.1 runtime leftovers in the module directory, version
   banners, functional tests (nft, ipset, conntrack, `nfct timeout list`, `wg show`, `bridge link`,
-  `tc-ng qdisc`, `ethtool-ng lo`, getfacl, `mount.cifs -h`, `bpftool prog list`, an `amneziawg` link when the
-  kernel has that link type, zstd/xz/lz4 round trips, jq, sqlite3, bash, a tmux session, lsblk, findmnt) and DNS without resolv.conf (`curl -sI https://example.com`, `drill example.com`, `dig +short
+  `tc-ng qdisc`, `ethtool-ng lo`, getfacl, `mount.cifs -h`, `bpftool prog list`, bpftrace `BEGIN` and
+  four bpftrace probes that must fire in the `-c` child (`tracepoint:sched:sched_process_exec`,
+  `tracepoint:raw_syscalls:sys_enter`, a uprobe on libc `malloc`, `kprobe:do_sys_openat2` with `--unsafe`), an
+  `amneziawg` link when the kernel has that link type, zstd/xz/lz4 round trips, jq, sqlite3, bash, a tmux session, lsblk, findmnt) and DNS without resolv.conf (`curl -sI https://example.com`, `drill example.com`, `dig +short
   example.com`, `host example.com`).
 - It then repeats the non-root checks as uid 2000: first with the module's `setpriv --reuid=2000 --regid=2000
   --groups=3003,3009` (inet and readproc, as a real adb shell has; without inet netd refuses DNS), else
@@ -287,16 +288,16 @@ Phone test: `sh /system/etc/android-linux-tools/share/android-linux-tools/phone-
 - Kernel features are read from `/proc/config.gz`; a missing feature is a SKIP, not a failure. The script
   cleans up everything it creates and ends with `TOTAL pass=N fail=M`.
 
-Tested devices (v2.2-r1, root manager KernelSU with NoMount; root run plus the uid 2000 run, 0 failures; the
-skips are kernel features the device lacks):
+Tested devices (root manager KernelSU with NoMount; root run plus the uid 2000 run, 0 failures; the skips
+are kernel features the device lacks; v2.3-r1 adds 8 bpftrace checks):
 
-| Device | Android | Kernel | Result |
-|---|---|---|---|
+| Device | Android | Kernel | Module | Result |
+|---|---|---|---|---|
 
 ## Releases
 
 - Releases are published on Forgejo (<https://git.digtvbg.com/ivangotoy/android-linux-tools/releases>) with
-  the ZIP and its `.sha256` file as assets (releases up to v2.2-r2 have both flavour ZIPs). A release tag is
+  the ZIP and its `.sha256` file as assets (one ZIP from v2.3-r1; releases up to v2.2-r2 have both flavour ZIPs). A release tag is
   never moved; a fix gets a new `-rN`.
 - Git refs reach GitHub through the Forgejo push mirror. `.forgejo/workflows/github-release.yml` runs when a
   `v*` tag is pushed, waits for that tag's Forgejo release to be published, and `ci/github-release.py` copies it to
@@ -312,8 +313,8 @@ skips are kernel features the device lacks):
 - v2.1: every tool is an NDK build; no musl runtime, no resolv.conf overlay.
 - v2.2: runtime files under `/system/etc/android-linux-tools`, so the tools work for non-root users.
 - v2.2-r2: same programs as v2.2-r1; adds the MIT `LICENSE` and drops the dead Alpine build code.
-- Branch `bpftrace` (unreleased): adds bpftrace 0.27.1; the builder image gains `g++` and `xxd`; one ZIP
-  instead of the lite/full flavours.
+- v2.3-r1: adds bpftrace 0.27.1; the builder image gains `g++` and `xxd`; one ZIP instead of the lite/full
+  flavours.
 
 ## Licences
 

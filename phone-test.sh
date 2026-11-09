@@ -267,10 +267,19 @@ KPAT='protocol not supported|operation not supported|not supported by|kernel err
 
 # kchk LABEL "CONFIG..." TOOL ARGS... : like fchk, SKIP if the kernel lacks the feature
 kchk() {
+  kl=$1
+  kc=$2
+  shift 2
+  kpchk "$kl" "$kc" '' "$@"
+}
+
+# kpchk LABEL "CONFIG..." REGEX TOOL ARGS... : like kchk, and the output must also match REGEX (if not empty)
+kpchk() {
   label=$1
   cfgs=$2
-  tool=$3
-  shift 3
+  kre=$3
+  tool=$4
+  shift 4
   KMISS=""
   kfeat $cfgs
   ks=$?
@@ -285,7 +294,7 @@ kchk() {
   fi
   out=$($TO "$cmd" "$@" 2>&1 </dev/null)
   rc=$?
-  if [ "$rc" -eq 0 ]; then
+  if [ "$rc" -eq 0 ] && { [ -z "$kre" ] || printf '%s\n' "$out" | grep -qE "$kre"; }; then
     result ok "$label"
   elif [ "$ks" = 2 ] && printf '%s\n' "$out" | grep -qiE "$KPAT"; then
     result skip "$label" "kernel support missing (no /proc/config.gz): $(printf '%s' "$out" | head -n 1 | cut -c1-120)"
@@ -460,6 +469,17 @@ chk ethtool-ng-lo 'Settings for lo|Link detected' ethtool-ng lo
 chk bpftool-version 'bpftool v[0-9]' bpftool version
 kchk bpftool-prog-list "CONFIG_BPF_SYSCALL" bpftool prog list
 kchk bpftrace-begin "CONFIG_BPF_SYSCALL CONFIG_BPF_EVENTS" bpftrace -e 'BEGIN { printf("ok\n"); exit(); }'
+# probes that must fire in the child started by -c (bpftrace exits 0 also when a probe never fires)
+kpchk bpftrace-tracepoint-exec "CONFIG_BPF_SYSCALL CONFIG_BPF_EVENTS" '^exec-ok$' bpftrace \
+  -e 'tracepoint:sched:sched_process_exec /pid == cpid/ { printf("exec-ok\n"); exit(); }' -c /system/bin/true
+kpchk bpftrace-raw-syscalls "CONFIG_BPF_SYSCALL CONFIG_BPF_EVENTS CONFIG_HAVE_SYSCALL_TRACEPOINTS" '^sys-ok$' \
+  bpftrace -e 'tracepoint:raw_syscalls:sys_enter /pid == cpid/ { printf("sys-ok\n"); exit(); }' -c /system/bin/true
+BTLIBC=$(readlink -f /system/lib64/libc.so)
+kpchk bpftrace-uprobe-malloc "CONFIG_BPF_SYSCALL CONFIG_BPF_EVENTS CONFIG_UPROBE_EVENTS" '^malloc-ok$' bpftrace \
+  -e "uprobe:$BTLIBC:malloc /pid == cpid/ { printf(\"malloc-ok\\n\"); exit(); }" -c /system/bin/true
+# --unsafe: kernels without CONFIG_FUNCTION_TRACER have no available_filter_functions (see README)
+kpchk bpftrace-kprobe-unsafe "CONFIG_BPF_SYSCALL CONFIG_BPF_EVENTS CONFIG_KPROBE_EVENTS" '^kprobe-ok$' bpftrace \
+  --unsafe -e 'kprobe:do_sys_openat2 /pid == cpid/ { printf("kprobe-ok\n"); exit(); }' -c '/system/bin/cat /proc/version'
 kchk nfct-timeout-list "CONFIG_NF_CT_NETLINK_TIMEOUT" nfct timeout list
 chk mount.cifs-help 'Usage: mount\.cifs|mount\.cifs' mount.cifs -h
 chk getfacl-dir 'owner' getfacl /data/local/tmp

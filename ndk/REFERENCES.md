@@ -1484,7 +1484,7 @@ Chosen approach:
   asset digest.
 - Flavours (history): v2.0 shipped this NDK bpftool in lite and kept v1's Alpine bpftool with libLLVM (about
   172 MB) in full. v2.1-v2.2 shipped this NDK bpftool in both flavours, and the Alpine one is gone with the musl
-  runtime; the flavours are now merged into one ZIP. Only JIT
+  runtime; v2.3-r1 merges the flavours into one ZIP. Only JIT
   disassembly (`bpftool prog dump jited`, which needs LLVM or libbfd) and skeleton-based features are missing.
   `ndk/scripts/check.py` rejects a module without bpftool.
 
