@@ -227,11 +227,20 @@ def renders(strs, cands):
 
 
 target_of = {t['tool']: t for t in SJ['tools'] if t['tool']}
+# version/usage banners of tools that have no vchk line in phone-test.sh (real banner text of each program)
+VERSION_PATTERNS = {
+    'nmap': 'Nmap version [0-9]', 'nping': 'Nping version [0-9]', 'openssl': '^OpenSSL [0-9]',
+    'dropbear': 'Dropbear v[0-9]', 'dbclient': 'Dropbear v[0-9]', 'ssh': 'Dropbear v[0-9]',
+    'scp': 'usage: scp ', 'dropbearkey': 'Usage: dropbearkey -t', 'dropbearconvert': 'Usage: dropbearconvert <inputtype>',
+    'iw': 'iw version [0-9]', 'gdbserver': 'GNU gdbserver ', 'ltrace': '^ltrace [0-9]', 'fio': '^fio-[0-9]',
+}
+checks = []
 for line in pt.splitlines():
     m = re.match(r"\s*vchk\s+(\S+)\s+'([^']*)'", line)
-    if not m:
-        continue
-    tool, pat = m.group(1), m.group(2)
+    if m:
+        checks.append((m.group(1), m.group(2)))
+checks += [(t, p) for t, p in sorted(VERSION_PATTERNS.items()) if t not in {c[0] for c in checks}]
+for tool, pat in checks:
     if tool not in target_of:
         res['version_audit'][tool] = {'pattern': pat, 'status': 'not in module'}
         continue
@@ -257,7 +266,7 @@ for line in pt.splitlines():
     res['version_audit'][tool] = entry
 for t in target_of:
     if t not in res['version_audit']:
-        err('no version check in phone-test.sh for ' + t)
+        err('no version check (phone-test.sh vchk or VERSION_PATTERNS) for ' + t)
 
 res['summary'] = {'libexec_elfs': len(res['libexec']),
                   'wrappers': len(res['wrappers']), 'errors': len(res['errors']),

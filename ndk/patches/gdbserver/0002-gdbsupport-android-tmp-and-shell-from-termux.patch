@@ -1,0 +1,28 @@
+Subject: gdbsupport pathstuff.cc: /data/local/tmp and /system/bin/sh on Android
+
+Why: Android has no /tmp and no /bin/sh; gdbserver starts the inferior through $SHELL or /bin/sh
+(startup-with-shell), which fails when SHELL is unset.
+Source: termux-packages packages/gdb/gdbsupport-pathstuff.cc.patch at commit eb1c6b3abce4979882df8d61328f0124e44adbe4, with
+@TERMUX_PREFIX@/tmp -> /data/local/tmp, @TERMUX_PREFIX@/bin/sh -> /system/bin/sh and the file names in
+the diff header changed to a/ b/.
+
+--- a/gdbsupport/pathstuff.cc
++++ b/gdbsupport/pathstuff.cc
+@@ -262,7 +262,7 @@
+   if (tmp != nullptr)
+     return tmp;
+ 
+-  return "/tmp";
++  return "/data/local/tmp";
+ #endif
+ }
+ 
+@@ -273,7 +273,7 @@
+ {
+   const char *ret = getenv ("SHELL");
+   if (ret == NULL)
+-    ret = "/bin/sh";
++    ret = "/system/bin/sh";
+ 
+   return ret;
+ }

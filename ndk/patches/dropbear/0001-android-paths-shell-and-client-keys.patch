@@ -1,0 +1,223 @@
+Subject: dropbear on Android: /data/local/dropbear, /system/bin/sh, client key directory, getpass()
+
+Why: Android has no home directories for its users (bionic's getpwnam() gives "/" or /data), no
+/etc/passwd shells, no /etc/shells and no getpass() in bionic, and /data is owned by system (uid 1000),
+so upstream's checks of ~/.ssh/authorized_keys and of the login shell reject every login.
+- svr-runopts.c: the default authorized_keys directory (-D) is /data/local/dropbear for every user.
+- svr-authpubkey.c: check the authorized_keys file and its directory (owned by the user or root, not
+  group/other writable), not every path component up to "/".
+- common-session.c, svr-auth.c: the login shell is /system/bin/sh and is accepted without /etc/shells.
+- dbutil.c, cli-kex.c, cli-runopts.c: dbclient keeps known_hosts and the default identity id_dropbear in
+  $HOME/.ssh, or in /data/local/dropbear when HOME is unset, "/" or not writable.
+- dbutil.c: a getpass() that reads /dev/tty with echo off (dbclient password/keyboard-interactive auth).
+Source: written for this module. Termux's dropbear patches (termux-packages packages/dropbear,
+common-session.c.patch and svr-auth.c.patch at commit 4e132cc744b8f8996f647ac9e6318f94ae1393e6) force the
+login shell and skip the /etc/shells check in the same way for Termux's single-user server; Termux keeps
+upstream's ~/.ssh paths and uses termux-auth instead of getpass()/crypt().
+
+--- a/src/cli-kex.c
++++ b/src/cli-kex.c
+@@ -269,6 +269,31 @@
+ 	char * filename = NULL;
+ 	char * homedir = NULL;
+ 	
++#ifdef __ANDROID__
++	{
++		char *dir = android_ssh_dir();
++		size_t len = strlen(dir) + 13; /* "/known_hosts" and null-terminator */
++		/* create $HOME/.ssh as upstream does; ANDROID_DROPBEAR_DIR is root's (mkdir by the dropbear wrapper) */
++		if (mkdir(dir, S_IRWXU) != 0 && errno != EEXIST) {
++			dropbear_log(LOG_INFO, "Warning: failed creating %s: %s", dir, strerror(errno));
++		}
++		filename = m_malloc(len);
++		snprintf(filename, len, "%s/known_hosts", dir);
++		m_free(dir);
++		hostsfile = fopen(filename, "a+");
++		if (hostsfile != NULL) {
++			*readonly = 0;
++			fseek(hostsfile, 0, SEEK_SET);
++		} else if (errno == EACCES || errno == EROFS) {
++			*readonly = 1;
++			hostsfile = fopen(filename, "r");
++		}
++		if (hostsfile == NULL) {
++			dropbear_log(LOG_WARNING, "Failed to open %s", filename);
++		}
++		goto out;
++	}
++#endif
+ 	homedir = getenv("HOME");
+ 
+ 	if (!homedir) {
+--- a/src/cli-runopts.c
++++ b/src/cli-runopts.c
+@@ -551,7 +551,17 @@
+ 	   -i argument for multihop, so handle it later. */
+ #if (DROPBEAR_CLI_PUBKEY_AUTH)
+ 	{
++#ifdef __ANDROID__
++		char *dir = android_ssh_dir();
++		size_t len = strlen(dir) + 13;
++		char *idfile = m_malloc(len);
++		snprintf(idfile, len, "%s/id_dropbear", dir);
++		loadidentityfile(idfile, 0);
++		m_free(idfile);
++		m_free(dir);
++#else
+ 		loadidentityfile(DROPBEAR_DEFAULT_CLI_AUTHKEY, 0);
++#endif
+ 	}
+ #endif
+ }
+--- a/src/common-session.c
++++ b/src/common-session.c
+@@ -672,7 +672,11 @@
+ 	ses.authstate.pw_gid = pw->pw_gid;
+ 	ses.authstate.pw_name = m_strdup(pw->pw_name);
+ 	ses.authstate.pw_dir = m_strdup(pw->pw_dir);
++#ifdef __ANDROID__
++	ses.authstate.pw_shell = m_strdup("/system/bin/sh");
++#else
+ 	ses.authstate.pw_shell = m_strdup(pw->pw_shell);
++#endif
+ 	{
+ 		char *passwd_crypt = pw->pw_passwd;
+ #ifdef HAVE_SHADOW_H
+--- a/src/dbutil.c
++++ b/src/dbutil.c
+@@ -62,6 +62,9 @@
+ #endif
+ 
+ #include "includes.h"
++#ifdef __ANDROID__
++#include <termios.h>
++#endif
+ #include "dbutil.h"
+ #include "buffer.h"
+ #include "session.h"
+@@ -720,6 +723,59 @@
+ 	return expand_homedir_path_home(inpath, homedir);
+ }
+ 
++#ifdef __ANDROID__
++/* Client key directory: $HOME/.ssh when HOME is set, is not "/" and $HOME/.ssh (or $HOME, so that
++   .ssh can be created) is writable; otherwise ANDROID_DROPBEAR_DIR. Returns a malloced path. */
++char * android_ssh_dir() {
++	const char *home = getenv("HOME");
++	if (home && home[0] != '\0' && strcmp(home, "/") != 0) {
++		size_t len = strlen(home) + 6;
++		char *dir = m_malloc(len);
++		snprintf(dir, len, "%s/.ssh", home);
++		if (access(dir, W_OK | X_OK) == 0
++				|| (access(dir, F_OK) != 0 && access(home, W_OK | X_OK) == 0)) {
++			return dir;
++		}
++		m_free(dir);
++	}
++	return m_strdup(ANDROID_DROPBEAR_DIR);
++}
++
++/* bionic has no getpass(): read a line from /dev/tty with echo off */
++char * getpass(const char *prompt) {
++	static char buf[256];
++	struct termios old, noecho;
++	int fd, restore = 0;
++	size_t n = 0;
++	char c;
++
++	fd = open("/dev/tty", O_RDWR | O_NOCTTY | O_CLOEXEC);
++	if (fd < 0) {
++		return NULL;
++	}
++	if (tcgetattr(fd, &old) == 0) {
++		noecho = old;
++		noecho.c_lflag &= ~(ECHO | ISIG);
++		noecho.c_lflag |= ECHONL;
++		restore = tcsetattr(fd, TCSAFLUSH, &noecho) == 0;
++	}
++	if (prompt) {
++		(void)write(fd, prompt, strlen(prompt));
++	}
++	while (read(fd, &c, 1) == 1 && c != '\n' && c != '\r') {
++		if (n < sizeof(buf) - 1) {
++			buf[n++] = c;
++		}
++	}
++	buf[n] = '\0';
++	if (restore) {
++		tcsetattr(fd, TCSAFLUSH, &old);
++	}
++	close(fd);
++	return buf;
++}
++#endif
++
+ int constant_time_memcmp(const void* a, const void *b, size_t n)
+ {
+ 	const char *xa = a, *xb = b;
+--- a/src/dbutil.h
++++ b/src/dbutil.h
+@@ -96,6 +96,11 @@
+ 
+ char * expand_homedir_path(const char *inpath);
+ char * expand_homedir_path_home(const char *inpath, const char *homedir);
++#ifdef __ANDROID__
++#define ANDROID_DROPBEAR_DIR "/data/local/dropbear"
++char * android_ssh_dir(void);
++char * getpass(const char *prompt);
++#endif
+ 
+ void fsync_parent_dir(const char* fn);
+ 
+--- a/src/svr-auth.c
++++ b/src/svr-auth.c
+@@ -315,6 +315,11 @@
+ 	/* check the shell is valid. If /etc/shells doesn't exist, getusershell()
+ 	 * should return some standard shells like "/bin/sh" and "/bin/csh" (this
+ 	 * is platform-specific) */
++#ifdef __ANDROID__
++	if (strcmp(usershell, "/system/bin/sh") == 0) {
++		goto goodshell;
++	}
++#endif
+ 	setusershell();
+ 	while ((listshell = getusershell()) != NULL) {
+ 		TRACE(("test shell is '%s'", listshell))
+--- a/src/svr-authpubkey.c
++++ b/src/svr-authpubkey.c
+@@ -581,6 +581,21 @@
+ 
+ 	TRACE(("enter checkpubkeyperms"))
+ 
++#ifdef __ANDROID__
++	/* /data is owned by system (uid 1000), not root: check the authorized_keys file
++	 * and the directory that contains it, not every path component */
++	if (checkfileperm(path) != DROPBEAR_SUCCESS) {
++		ret = DROPBEAR_FAILURE;
++	}
++	if ((sep = strrchr(path, '/')) != NULL && sep != path) {
++		*sep = '\0';
++		if (checkfileperm(path) != DROPBEAR_SUCCESS) {
++			ret = DROPBEAR_FAILURE;
++		}
++	}
++	m_free(path);
++	return ret;
++#endif
+ 	/* Walk back up path checking permissions, stopping at either homedir,
+ 	 * or root if the path is outside of the homedir. */
+ 	while ((sep = strrchr(path, '/')) != NULL) {
+--- a/src/svr-runopts.c
++++ b/src/svr-runopts.c
+@@ -183,7 +183,11 @@
+ 	svr_opts.hostkey = NULL;
+ 	svr_opts.delay_hostkey = 0;
+ 	svr_opts.pidfile = expand_homedir_path(DROPBEAR_PIDFILE);
++#ifdef __ANDROID__
++	svr_opts.authorized_keys_dir = ANDROID_DROPBEAR_DIR;
++#else
+ 	svr_opts.authorized_keys_dir = "~/.ssh";
++#endif
+ #if DROPBEAR_SVR_LOCALANYFWD
+ 	svr_opts.nolocaltcp = 0;
+ #endif

@@ -1,7 +1,9 @@
 # Android Linux tools
 
-A root module that adds Linux userspace tools (netfilter, iproute2, WireGuard/AmneziaWG, tracing, packet
-capture, BPF tracing (bpftool, bpftrace), DNS and network diagnostics, compression, editors, shells) to rooted aarch64 Android phones. Every
+A root module that adds Linux userspace tools (netfilter, iproute2, WireGuard/AmneziaWG, Wi-Fi (iw), tracing
+and debugging (strace, ltrace, gdbserver), packet capture, BPF tracing (bpftool, bpftrace), nmap, OpenSSL, an SSH
+client and server (dropbear), DNS and network diagnostics, storage benchmarks (fio), compression, editors, shells)
+to rooted aarch64 Android phones. Every
 program is compiled from upstream source with the Android NDK for bionic (`aarch64-linux-android`, API 35).
 The module does not depend on any particular device. It runs nothing at boot (no `post-fs-data.sh`,
 `service.sh` or other boot script) and changes nothing on the device except the files the root manager
@@ -10,13 +12,13 @@ mounts from its `system/` tree.
 - Repository: <https://git.digtvbg.com/ivangotoy/android-linux-tools> (Forgejo), mirrored to
   <https://github.com/ivangotoy/android-linux-tools>.
 - Module id `android-linux-tools`, module directory `/data/adb/modules/android-linux-tools`.
-- Version `v2.M-rN`, versionCode `major*100000 + minor*1000 + N` (`v2.3-r2` = `203002`), set in `ndk/build.conf`.
+- Version `v2.M-rN`, versionCode `major*100000 + minor*1000 + N` (`v2.4-r1` = `204001`), set in `ndk/build.conf`.
 - One ZIP (see "One ZIP"); tool list in "Contents".
 
 ## Install
 
 - In the root manager app: Modules, Install from storage, pick the ZIP. Then reboot.
-- Command line, as root: `ksud module install /sdcard/Download/android-linux-tools-v2.3-r2.zip` (KernelSU).
+- Command line, as root: `ksud module install /sdcard/Download/android-linux-tools-v2.4-r1.zip` (KernelSU).
   Magisk (`magisk --install-module ZIP`) and APatch (`apd module install ZIP`) have the same module interface.
 - Upgrading: install the new ZIP over the old one and reboot. The installer recognises wrappers of this
   module (also of v1/v2.0/v2.1) and never renames them as device binaries. No other module is touched.
@@ -38,6 +40,9 @@ runtime file is in the module's `system/` tree, which the root manager mounts ov
 | `system/etc/android-linux-tools/libexec/` | `$ALTDIR/libexec` | every ELF program |
 | `system/etc/android-linux-tools/share/terminfo/` | `$ALTDIR/share/terminfo` | terminfo (compiled-in default of ncurses) |
 | `system/etc/android-linux-tools/etc/ssl/cert.pem` | `$ALTDIR/etc/ssl/cert.pem` | Mozilla CA bundle (curl, OpenSSL default) |
+| `system/etc/android-linux-tools/etc/ssl/openssl.cnf` | `$ALTDIR/etc/ssl/openssl.cnf` | default configuration of the `openssl` CLI |
+| `system/etc/android-linux-tools/share/nmap/` | `$ALTDIR/share/nmap` | nmap data files, NSE scripts and nselib (compiled-in data directory) |
+| `system/etc/android-linux-tools/share/ltrace/` | `$ALTDIR/share/ltrace` | ltrace prototype files (`libc.so.conf`, `syscalls.conf`, ...) |
 | `system/etc/android-linux-tools/etc/alt-tools.map` | `$ALTDIR/etc/alt-tools.map` | rename map written by `customize.sh`, read by `alt-list` |
 | `system/etc/android-linux-tools/share/android-linux-tools/` | `$ALTSHARE` | `dns-servers`, `origins.txt`, `MANIFEST.json`, `phone-test.sh` |
 | `module.prop`, `customize.sh`, `META-INF/`, `share/licenses/` | `/data/adb/modules/android-linux-tools` | module metadata and licences only |
@@ -82,16 +87,16 @@ the same programs and differed only in metadata (up to v2.0 the full flavour add
 libLLVM, about 172 MB). The module id is unchanged, so the ZIP installs over either flavour like any upgrade;
 `module.prop` and `MANIFEST.json` no longer have a `flavour` field.
 
-## Contents (v2.3-r2)
+## Contents (v2.4-r1)
 
-67 commands plus `alt-list`, 62 ELF programs; there is no `lib/` directory. Sizes are of the stripped
+80 commands plus `alt-list`, 74 ELF programs; there is no `lib/` directory. Sizes are of the stripped
 `$ALTDIR/libexec/` programs. Linkage `dynamic` = PIE against the system `libc.so`/`libm.so`/`libdl.so`
-(`libz.so` for curl) only, every third-party library linked in statically. Generated from
-`dist/MANIFEST-v2.json` of the v2.3-r2 build.
+(`libz.so` for curl, nmap, dropbear, ltrace and fio) only, every third-party library linked in statically. Generated from
+`dist/MANIFEST-v2.json` of the v2.4-r1 build.
 
 | ZIP | Bytes | Unpacked |
 |---|---|---|
-| `android-linux-tools-v2.3-r2.zip` | 60852774 | 135.7 MB |
+| `android-linux-tools-v2.4-r1.zip` | 77816094 | 189.7 MB |
 
 | Command | Recipe | Version | Linkage | libexec (KB) | Licence (SPDX) |
 |---|---|---|---|---|---|
@@ -120,8 +125,8 @@ libLLVM, about 172 MB). The module id is unchanged, so the ZIP installs over eit
 | `findmnt` | util-linux | 2.42.4 | static | 1081 | GPL-2.0-or-later AND LGPL-2.1-or-later |
 | `lscpu` | util-linux | 2.42.4 | static | 781 | GPL-2.0-or-later AND LGPL-2.1-or-later |
 | `curl` | curl | 8.23.0 | dynamic | 1392 | curl |
-| `dig` | bind | 9.20.30 | dynamic | 8159 | MPL-2.0 |
-| `host` | bind | 9.20.30 | dynamic | 8126 | MPL-2.0 |
+| `dig` | bind | 9.20.30 | dynamic | 8161 | MPL-2.0 |
+| `host` | bind | 9.20.30 | dynamic | 8128 | MPL-2.0 |
 | `mtr` | mtr | 0.96 | dynamic | 213 | GPL-2.0-only |
 | `socat` | socat | 1.8.1.3 | dynamic | 317 | GPL-2.0-only WITH OpenSSL-Exception |
 | `htop` | htop | 3.5.3 | static | 1093 | GPL-2.0-or-later |
@@ -162,6 +167,19 @@ libLLVM, about 172 MB). The module id is unchanged, so the ZIP installs over eit
 | `awg-quick` | amneziawg-tools | 3.1.20260812 | dynamic | 29 | GPL-2.0-only |
 | `drill` | ldns | 1.9.2 | static | 515 | BSD-3-Clause |
 | `ethtool-ng` | ethtool | 7.2 | static | 544 (=ethtool) | GPL-2.0-only |
+| `nmap` | nmap | 7.993 | dynamic | 9377 | LicenseRef-NPSL |
+| `nping` | nmap | 7.993 | dynamic | 4990 | LicenseRef-NPSL |
+| `openssl` | openssl | 3.5.9 | dynamic | 5414 | Apache-2.0 |
+| `dropbear` | dropbear | 2026.94 | dynamic | 287 | MIT AND BSD-3-Clause AND Unlicense AND LicenseRef-PublicDomain |
+| `dbclient` | dropbear | 2026.94 | dynamic | 270 | MIT AND BSD-3-Clause AND Unlicense AND LicenseRef-PublicDomain |
+| `ssh` | dropbear | 2026.94 | dynamic | 270 (=dbclient) | MIT AND BSD-3-Clause AND Unlicense AND LicenseRef-PublicDomain |
+| `scp` | dropbear | 2026.94 | dynamic | 26 | MIT AND BSD-3-Clause AND Unlicense AND LicenseRef-PublicDomain |
+| `dropbearkey` | dropbear | 2026.94 | dynamic | 110 | MIT AND BSD-3-Clause AND Unlicense AND LicenseRef-PublicDomain |
+| `dropbearconvert` | dropbear | 2026.94 | dynamic | 105 | MIT AND BSD-3-Clause AND Unlicense AND LicenseRef-PublicDomain |
+| `iw` | iw | 6.17 | static | 587 | ISC |
+| `gdbserver` | gdbserver | 18.1 | dynamic | 611 | GPL-3.0-or-later |
+| `ltrace` | ltrace | 0.8.1 | dynamic | 415 | GPL-2.0-or-later |
+| `fio` | fio | 3.43 | dynamic | 1626 | GPL-2.0-only |
 | `alt-list` | (module script) | | | | MIT |
 
 `$ALTSHARE/MANIFEST.json` (and `dist/MANIFEST-v2.json`) records per tool the recipe, upstream version, source
@@ -178,7 +196,9 @@ URL and sha256, how the checksum was verified, licence, patches, dependencies, l
 - Linkage rule: fully static (`-static`, NDK `libc.a`) unless the tool resolves host names. Static bionic has no
   netd client, so `getaddrinfo()` in a static binary cannot reach Android's resolver. Dynamic: nft, ipset, wg,
   bridge, ip-ng, tc-ng, ss-ng, mount.cifs, iperf3, tcpdump, curl, dig, host, mtr, socat, rsync, traceroute-ng,
-  arping-ng, tracepath-ng, ncat, iftop, wg-quick, awg, awg-quick. Everything else is static.
+  arping-ng, tracepath-ng, ncat, iftop, wg-quick, awg, awg-quick, nmap, nping, openssl, dropbear, dbclient/ssh, scp,
+  dropbearkey, dropbearconvert, gdbserver, ltrace, fio. Everything else is static. C++ programs (nmap, nping,
+  gdbserver) link the NDK libc++ statically.
 - DNS: no resolv.conf is read or written. Dynamic tools resolve names through bionic/netd. `drill` (ldns) talks
   to a DNS server directly; without `@server` its wrapper adds `@<first DNS server of the active default
   network>` from `$ALTSHARE/dns-servers` (`dumpsys connectivity`, `getprop net.dns1/net.dns2` fallback; never a
@@ -188,8 +208,22 @@ URL and sha256, how the checksum was verified, licence, patches, dependencies, l
 - TLS/CA: curl uses mbedTLS 3.6 LTS with the Mozilla bundle from curl.se (pinned by sha256) as
   `$ALTDIR/etc/ssl/cert.pem`; the wrapper also passes `--capath /system/etc/security/cacerts` (or the conscrypt
   apex store) when present. mbedTLS loads every file of the directory, which works with Android's old-style
-  hash names. BIND (dig, host) uses OpenSSL 3.5 LTS (static) with `$ALTDIR/etc/ssl/cert.pem` as its default CA
-  file (`dig +tls`).
+  hash names. BIND (dig, host), nmap and the `openssl` CLI use OpenSSL 3.5 LTS (static) with
+  `$ALTDIR/etc/ssl/cert.pem` as the default CA file (`dig +tls`; `openssl s_client` verifies against it by default)
+  and `$ALTDIR/etc/ssl/openssl.cnf` as the default configuration (`OPENSSL_CONF` overrides it).
+- nmap: built with NSE (nmap's bundled Lua), OpenSSL and zlib, without libssh2. Its data directory is compiled in
+  as `$ALTDIR/share/nmap`, so no `--datadir` is needed. Host names resolve through netd; nmap's own reverse-DNS
+  resolver uses the active network's DNS servers (`ALT_DNS_SERVERS`, exported by the wrapper as for dig/host)
+  because Android has no resolv.conf. `ncat` is built as before, without OpenSSL and Lua.
+- dropbear: nothing starts it. Host keys, the pid file and `authorized_keys` (for every user) are in `/data/local/dropbear/`; as root without `-r` the `dropbear` wrapper creates that directory (mode 700) and passes `-R`, so host keys are generated on the first connection.
+  Only public-key authentication is built in (no password login: Android has no shadow/crypt); the login shell
+  is `/system/bin/sh` and the session `PATH` is bionic's default (`/product/bin:...:/system/bin:...`).
+  `dbclient` (also installed as `ssh`) and `scp` keep `known_hosts` and the default identity `id_dropbear` in
+  `$HOME/.ssh`, or in `/data/local/dropbear` when `HOME` is unset, `/` or not writable; `scp` runs the module's
+  `dbclient`. Client password and keyboard-interactive authentication read the password from the terminal.
+- iw uses libnl 3.12 (static). gdbserver is GNU gdb 18.1's (no in-process agent). ltrace is upstream 0.8.1 with
+  its aarch64 backend and the bionic linker's library list; its prototype files are in `$ALTDIR/share/ltrace`.
+  fio is built without SysV shared memory (bionic has none), so it runs jobs as threads.
 - bpftool: built without LLVM and libbfd, so there is no JIT disassembly and no skeleton features.
 - bpftrace: LLVM/clang 23.1.5 (BPF backend only) linked statically, plus bcc's symbol helpers, the libbpf
   commit bpftrace pins, libelf, liblzma and libpcap. Its stdlib and headers are embedded, so it needs no
@@ -232,11 +266,12 @@ JOBS=8 MEM=12G ./build-ndk.sh  # make -j and memory limit (defaults)
   `ndk/lib/env.sh` (cross environment), `ndk/build.conf` (`V2_VERSION`, `MODULE_RELEASE`, `SOURCE_DATE_EPOCH`),
   `ndk/recipes.list` (build order), `ndk/recipes/<name>.sh`, `ndk/patches/<name>/*.patch`, `ndk/tools.tsv`
   (wrapper name, recipe, program, fixed arguments, DNS flag; in module order), `ndk/module/` (`customize.sh`,
-  `alt-list`, `dns-servers`, `META-INF/`), `ndk/package.sh` and `ndk/scripts/` (`stage.py`, `check.py`,
+  `alt-list`, `dns-servers`, `openssl.cnf`, `META-INF/`), `ndk/package.sh` and `ndk/scripts/` (`stage.py`, `check.py`,
   `manifest.py`, `layout_test.py`, `common.py`), `phone-test.sh` (self-check script).
 - Recipes: `VERSION`, `URL`, `SHA256`, `CHECKSUM_SOURCE` (signature key fingerprint or the published checksum
   the sha256 was verified against when pinning), `LICENSE`, `DEPS`, optional `LINKAGE=dynamic`, `EXTRA_SRCS`
-  (e.g. bash's official patch series) and a `build()` function. Each recipe builds against a private sysroot
+  (e.g. bash's official patch series) and a `build()` function. Runtime data of a program (nmap's and
+  ltrace's) goes to `/work/out/data/rt/<recipe>/<path under $ALTDIR>` and is merged into the runtime tree. Each recipe builds against a private sysroot
   with only its declared dependencies and is cached by a hash of recipe, patches, environment and dependency
   hashes. A failed recipe stops the build before packaging.
 - Patches are applied in order; each starts with a header saying why and citing its source (termux-packages,
@@ -267,11 +302,13 @@ JOBS=8 MEM=12G ./build-ndk.sh  # make -j and memory limit (defaults)
   flavours.
 - v2.3-r2: same programs as v2.3-r1; removes device details from docs and shipped files; the installer no
   longer handles the old prototype module.
+- v2.4-r1: adds nmap and nping (with NSE), the openssl CLI, dropbear (dropbear, dbclient/ssh, scp, dropbearkey,
+  dropbearconvert), iw (with libnl), gdbserver, ltrace and fio.
 
 ## Licences
 
 The repository's own code (build scripts, recipes, staging and check scripts, and the module's own scripts:
-the wrappers, `alt-list`, `customize.sh`, `dns-servers` and `phone-test.sh`) is MIT licensed, see `LICENSE`
+the wrappers, `alt-list`, `customize.sh`, `dns-servers`, `openssl.cnf` and `phone-test.sh`) is MIT licensed, see `LICENSE`
 (Copyright (c) 2026 Ivan Angelov). The ZIP ships it as `share/licenses/android-linux-tools/LICENSE`.
 
 The bundled third-party tools keep their upstream licences. Their SPDX identifiers are listed in

@@ -95,6 +95,30 @@ for t in TERMS:
 origin['data:terminfo'] = 'ndk:ncurses'
 copyfile(os.path.join(OUT, 'data', 'cacert.pem'), os.path.join(RT, 'etc', 'ssl', 'cert.pem'), 0o644)
 origin['data:etc/ssl/cert.pem'] = 'ndk:cacert'
+# default config of the openssl CLI (OPENSSLDIR/openssl.cnf; OPENSSLDIR = $ALTDIR/etc/ssl)
+copyfile(os.path.join(SRC, 'ndk', 'module', 'openssl.cnf'), os.path.join(RT, 'etc', 'ssl', 'openssl.cnf'), 0o644)
+origin['data:etc/ssl/openssl.cnf'] = 'module'
+# runtime data a recipe installs for its programs: /work/out/data/rt/<recipe>/<path under ALTDIR>
+# (e.g. nmap's share/nmap, ltrace's share/ltrace), merged into the runtime tree
+RTDATA = os.path.join(OUT, 'data', 'rt')
+for rname in sorted(os.listdir(RTDATA)) if os.path.isdir(RTDATA) else []:
+    if rname not in {e['recipe'] for e in entries}:
+        continue
+    top = os.path.join(RTDATA, rname)
+    for dirpath, dirs, files in os.walk(top):
+        dirs.sort()
+        for f in sorted(files):
+            sp = os.path.join(dirpath, f)
+            rel = os.path.relpath(sp, top)
+            if os.path.islink(sp) or not os.path.isfile(sp):
+                raise SystemExit('runtime data of %s is not a regular file: %s' % (rname, rel))
+            dp = os.path.join(RT, rel)
+            if os.path.exists(dp):
+                raise SystemExit('runtime data of %s overwrites %s' % (rname, rel))
+            copyfile(sp, dp, 0o644)
+    for d in sorted(os.listdir(top)):
+        for sd in sorted(os.listdir(os.path.join(top, d))):
+            origin['data:%s/%s' % (d, sd)] = 'ndk:' + rname
 
 # ---- wrappers
 need_dnsservers = any('dns' in e['flags'] or 'dnsenv' in e['flags'] for e in entries if e['name'])
@@ -120,9 +144,21 @@ for e in entries:
                   '  -q|--disable) shift; exec %s-q $ALT_CA "$@" ;;' % exe,
                   'esac',
                   'exec %s$ALT_CA "$@"' % exe]
+    elif e['name'] == 'dropbear':
+        lines += ['# dropbear is never started by the module. As root without -r: host keys in /data/local/dropbear,',
+                  '# generated on the first connection (-R); authorized_keys: /data/local/dropbear/authorized_keys',
+                  'if [ "$(id -u)" = 0 ]; then',
+                  '  case " $* " in',
+                  '    *" -r"*) ;;',
+                  '    *) mkdir -p -m 700 /data/local/dropbear',
+                  '       exec %s-R "$@" ;;' % exe,
+                  '  esac',
+                  'fi',
+                  'exec %s"$@"' % exe]
     elif 'dnsenv' in e['flags']:
-        lines += ['# BIND dig/host: no resolv.conf on Android. Without @server (dig) or a server argument (host) they use',
-                  '# ALT_DNS_SERVERS (patched dighost.c): the DNS servers of the active default network.',
+        lines += ['# no resolv.conf on Android. Without @server (dig) or a server argument (host), BIND\'s dig/host use',
+                  '# ALT_DNS_SERVERS (patched dighost.c), and nmap\'s reverse DNS uses it (patched mass_dns): the DNS',
+                  '# servers of the active default network.',
                   'if [ -z "$ALT_DNS_SERVERS" ]; then',
                   '  ALT_DNS_SERVERS=$(/system/bin/sh "$ALTDIR/share/%s/dns-servers" 2>/dev/null | tr \'\\n\' \' \')' % MODID,
                   '  export ALT_DNS_SERVERS',
@@ -199,7 +235,7 @@ for rname in sorted({e['recipe'] for e in entries} | {d for e in entries for d i
     lic_rows.append({'source': 'ndk', 'name': rname, 'version': mt['version'], 'license': mt['license'],
                      'url': mt['url'], 'sha256': mt['sha256'], 'patches': mt['patches'], 'license_files': files})
 notice = ['Android Linux tools %s - third-party licences' % VERSION, '',
-          'The module\'s own files (wrappers, alt-list, customize.sh, dns-servers, phone-test.sh) and the build',
+          'The module\'s own files (wrappers, alt-list, customize.sh, dns-servers, openssl.cnf, phone-test.sh) and the build',
           'scripts in %s are MIT licensed:' % REPO_URL,
           'share/licenses/%s/LICENSE. Each bundled package below keeps its own upstream licence; the' % MODID,
           'patches in share/licenses/ndk/<package>/ keep the terms of their upstream authors.', '',
@@ -213,7 +249,7 @@ write(os.path.join(ST, 'share', 'licenses', 'NOTICE.txt'), '\n'.join(notice) + '
 
 # ---- module.prop
 ndk_n = sum(1 for e in entries if e['name'])
-main = 'nft, ipset, conntrack, wg/awg (+wg-quick/awg-quick), ip-ng/tc-ng/ss-ng, bridge, ethtool-ng, bpftool, bpftrace, tcpdump, strace, curl, dig, drill, mtr, socat, iperf3, htop, tmux, bash, rsync, sqlite3, jq and more'
+main = 'nft, ipset, conntrack, wg/awg (+wg-quick/awg-quick), ip-ng/tc-ng/ss-ng, bridge, ethtool-ng, iw, bpftool, bpftrace, tcpdump, strace, ltrace, gdbserver, nmap, curl, openssl, dropbear/ssh, dig, drill, mtr, socat, iperf3, fio, htop, tmux, bash, rsync, sqlite3, jq and more'
 write(os.path.join(ST, 'module.prop'),
       'id=%s\nname=Android Linux tools\nversion=%s\nversionCode=%d\nauthor=Ivan Angelov\n'
       'description=%d tools built with the Android NDK (bionic): %s. '

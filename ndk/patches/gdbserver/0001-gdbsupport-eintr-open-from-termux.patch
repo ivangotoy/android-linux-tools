@@ -1,0 +1,23 @@
+Subject: gdbsupport eintr.h: retry open() without the handle_eintr template
+
+Why: bionic declares ::open with FORTIFY overloads, so clang cannot deduce the function template argument of
+gdb::handle_eintr (-1, ::open, ...) and gdbsupport does not compile.
+Source: termux-packages packages/gdb/gdbsupport-eintr.h.patch at commit eb1c6b3abce4979882df8d61328f0124e44adbe4, with the file names in the
+diff header changed to a/ b/.
+
+--- a/gdbsupport/eintr.h
++++ b/gdbsupport/eintr.h
+@@ -82,7 +82,12 @@
+ inline int
+ open (const char *pathname, int flags)
+ {
+-  return gdb::handle_eintr (-1, ::open, pathname, flags);
++  ssize_t ret;
++  do {
++      errno = 0;
++      ret = ::open(pathname, flags);
++  } while (ret == -1 && errno == EINTR);
++  return ret;
+ }
+ 
+ #ifdef HAVE_WAIT

@@ -617,25 +617,35 @@ CHECKSUM_SOURCE: `.asc`, Mathieu Desnoyers key `2A0B4ED915F2D3FA45F5B16217280A97
 Why: `include/urcu/syscall-compat.h` already handles `__ANDROID__`. BIND's default flavour (`liburcu`, the
 membarrier one) is used; Termux's `--with-liburcu=qsbr` needs `--enable-developer` and a qsbr shutdown patch.
 
-### OpenSSL 3.5.9 (libcrypto/libssl for BIND)
+### OpenSSL 3.5.9 (libcrypto/libssl for BIND and nmap, openssl CLI; dynamic)
 Sources checked:
 | Source | Observed |
 |---|---|
-| AOSP platform/external/openssl | present (AOSP itself uses BoringSSL) |
-| Termux packages/openssl | 3.6.5; `./Configure android-arm64 shared zlib-dynamic no-ssl no-hw no-srp no-tests enable-tls1_3`, `-DNO_SYSLOG` |
+| AOSP platform/external/openssl | removed 2016 (8953c287cf742a22411f75fab28a33772240e44f, deprecation notice); AOSP uses BoringSSL |
+| Termux packages/openssl | 3.6.5; `./Configure android-arm64 shared zlib-dynamic no-ssl no-hw no-srp no-tests enable-tls1_3`, `-DNO_SYSLOG`; CLI in the `openssl-tool` subpackage; patches Configurations-15-android.conf, include-crypto-rand.h (commit 6d9ca4360b69878b2f290446359b60b69f8d4c7a) |
+| LineageOS | android_external_openssl, branches end at cm-12.1 |
+| buildroot package/libopenssl | 3.6.5; CLI only with BR2_PACKAGE_LIBOPENSSL_BIN, else `no-apps` (cdd3776b) |
+| OpenWrt package/libs/openssl | 3.5.9-r2, PKG_HASH equals the published SHA256; CLI in `openssl-util` (3d5a743f1f0cb77aed8ed63b2f9aa75700b4322c) |
+| Alpine main/openssl | 3.5.9, `--openssldir=/etc/ssl` (2ad69f6f) |
+| Nix | `openssl = openssl_3_5` = 3.5.9; static: `no-shared no-module no-ct` (10c2208b) |
 | Upstream | 3.5 is the current LTS branch (3.5.9 released 2026-09-29) |
 
-Chosen approach: `ANDROID_NDK_ROOT=/opt/ndk ./Configure android-arm64 -D__ANDROID_API__=35 --prefix=/usr
---libdir=lib --openssldir=/system/etc/android-linux-tools/etc/ssl no-shared no-module no-engine no-dso
-no-tests no-docs no-apps no-ui-console no-ssl3 no-comp $CFLAGS`, `make build_libs`, `make install_dev`.
-`crypto/buildinf.h` is regenerated with `util/mkbuildinf.pl` and a fixed compiler description, because the
-generated one embeds the whole compiler command line including the `-ffile-prefix-map` build paths
-(reproducibility and the host-path check). No patches. CHECKSUM_SOURCE: `.asc`, OpenSSL key
+Chosen approach: `LINKAGE=dynamic`. `ANDROID_NDK_ROOT=/opt/ndk ./Configure android-arm64 -D__ANDROID_API__=35
+--prefix=/usr --libdir=lib --openssldir=/system/etc/android-linux-tools/etc/ssl no-shared no-module no-engine
+no-dso no-tests no-docs no-ssl3 no-comp $CFLAGS -Wl,--gc-sections -Wl,--build-id=sha1`, `make build_libs`,
+`make build_programs` (the `openssl` CLI), `make install_dev`. `crypto/buildinf.h` is regenerated with
+`util/mkbuildinf.pl` and a fixed compiler description, because the generated one embeds the whole compiler command
+line including the `-ffile-prefix-map` build paths (reproducibility and the host-path check). The module ships
+`ndk/module/openssl.cnf` (MIT, written for this module) as `$ALTDIR/etc/ssl/openssl.cnf`: `[req]` defaults
+(distinguished_name, v3_ca/v3_req extensions) for `openssl req`. No patches. CHECKSUM_SOURCE: `.asc`, OpenSSL key
 `C46ED3F2CBEFDA1FDAADA44264ED7B1DCCE71CB2` (and the published `.sha256`).
 
-Why: BIND 9.20 requires OpenSSL (>= 1.1.1) for its crypto (DNSSEC, TSIG, DoT); it cannot use mbedTLS, which curl
-keeps. LTS 3.5 instead of 3.6. `--openssldir` makes OpenSSL's default CA file the module's Mozilla bundle
-(`$ALTDIR/etc/ssl/cert.pem`) for `dig +tls` certificate checks.
+Why: BIND 9.20 requires OpenSSL (>= 1.1.1) for its crypto (DNSSEC, TSIG, DoT) and cannot use mbedTLS, which curl
+keeps; nmap's SSL scripts and service detection use it too. LTS 3.5 instead of 3.6. `--openssldir` makes the
+module's Mozilla bundle (`$ALTDIR/etc/ssl/cert.pem`) the default CA file (`dig +tls`, `openssl s_client`
+verification) and `openssl.cnf` there the default configuration. The CLI is dynamic because `s_client`, `s_time`
+and friends resolve host names. v2.3 used `no-apps no-ui-console`; the CLI needs the apps, and `ui-console` gives
+it passphrase prompts on the terminal.
 
 ### BIND 9.20.30 (dig, host)
 Sources checked:
@@ -1236,34 +1246,47 @@ Why:
   AIDs), and its loadables patches cover code that is not built.
 - Temp files use `$TMPDIR`, which the wrapper sets.
 
-### ncat (nmap 7.993, dynamic)
-Sources checked:
+### nmap 7.993 (nmap, nping, ncat; dynamic)
+Sources checked (nmap, nping and NSE surveyed on 2026-11-09):
 | Source | Observed |
 |---|---|
-| AOSP | no external/nmap |
-| Termux packages/nmap | 7.993, `--enable-static --with-liblua --without-nmap-update --without-zenmap --without-ndiff`; ncat patches: sockaddr_u.h (SUN_LEN fallback), ncat_posix.c/ncat_main.c (`/bin/sh` -> prefix), ncat_connect.c (`/tmp` -> prefix). Read at commit 7687cc4fbd5dd833e3709e86c2cd8b9159c9e005 |
-| Alpine main/nmap | 7.992 (fortify-source.patch) |
-| buildroot | 7.992 (+libdnet static, traceroute.cc cstddef) |
-| OpenWrt packages net/nmap | 7.993, 2 patches; PKG_HASH equals the published SHA256 |
+| AOSP | no external/nmap; external/libpcap dd978ad5 (2025-01-13, 1.10.5) and external/lua 9f07dad8 exist |
+| Termux packages/nmap | 7.993, `--enable-static --with-liblua=$PREFIX --without-nmap-update --without-zenmap --without-ndiff`; system lua54, libssh2, openssl, pcre2, zlib; nping built. Patches: libdnet-stripped-src-route-linux.c (in6_addr cast), nping-EchoServer.cc (`::bind`), libnetutil-massdns.cc (resolv.conf/hosts under the prefix), protocols.cc/services.cc (`/etc` fallbacks), the four ncat patches. Read at commit 7687cc4fbd5dd833e3709e86c2cd8b9159c9e005 (master 57bf2145ca743a9a639ccc59cecbac9a5756ca25) |
+| LineageOS | no android_external_nmap |
+| buildroot | 7.992, `--without-liblua` (no NSE), `--with-libdnet=included`; patches libdnet static library, traceroute.cc cstddef (master cdd3776b4ea728fdda5fcde708e25d0a092e6864) |
+| OpenWrt packages net/nmap | 7.993-r2, PKG_HASH equals the published SHA256; variant `full` `--with-liblua --with-libssh2 --with-openssl --without-nping`; patches 030-ncat-drop-ca-bundle, 100-nsock OPENSSL_NO_DTLS (1cc5d4c5b8b6e57fde9dac55ab9e3367407b0160) |
+| Alpine main/nmap | 7.992, system lua5.4, libssh2, openssl, pcre2, zlib; fortify-source.patch (2ad69f6f61044ac2965b52de45ef7cbdb1502f75) |
+| Nix | 7.991, `--with-liblua=lua5_4`, NSE fetchpatches (10c2208b99518c6ec3f51fab79d7e1ab6e03b8b0) |
 | Zackptg5 | nmap 7.93 |
 
 Chosen approach:
-- `LINKAGE=dynamic`. `configure_std --with-libpcap=$DEPROOT --without-openssl --without-liblua --without-libssh2
-  --without-libz --without-zenmap --without-ndiff --without-nping --without-nmap-update --with-libpcre=included`,
-  then `make build-ncat`. libpcap is the phase-1 static library.
+- `LINKAGE=dynamic`, `DEPS="libpcap openssl"`. ncat is built as in v2.3 from a copy of the patched tree:
+  `configure_std --with-libpcap=$DEPROOT --without-openssl --without-liblua --without-libssh2 --without-libz
+  --without-zenmap --without-ndiff --without-nping --without-nmap-update --with-libpcre=included`, `make build-ncat`.
+- nmap and nping: `configure_std --datadir=/system/etc/android-linux-tools/share --with-libpcap=$DEPROOT
+  --with-openssl=$DEPROOT --with-liblua=included --with-libz --without-libssh2 --with-libpcre=included
+  --with-libdnet=included --with-liblinear=included --without-zenmap --without-ndiff --without-nmap-update
+  --without-ncat`, `LDFLAGS=... -static-libstdc++`, `make`. `make install-nmap install-nse` into a scratch
+  DESTDIR; `share/nmap` (nmap-services, nmap-os-db, nmap-service-probes, nmap-protocols, nmap-rpc,
+  nmap-mac-prefixes, nse_main.lua, scripts/, nselib/) is staged as `$ALTDIR/share/nmap`.
 - Patch `nmap/0001-ncat-android-paths-from-termux.patch`: Termux's four ncat patches at 7687cc4f, with
   `@TERMUX_PREFIX@/bin/sh` -> `/system/bin/sh` and `@TERMUX_PREFIX@/tmp` -> `/data/local/tmp`.
+- Patches 0002 (libdnet route-linux.c in6_addr cast) and 0003 (nping EchoServer.cc `::bind`): Termux's at 7687cc4f.
+- Patch `nmap/0004-mass-dns-alt-dns-servers.patch` (written for this module): when `/etc/resolv.conf` cannot be
+  opened, mass_dns uses the servers in `ALT_DNS_SERVERS`; the nmap wrapper exports it (tools.tsv flag `dnsenv`),
+  as for dig/host.
 - CHECKSUM_SOURCE: `sigs/nmap-7.993.tar.bz2.asc`, Nmap Project key `436D66AB9A798425FDA0E3F801AF9F036B9355D0`,
   and the SHA256 in `sigs/nmap-7.993.tar.bz2.digest.txt`.
 
 Why:
-- The binary is dynamic because of `getaddrinfo`. The survey had raised the static-DNS problem as a hypothesis
-  here first.
-- Android has no `/bin/sh` and no `/tmp`, so `-c`/`--sh-exec` and the DGRAM unix-socket temp name would fail.
-- bionic's `<sys/un.h>` defines `SUN_LEN` only under `__USE_BSD`/`__USE_GNU`. Termux's fallback avoids defining
-  bionic-internal macros.
-- The survey suggested `--with-libpcap=included` (top-level configure cannot drop pcap). The recipe links the
-  libpcap already built for tcpdump instead.
+- The binaries are dynamic because of `getaddrinfo`. nmap is C++; the NDK libc++ is linked statically, so the only
+  DT_NEEDED entries are libc, libm, libdl and libz.
+- `NMAPDATADIR` is `<datadir>/nmap`; with `--datadir` under `$ALTDIR` nmap finds its data files without `--datadir`
+  or `NMAPDIR`. The bundled Lua 5.4 avoids a separate Lua recipe (other packagers use their system Lua).
+- libssh2 is left out (only the ssh-* brute/auth NSE scripts need it).
+- Android has no `/bin/sh` and no `/tmp` (ncat), libdnet and nping do not compile against bionic/libc++ unpatched,
+  and there is no resolv.conf for mass_dns. Termux points mass_dns at its own resolv.conf instead.
+- ncat keeps its v2.3 configuration (no OpenSSL), so the nmap change does not alter it.
 
 ### iftop 1.0pre4 (dynamic)
 Sources checked:
@@ -1604,8 +1627,152 @@ Chosen approach:
 Why: v2.0 left mount.cifs on Alpine because of talloc and the missing addmntent/getpass. talloc is kept (it is
 used by the DFS cldap ping in `resolve_host`), not patched out. Many Android kernels lack `CONFIG_CIFS`.
 
+## v2.4 additions
+
+### dropbear 2026.94 (dropbear, dbclient/ssh, scp, dropbearkey, dropbearconvert; dynamic)
+Sources checked (2026-11-09):
+| Source | Observed |
+|---|---|
+| AOSP external/dropbear | a34ddbe3819bc465968f3676c734b405e655f8b7 (2012-03-21), 0.49-era import, Android.mk |
+| Termux packages/dropbear | 2026.94; `--disable-syslog --disable-utmp --disable-utmpx --disable-wtmp --disable-static ac_cv_lib_crypt_crypt=no`, `MULTI=1 SCPPROGRESS=1`, termux-auth instead of crypt(). Patches: common-session.c and svr-auth.c (single user, shell under the prefix, no /etc/shells check), default_options.h (paths under the prefix, port 8022), gensignkey.c (rename() instead of link()), sshpty.c (/dev/ptmx, no pty chown), loginrec.c, svr-chansession.c, svr-agentfwd.c, svr-authpasswd.c, svr-session (logcat), sysoptions.h, compat.c, Makefile.in. authorized_keys stays ~/.ssh with pw_dir forced to Termux's HOME by its NDK pwd.h patch. Commit 4e132cc744b8f8996f647ac9e6318f94ae1393e6 |
+| LineageOS | android_external_dropbear 0.53.1 (07accded, 2011) |
+| buildroot | 2026.94, no patches; options written to localoptions.h (`DROPBEAR_SVR_PASSWORD_AUTH 0` without crypt) (cdd3776b) |
+| OpenWrt package/network/services/dropbear | 2026.94-r3, PKG_HASH equals the release; `--enable-bundled-libtom`, options in localoptions.h; 100-pubkey_path (root uses /etc/dropbear/authorized_keys), 110-change_user and others (3d5a743f) |
+| Alpine main/dropbear | 2026.94; utmps, sftp-server path, ssh_config (2ad69f6f) |
+| Nix | 2026.94; paths via -D CFLAGS, pass-path.patch (10c2208b) |
+
+Chosen approach:
+- `LINKAGE=dynamic`. `localoptions.h` (written by the recipe): host keys and pid file in `/data/local/dropbear/`,
+  `DROPBEAR_SVR_PASSWORD_AUTH 0`, `DROPBEAR_SVR_PAM_AUTH 0`, public-key auth on, X11 forwarding and MOTD off,
+  `DROPBEAR_PATH_SSH_PROGRAM` = `$ALTDIR/libexec/dbclient` (scp), `DEFAULT_PATH`/`DEFAULT_ROOT_PATH` = bionic's
+  `_PATH_DEFPATH` (from the NDK `<paths.h>`, contains `/system/bin`).
+- `configure_std --disable-static --enable-bundled-libtom --disable-pam --disable-shadow --disable-lastlog
+  --disable-utmp --disable-utmpx --disable-wtmp --disable-wtmpx --disable-loginfunc --disable-pututline
+  --disable-pututxline` (dropbear's `--enable-static` means fully static programs), `make PROGRAMS="dropbear dbclient
+  dropbearkey dropbearconvert scp"`; separate programs, not the multi-call binary.
+- Patch `dropbear/0001-android-paths-shell-and-client-keys.patch` (written for this module, header lists each change):
+  `authorized_keys` directory default (`-D`) `/data/local/dropbear` for every user; permission check of the file and
+  its directory only (`/data` is owned by system); login shell `/system/bin/sh` without /etc/shells; dbclient
+  known_hosts and `id_dropbear` in `$HOME/.ssh`, or `/data/local/dropbear` when HOME is unset, `/` or not
+  writable; a `getpass()` for bionic (client password and keyboard-interactive auth).
+- Patch `dropbear/0002-gensignkey-rename-from-termux.patch`: Termux's gensignkey.c.patch at 4e132cc7.
+- Wrapper: as root and without `-r`, `dropbear` runs `mkdir -p -m 700 /data/local/dropbear` and adds `-R`
+  (keys generated on the first connection). The module starts nothing.
+- CHECKSUM_SOURCE: `.asc`, Dropbear SSH Release Signing key `F7347EF2EE2E07A267628CA944931494F29C6773`.
+
+Why: Android has no per-user home directories with `.ssh`, no usable `pw_shell`, no `/etc/shells`, no shadow
+passwords or `crypt()`, and no `getpass()` in bionic. One root-owned directory under `/data/local` keeps host keys
+and `authorized_keys` out of the read-only `/system` and out of `/data/adb`. Termux's single-user patches do not fit
+a root server that can log in as any Android user; its rename() fix for host keys is taken unchanged.
+
+### libnl 3.12.0 (library for iw) and iw 6.17 (static)
+Sources checked (2026-11-09):
+| Source | Observed |
+|---|---|
+| AOSP external/libnl | 3.10.0 (8208b7200aaaf1b6c610610a8bea4569f082bd85), Android.bp `-D_BSD_SOURCE -D_GNU_SOURCE` |
+| AOSP external/iw | 5.16 (524dd05bfafe163816b254f5589dea551c9da224), `-DCONFIG_LIBNL20`, `-Wl,--no-gc-sections`, shared libnl |
+| Termux packages/libnl | 3.12.0, `--disable-pthreads --enable-cli`, `-Dsockaddr_storage=__kernel_sockaddr_storage`, own getsubopt; patches socket.h, include-linux-private-linux-in.h, nf-log/nf-monitor/nf-queue/nl-monitor (`<sys/select.h>`) (commit e42e9fe7bbcc8b62c8a23fad5b92291752190c08) |
+| Termux root-packages/iw | 6.17, no patches, no flags (master 57bf2145) |
+| LineageOS | libnl 3.7.0 (lineage-21.0); no iw |
+| buildroot | libnl 3.12.0 (2 musl patches), iw 6.17 no patches (cdd3776b) |
+| OpenWrt | libnl 3.12.0-r2, iw 6.17-r1 against libnl-tiny, PKG_HASH equals both releases (3d5a743f) |
+| Alpine | libnl3 3.12.0 (musl patch), iw 6.17 (2ad69f6f) |
+| Nix | libnl 3.12.0, iw 6.17 (10c2208b) |
+
+Chosen approach:
+- libnl: `CFLAGS+=-Dsockaddr_storage=__kernel_sockaddr_storage`, `configure_std --disable-cli --disable-debug
+  --disable-pthreads`, `make`, install the static libraries, headers and .pc files. Patch
+  `libnl/0001-private-headers-bionic-from-termux.patch`: Termux's socket.h.patch and
+  include-linux-private-linux-in.h.patch at e42e9fe7, unchanged. CHECKSUM_SOURCE: `.sig`, Thomas Haller key
+  `67DA3FAEBAE276BA58FC6CE314F18A98993AECD5` (expired 2025; signature made with it), and the release `.sha256sum`.
+- iw: `make CC=... PKG_CONFIG="pkgconf --static" LDFLAGS="... -Wl,-z,nostart-stop-gc"`. No patches.
+  CHECKSUM_SOURCE: kernel.org `iw-6.17.tar.sign` over the uncompressed tar, Johannes Berg key
+  `C0EBC440F6DA091C884D8532E0F373F37BF9099A`.
+
+Why: libnl's private copies of kernel headers clash with bionic's `<sys/socket.h>`/`<arpa/inet.h>`; bionic has
+pthreads in libc, so configure's `-lpthread` probe fails (`--disable-pthreads`, as Termux; iw is single-threaded).
+iw finds its command table through `__start___cmd`/`__stop___cmd`; lld's default start-stop-gc drops that section
+under `--gc-sections` (AOSP links iw with `--no-gc-sections` instead). iw resolves no host names, so it is static.
+On devices that ship `/system/bin/iw`, the installer renames the wrapper to `iw-ng`.
+
+### gdbserver (GNU gdb 18.1, dynamic)
+Sources checked (2026-11-09):
+| Source | Observed |
+|---|---|
+| AOSP toolchain/gdb | gdb-8.3 and gdb-9.2 (234e271db36e2a8be022f7a4bbabfa1623a6ae9a, 2020); Android changes in 76f55a3e2a75; prebuilts/gdb/linux-x86 removed 2021-06-24 |
+| Termux packages/gdb | 18.1; gdbserver built in the gdb tree and split into a subpackage; patches gdbserver-configure (auxv types on Android), gdbsupport-eintr.h, gdbsupport-pathstuff.cc, gdbsupport-signals-state-save-restore.cc, gdbsupport-job-control.cc, others for gdb itself (commit eb1c6b3abce4979882df8d61328f0124e44adbe4) |
+| LineageOS | no android_external_gdb |
+| buildroot | gdb up to 17.1; gdbserver-only `--enable-gdbserver --disable-gdb`, `--disable-inprocess-agent` when static (cdd3776b) |
+| OpenWrt package/devel/gdb | 16.3, separate gdbserver package (3d5a743f) |
+| Alpine main/gdb | 16.3 (2ad69f6f) |
+| Nix | 17.2 (10c2208b) |
+
+Chosen approach: `LINKAGE=dynamic`, `-D_FORTIFY_SOURCE` removed from CFLAGS, out-of-tree `../configure` with
+`--disable-gdb --enable-gdbserver --disable-inprocess-agent --disable-sim --disable-gprofng --disable-ld
+--disable-gas --disable-binutils --disable-gold --disable-libctf --disable-readline --disable-libdecnumber
+--disable-werror --disable-unit-tests --without-zstd --without-debuginfod`, `LDFLAGS=... -static-libstdc++`,
+`make all-gdbserver`. Patches 0001-0004: Termux's gdbsupport-eintr.h, gdbsupport-pathstuff.cc (with
+`/data/local/tmp` and `/system/bin/sh`), gdbserver-configure and gdbsupport-signals-state-save-restore.cc at
+eb1c6b3a. CHECKSUM_SOURCE: `.sig`, Joel Brobecker key `F40ADB902B24264AA42E50BF92EDB04BFF325CF3` (GNU keyring).
+
+Why: gdbserver `HOST:PORT` resolves names, so it is dynamic; libc++ is static. gnulib's glibc `cdefs.h` redefines
+`__bos()` with glibc's `__USE_FORTIFY_LEVEL`, which bionic's FORTIFY headers then fail to compile. bionic's FORTIFY
+`open` overloads break `handle_eintr` template deduction. gdbserver starts the inferior through `$SHELL` or
+`/bin/sh`. The in-process agent is a shared library and is not shipped.
+
+### ltrace 0.8.1 (dynamic)
+Source: upstream ltrace with the aarch64 backend (`sysdeps/linux-gnu/aarch64`), <https://gitlab.com/cespedes/ltrace>
+tag `0.8.1` (commit 7ef6e6097586b751cce298c256a919404dab259d, 2025-09-16); 0.7.3 has no aarch64 support.
+
+Sources checked (2026-11-09):
+| Source | Observed |
+|---|---|
+| AOSP external/ltrace | 0.7.91 (2cfdbc9216025057bb8bd2abe20fbe8163473e32, 2016), Android.mk, `PKGDATADIR=/system/etc/` |
+| Termux packages/ltrace | 0.8.1 from the same GitLab archive and sha256; `--disable-werror --without-libunwind ac_cv_host=$ARCH-generic-linux-gnu`, `./autogen.sh`; patches ltrace-elf.c, sysdeps-linux-gnu-proc.c, reallocarray (API < 29 only) (commit 7248767d3e704ecf76d7c722f1857ddb6623fbb0) |
+| LineageOS | android_external_ltrace, branches up to staging/cm-14.0 |
+| buildroot | 0.8.1 from GitLab, aarch64 allowed; 2 patches (cdd3776b) |
+| OpenWrt | absent |
+| Alpine main/ltrace | 0.7.3 with ltrace_aarch64.patch (2ad69f6f) |
+| Nix | 0.8.1 (10c2208b) |
+
+Chosen approach: `DEPS="elfutils"` (the static libelf of the bpftool phase). `./autogen.sh`;
+`ac_cv_host=aarch64-unknown-linux-gnu ac_cv_lib_supcpp___cxa_demangle=no ac_cv_lib_stdcpp___cxa_demangle=yes
+configure_std --datadir=/system/etc/android-linux-tools/share --sysconfdir=/system/etc/android-linux-tools/etc
+--with-libelf=$DEPROOT --without-libunwind --without-elfutils --disable-werror LIBS=-lz`,
+`make libstdcxx_LIBS=-l:libc++abi.a`. The prototype files (`make install-dist_pkgdataDATA`) are staged as
+`$ALTDIR/share/ltrace`. Patches 0001 (ltrace-elf.c) and 0002 (proc.c: skip linker64, `[vdso]` and the main
+program in the bionic link map, resolve bare sonames): Termux's at 7248767d, unchanged. CHECKSUM_SOURCE: no
+upstream signature or checksum; sha256 pinned at download, equal to Termux's.
+
+Why: configure accepts only linux-gnu/uclibc/musl host systems; the Linux backend is the one bionic needs once the
+link-map walk is patched. `__cxa_demangle` (`-C`) comes from the NDK's static libc++abi instead of
+`libc++_shared.so`. Without libdw/libunwind there is no `-w` backtrace.
+
+### fio 3.43 (dynamic)
+Sources checked (2026-11-09):
+| Source | Observed |
+|---|---|
+| AOSP external/fio | removed 2018 (ace079c5a11bcba2ca90b787efc102cefd20bc22) |
+| Termux root-packages/fio | 3.43 (GitHub tag tarball), no configure flags, libandroid-shmem dependency; patches configure (unknown options), Makefile (version), fix-hardcoded-path (master 57bf2145) |
+| LineageOS | android_external_fio, branches up to staging/cm-14.0 |
+| buildroot | 3.42, `--disable-native --cc --extra-cflags` (cdd3776b) |
+| OpenWrt packages utils/fio | 3.42-r1, `--disable-{numa,rdma,rados,http,rbd,gfapi,lex,pmem,native,shm,optimizations,tcmalloc}` (1cc5d4c5) |
+| Alpine community/fio | 3.43, `--disable-native` (2ad69f6f) |
+| Nix | 3.42 (10c2208b) |
+
+Chosen approach: `LINKAGE=dynamic`. `./configure --prefix=/usr --cc=$CC --extra-cflags="$CFLAGS $CPPFLAGS"
+--extra-ldflags="$LDFLAGS -Wl,--as-needed" --disable-native --disable-shm --disable-optimizations --disable-gfapi
+--disable-rados --disable-rbd --disable-http --disable-pmem --disable-libnfs --disable-xnvme --disable-isal
+--disable-libblkio --disable-libzbc --disable-tcmalloc --disable-dfs --disable-numa --disable-rdma`, `make fio`. No
+patches. CHECKSUM_SOURCE: `.asc`, Jens Axboe key `C0FC392DCADE26D975FA5E4AF7D358FB2971E0A6`.
+
+Why: configure detects `targetos=Android` from `__ANDROID__`. bionic has no SysV shared memory and fio's ashmem
+emulation needs `/dev/ashmem` or `ASharedMemory_create`; with `--disable-shm` (as OpenWrt) fio runs jobs as
+threads. `--as-needed` drops the `-llog` the Makefile adds for Android (unused). The net engine resolves host
+names, so fio is dynamic. The status file goes to `$TMPDIR` (set by the wrapper).
+
 ### Not ported
-None since v2.1: every tool of v1 (and wg-quick, awg, awg-quick, drill, ethtool-ng) is an NDK build. Since
+None since v2.1: every tool of v1 (and wg-quick, awg, awg-quick, drill, ethtool-ng, and the v2.4 additions) is an NDK build. Since
 v2.2-r2 there is no Alpine fallback: `ndk/scripts/stage.py` fails if a tool of `ndk/tools.tsv` has no NDK build,
 and `ndk/scripts/check.py` fails on a `lib/` directory, the resolv.conf overlay, or ELF files outside
 `$ALTDIR/libexec/`.

@@ -1,0 +1,18 @@
+Subject: libdnet route-linux.c: no in6_u member in bionic's struct in6_addr
+
+Why: bionic's IN6_IS_ADDR_UNSPECIFIED() macro reads struct in6_addr members (in6_u); libdnet passes its
+own struct ip6_addr, which has no such member, so route-linux.c does not compile. Cast the argument.
+Source: termux-packages packages/nmap/libdnet-stripped-src-route-linux.c.patch at commit
+7687cc4fbd5dd833e3709e86c2cd8b9159c9e005, unchanged.
+
+--- a/libdnet-stripped/src/route-linux.c
++++ b/libdnet-stripped/src/route-linux.c
+@@ -146,7 +146,7 @@
+ 
+ 	memcpy(&rt.rtmsg_dst, &dst.addr_ip6, sizeof(rt.rtmsg_dst));
+ 
+-	if (!IN6_IS_ADDR_UNSPECIFIED(&entry->route_gw.addr_ip6)) {
++	if (!IN6_IS_ADDR_UNSPECIFIED((const struct in6_addr *)&entry->route_gw.addr_ip6)) {
+ 		rt.rtmsg_flags |= RTF_GATEWAY;
+ 		memcpy(&rt.rtmsg_gateway, &entry->route_gw.addr_ip6,
+ 				sizeof(rt.rtmsg_gateway));

@@ -1,0 +1,52 @@
+Subject: libnl private kernel headers: build against bionic
+
+Why: libnl compiles against its own copies of kernel uapi headers (include/linux-private). With bionic's
+<sys/socket.h> and <arpa/inet.h> they clash: linux/socket.h redefines struct __kernel_sockaddr_storage,
+which bionic already defines, and bionic's <arpa/inet.h> then needs the in_addr_t that the private
+linux/in.h shadows.
+Source: termux-packages packages/libnl/socket.h.patch and include-linux-private-linux-in.h.patch at commit
+e42e9fe7bbcc8b62c8a23fad5b92291752190c08, unchanged.
+
+--- a/include/linux-private/linux/socket.h
++++ b/include/linux-private/linux/socket.h
+@@ -2,30 +2,8 @@
+ #ifndef _LINUX_SOCKET_H
+ #define _LINUX_SOCKET_H
+ 
+-/*
+- * Desired design of maximum size and alignment (see RFC2553)
+- */
+-#define _K_SS_MAXSIZE	128	/* Implementation specific max size */
+-
+ typedef unsigned short __kernel_sa_family_t;
+ 
+-/*
+- * The definition uses anonymous union and struct in order to control the
+- * default alignment.
+- */
+-struct __kernel_sockaddr_storage {
+-	union {
+-		struct {
+-			__kernel_sa_family_t	ss_family; /* address family */
+-			/* Following field(s) are implementation specific */
+-			char __data[_K_SS_MAXSIZE - sizeof(unsigned short)];
+-				/* space to achieve desired size, */
+-				/* _SS_MAXSIZE value minus size of ss_family */
+-		};
+-		void *__align; /* implementation specific desired alignment */
+-	};
+-};
+-
+ #define SOCK_SNDBUF_LOCK	1
+ #define SOCK_RCVBUF_LOCK	2
+ 
+--- a/include/linux-private/linux/in.h
++++ b/include/linux-private/linux/in.h
+@@ -82,6 +82,7 @@
+ 
+ #if __UAPI_DEF_IN_ADDR
+ /* Internet address. */
++typedef __be32 in_addr_t;
+ struct in_addr {
+ 	__be32	s_addr;
+ };

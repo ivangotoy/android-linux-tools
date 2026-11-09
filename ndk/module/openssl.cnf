@@ -1,0 +1,42 @@
+# android-linux-tools: default configuration of the openssl CLI ($ALTDIR/etc/ssl/openssl.cnf = OPENSSLDIR/openssl.cnf).
+# The default CA file is $ALTDIR/etc/ssl/cert.pem (Mozilla bundle). Set OPENSSL_CONF to use another file.
+
+HOME = .
+
+[ req ]
+default_bits = 2048
+default_md = sha256
+distinguished_name = req_distinguished_name
+attributes = req_attributes
+x509_extensions = v3_ca
+req_extensions = v3_req
+string_mask = utf8only
+
+[ req_distinguished_name ]
+countryName = Country Name (2 letter code)
+countryName_min = 2
+countryName_max = 2
+stateOrProvinceName = State or Province Name
+localityName = Locality Name
+organizationName = Organization Name
+organizationalUnitName = Organizational Unit Name
+commonName = Common Name (e.g. server FQDN)
+commonName_max = 64
+emailAddress = Email Address
+emailAddress_max = 64
+
+[ req_attributes ]
+
+[ v3_req ]
+basicConstraints = CA:FALSE
+keyUsage = nonRepudiation, digitalSignature, keyEncipherment
+
+[ v3_ca ]
+subjectKeyIdentifier = hash
+authorityKeyIdentifier = keyid:always,issuer
+basicConstraints = critical, CA:true
+
+[ usr_cert ]
+basicConstraints = CA:FALSE
+subjectKeyIdentifier = hash
+authorityKeyIdentifier = keyid,issuer

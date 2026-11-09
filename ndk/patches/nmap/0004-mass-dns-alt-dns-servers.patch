@@ -1,0 +1,32 @@
+Subject: nmap mass_dns on Android: DNS servers from ALT_DNS_SERVERS when there is no resolv.conf
+
+Why: Android has no /etc/resolv.conf, so nmap's own parallel reverse-DNS resolver (mass_dns) found no
+servers and warned on every scan. The module's nmap wrapper exports ALT_DNS_SERVERS (the DNS servers of
+the active default network, from $ALTSHARE/dns-servers), as it does for BIND's dig and host; when
+resolv.conf cannot be opened, those servers are used. --dns-servers and --system-dns work as upstream.
+Termux instead points mass_dns at its prefix's etc/resolv.conf (libnetutil-massdns.cc.patch at
+termux-packages commit 7687cc4fbd5dd833e3709e86c2cd8b9159c9e005).
+Source: written for this module.
+
+--- a/libnetutil/massdns.cc
++++ b/libnetutil/massdns.cc
+@@ -1508,6 +1508,19 @@
+   static bool firstrun = true;
+ 
+   fp = fopen("/etc/resolv.conf", "r");
++#ifdef __ANDROID__
++  // Android has no resolv.conf: use the DNS servers of the active network that the module's
++  // wrapper exports in ALT_DNS_SERVERS (space-separated addresses)
++  if (fp == NULL) {
++    const char *alt = getenv("ALT_DNS_SERVERS");
++    if (alt != NULL && *alt != '\0') {
++      std::istringstream iss(alt);
++      std::string server;
++      while (iss >> server) this->add_dns_server(server);
++      return;
++    }
++  }
++#endif
+   if (fp == NULL) {
+     if (firstrun) perror("mass_dns: warning: Unable to open /etc/resolv.conf. Try using --system-dns or specify valid servers with --dns-servers");
+     firstrun = false;

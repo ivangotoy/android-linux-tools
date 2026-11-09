@@ -1,0 +1,25 @@
+Subject: gdbsupport: no warning about the signal handlers bionic installs
+
+Why: bionic's linker installs debuggerd signal handlers in every process, so gdbserver warned at every
+start that custom handlers would not be propagated to the inferior.
+Source: termux-packages packages/gdb/gdbsupport-signals-state-save-restore.cc.patch at commit eb1c6b3abce4979882df8d61328f0124e44adbe4, with the
+file names in the diff header changed to a/ b/.
+
+--- a/gdbsupport/signals-state-save-restore.cc
++++ b/gdbsupport/signals-state-save-restore.cc
+@@ -42,6 +42,7 @@
+   if (res == -1)
+     perror_with_name (("sigprocmask"));
+ 
++#ifndef __ANDROID__
+   bool found_preinstalled = false;
+ 
+   for (i = 1; i < NSIG; i++)
+@@ -84,6 +85,7 @@
+ won't be propagated to spawned programs.\n"));
+     }
+ #endif
++#endif
+ }
+ 
+ /* See signals-state-save-restore.h.   */

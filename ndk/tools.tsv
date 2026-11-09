@@ -1,7 +1,7 @@
 # Tools of the module, one wrapper (system/bin/NAME) per row, in module order (origins.txt, MANIFEST.json).
 # Every tool must be built by its recipe; stage.py fails otherwise.
 # name(- = libexec only)  recipe  binary(.work/ndk/out/bin = libexec name)  args(- = none)  flags(- = none; dns = needs a DNS server address,
-# not getaddrinfo: the wrapper adds @<server>; dnsenv = the wrapper exports ALT_DNS_SERVERS for BIND's dig/host)
+# not getaddrinfo: the wrapper adds @<server>; dnsenv = the wrapper exports ALT_DNS_SERVERS for BIND's dig/host and nmap's reverse DNS)
 nft             nftables         nft          -     -
 ipset           ipset            ipset        -     -
 conntrack       conntrack-tools  conntrack    -     -
@@ -70,3 +70,16 @@ awg             amneziawg-tools  awg          -     -
 awg-quick       amneziawg-tools  awg-quick    -     -
 drill           ldns             drill        -     dns
 ethtool-ng      ethtool          ethtool      -     -
+nmap            nmap             nmap         -     dnsenv
+nping           nmap             nping        -     -
+openssl         openssl          openssl      -     -
+dropbear        dropbear         dropbear     -     -
+dbclient        dropbear         dbclient     -     -
+ssh             dropbear         dbclient     -     -
+scp             dropbear         scp          -     -
+dropbearkey     dropbear         dropbearkey  -     -
+dropbearconvert dropbear         dropbearconvert  -    -
+iw              iw               iw           -     -
+gdbserver       gdbserver        gdbserver    -     -
+ltrace          ltrace           ltrace       -     -
+fio             fio              fio          -     -
