@@ -1518,7 +1518,11 @@ Chosen approach:
   `LLVM_HOST_TRIPLE=aarch64-unknown-linux-android35` (as Termux), `LLVM_ENABLE_PROJECTS=clang`,
   `LLVM_TARGETS_TO_BUILD=BPF`, Release, `LLVM_ENABLE_RTTI=ON`, `LIBCLANG_BUILD_STATIC=ON`, `LLVM_ENABLE_PIC=ON`
   (with PIC off libclang is built static-only under the name `libclang`, and bpftrace links the target
-  `libclang_static`, which exists only next to the shared one), tools/utils/tests/benchmarks/examples/docs/bindings off, static analyzer, ObjC
+  `libclang_static`, which exists only next to the shared one),
+  `LLVM_DEFAULT_TARGET_TRIPLE=aarch64-unknown-linux-android35` (llvm/CMakeLists.txt sets the default triple to
+  the host triple only if the native backend is in `LLVM_TARGETS_TO_BUILD`; with BPF alone it is empty, and
+  bpftrace's libclang parse (no `-target`) and clang driver call fail on the phone with "unknown target triple
+  'unknown'"; the host triple is what a native build of bpftrace gets), tools/utils/tests/benchmarks/examples/docs/bindings off, static analyzer, ObjC
   rewriter and plugins off, zlib/zstd/libxml2/libedit/libpfm/ffi/curl/telemetry off, no libLLVM dylib,
   `LLVM_PARALLEL_LINK_JOBS=2`. Installed into the private prefix only (headers, static libraries, CMake
   package files; the shared libclang/libclang-cpp built because of PIC are not used).
@@ -1553,6 +1557,11 @@ Why:
 - bcc's full library needs its own LLVM frontend (and an unreleased fix for LLVM 23); bpftrace uses only the
   symbol-resolution helpers, which upstream already builds LLVM-free as `bcc-loader-static`.
 - bpftrace needs no runtime files: its stdlib, headers and libbpf headers are embedded in the binary.
+- Kernels without `CONFIG_FUNCTION_TRACER` lack `available_filter_functions`. In 0.27.1
+  (src/symbols/kernel.cpp, src/ast/passes/ap_probe_expansion.cpp) a missing file only warns, but kprobe names
+  then never match; the code's documented bypass is `--unsafe` (skips the match for kprobes) or
+  `--traceable-functions FILE` (a file in that format, which such a kernel cannot produce). Documented in the
+  README rather than added to the wrapper, because `--unsafe` also enables destructive builtins.
   Without libdw, DWARF-based uprobe argument types are unavailable (BTF and C definitions still work);
   blazesym, libbfd disassembly and systemd are off.
 

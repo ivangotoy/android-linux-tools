@@ -96,7 +96,7 @@ libLLVM, about 172 MB). The module id is unchanged, so the ZIP installs over eit
 | ZIP | Bytes | Unpacked |
 |---|---|---|
 | `android-linux-tools-v2.2-r2.zip` (release, lite flavour) | 26140651 | 53.6 MB |
-| `android-linux-tools-v2.2-r2.zip` (branch `bpftrace`: one ZIP, with bpftrace) | 60851825 | 135.7 MB |
+| `android-linux-tools-v2.2-r2.zip` (branch `bpftrace`: one ZIP, with bpftrace) | 60852403 | 135.7 MB |
 
 | Command | Recipe | Version | Linkage | libexec (KB) | Licence (SPDX) |
 |---|---|---|---|---|---|
@@ -202,6 +202,13 @@ URL and sha256, how the checksum was verified, licence, patches, dependencies, l
   files besides the program; kprobe, tracepoint and uprobe probes need a kernel with BTF
   (`/sys/kernel/btf/vmlinux`), BPF events and tracefs. Built without libdw (no DWARF-typed uprobe arguments),
   blazesym and libbfd disassembly.
+  - Kernels without `CONFIG_FUNCTION_TRACER` have no `$TRACEFS/available_filter_functions`; bpftrace then warns
+    and refuses `kprobe:` probes with "No matches". Upstream's bypass for that case is `--unsafe`
+    (`bpftrace --unsafe -e 'kprobe:do_sys_openat2 { @c = count(); }'`): the name is not checked against the
+    list, wildcards do not expand, and the kernel still rejects blacklisted functions. `--unsafe` also allows
+    `system()` and other destructive builtins, so the wrapper does not add it.
+  - Without `CONFIG_FTRACE_SYSCALLS` there is no `tracepoint:syscalls:*`; `tracepoint:raw_syscalls:sys_enter`
+    and `sys_exit` (the syscall number is `args.id`) still work.
 - WireGuard/AmneziaWG: `wg`, `awg` and the upstream Android `wg-quick`/`awg-quick` (`src/wg-quick/android.c`, a
   C program: no bash needed; it drives the stock `ip`, `iptables`, `ndc` and the netd DnsResolver over binder).
   awg-quick is patched to use the kernel `amneziawg` link type when the kernel has it, before falling back to
