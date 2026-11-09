@@ -8,4 +8,6 @@ build() {
     --disable-xzdec --disable-lzma-links
   make -j"$JOBS" LDFLAGS="$LT_LDFLAGS"
   install_bin src/xz/xz xz
+  # liblzma.a + headers for dependants (bcc's MiniDebugInfo reader, bpftrace)
+  install_lib -C src/liblzma install
 }

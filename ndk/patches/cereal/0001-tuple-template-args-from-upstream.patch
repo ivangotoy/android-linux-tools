@@ -1,0 +1,30 @@
+Subject: tuple.hpp: explicit template arguments after "template" (clang 19+ error)
+
+Why: NDK r30 clang 21 rejects "::template apply( ar, tuple )" without a template argument list
+(-Wmissing-template-arg-list-after-template-kw, an error by default); bpftrace includes
+cereal/types/tuple.hpp (src/required_resources.cpp). cereal has no release with the fix.
+Source: upstream cereal commit d81e2f7df7b334fee057e53017388d02e555a836 "Fix llvm20 compile issue in
+tuple.hpp (#872)" (2026-03-06), applied unchanged.
+
+diff --git a/include/cereal/types/tuple.hpp b/include/cereal/types/tuple.hpp
+index 80c680756..d6bef1103 100644
+--- a/include/cereal/types/tuple.hpp
++++ b/include/cereal/types/tuple.hpp
+@@ -95,7 +95,7 @@ namespace cereal
+       template <class Archive, class ... Types> inline
+       static void apply( Archive & ar, std::tuple<Types...> & tuple )
+       {
+-        serialize<Height - 1>::template apply( ar, tuple );
++        serialize<Height - 1>::template apply<Archive, Types...>( ar, tuple );
+         ar( CEREAL_NVP_(tuple_element_name<Height - 1>::c_str(),
+             std::get<Height - 1>( tuple )) );
+       }
+@@ -116,7 +116,7 @@ namespace cereal
+   template <class Archive, class ... Types> inline
+   void CEREAL_SERIALIZE_FUNCTION_NAME( Archive & ar, std::tuple<Types...> & tuple )
+   {
+-    tuple_detail::serialize<std::tuple_size<std::tuple<Types...>>::value>::template apply( ar, tuple );
++    tuple_detail::serialize<std::tuple_size<std::tuple<Types...>>::value>::template apply<Archive, Types...>( ar, tuple );
+   }
+ } // namespace cereal
+ 

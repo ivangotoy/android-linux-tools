@@ -55,5 +55,9 @@ traceroute
 iputils
 elfutils
 bpftool
+llvm
+bcc
+cereal
+bpftrace
 talloc
 cifs-utils

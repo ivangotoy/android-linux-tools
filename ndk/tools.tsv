@@ -12,6 +12,7 @@ ip-ng           iproute2         ip           -     -
 tc-ng           iproute2         tc           -     -
 ss-ng           iproute2         ss           -     -
 bpftool         bpftool          bpftool      -     -
+bpftrace        bpftrace         bpftrace     -     -
 getfacl         acl              getfacl      -     -
 setfacl         acl              setfacl      -     -
 mount.cifs      cifs-utils       mount.cifs   -     -

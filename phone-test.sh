@@ -368,6 +368,7 @@ vchk ip-ng 'utility, iproute2-v?[0-9]' -V
 vchk tc-ng 'utility, iproute2-v?[0-9]' -V
 vchk ss-ng 'utility, iproute2-v?[0-9]' -V
 vchk bpftool 'bpftool v[0-9]' version
+vchk bpftrace 'bpftrace v[0-9]' --version
 vchk getfacl 'getfacl [0-9]' --version
 vchk setfacl 'setfacl [0-9]' --version
 vchk mount.cifs 'mount.cifs version: [0-9]' -V
@@ -464,6 +465,7 @@ chk tc-ng-qdisc 'qdisc' tc-ng qdisc show dev lo
 chk ethtool-ng-lo 'Settings for lo|Link detected' ethtool-ng lo
 chk bpftool-version 'bpftool v[0-9]' bpftool version
 kchk bpftool-prog-list "CONFIG_BPF_SYSCALL" bpftool prog list
+kchk bpftrace-begin "CONFIG_BPF_SYSCALL CONFIG_BPF_EVENTS" bpftrace -e 'BEGIN { printf("ok\n"); exit(); }'
 kchk nfct-timeout-list "CONFIG_NF_CT_NETLINK_TIMEOUT" nfct timeout list
 chk mount.cifs-help 'Usage: mount\.cifs|mount\.cifs' mount.cifs -h
 chk getfacl-dir 'owner' getfacl /data/local/tmp

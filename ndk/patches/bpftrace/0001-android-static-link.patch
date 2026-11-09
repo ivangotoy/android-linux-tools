@@ -1,0 +1,24 @@
+Subject: Android STATIC_LINKING: take libdl/libm/libz from the NDK static archives
+
+Why: the STATIC_LINKING=ON branch for ANDROID in src/CMakeLists.txt switches the linker back to
+-Wl,-Bdynamic before -ldl -lm -lz, so the result needs the system libdl.so/libm.so/libz.so (the setup
+of facebookexperimental/ExtendedAndroidTools, named in src/ast/CMakeLists.txt). android-linux-tools links
+every tool that does not resolve host names fully static (ndk/REFERENCES.md, "Static vs dynamic
+linkage"); bpftrace calls neither dlopen() nor getaddrinfo(). Without -Bdynamic the -static link takes
+libdl.a, libm.a and libz.a from the NDK r30 sysroot.
+Source: bpftrace v0.27.1 src/CMakeLists.txt (the two lines changed here); the non-Android branch below
+it is unchanged.
+
+--- a/src/CMakeLists.txt
++++ b/src/CMakeLists.txt
+@@ -201,8 +201,8 @@
+ 
+ if (STATIC_LINKING)
+   if(ANDROID)
+-    target_link_libraries(libbpftrace "-Wl,-Bdynamic" "-ldl" "-lm" "-lz")
+-    target_link_libraries(runtime "-Wl,-Bdynamic" "-ldl" "-lm" "-lz")
++    target_link_libraries(libbpftrace "-ldl" "-lm" "-lz")
++    target_link_libraries(runtime "-ldl" "-lm" "-lz")
+   else()
+     target_link_libraries(libbpftrace "-Wl,-Bdynamic" "-lrt" "-lpthread" "-ldl" "-lm")
+     target_link_libraries(libbpftrace "-Wl,-Bstatic" "-lz")

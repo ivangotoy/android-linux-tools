@@ -1,7 +1,7 @@
 # Android Linux tools
 
 A root module that adds Linux userspace tools (netfilter, iproute2, WireGuard/AmneziaWG, tracing, packet
-capture, DNS and network diagnostics, compression, editors, shells) to rooted aarch64 Android phones. Every
+capture, BPF tracing (bpftool, bpftrace), DNS and network diagnostics, compression, editors, shells) to rooted aarch64 Android phones. Every
 program is compiled from upstream source with the Android NDK for bionic (`aarch64-linux-android`, API 35).
 The module does not depend on any particular device. It runs nothing at boot (no `post-fs-data.sh`,
 `service.sh` or other boot script) and changes nothing on the device except the files the root manager
@@ -84,21 +84,23 @@ phone that ships a `curl`). Use `alt-list` to see what a phone has.
 | `android-linux-tools-<ver>.zip` | flavour `lite` |
 | `android-linux-tools-full-<ver>.zip` | flavour `full` |
 
-Since v2.1 both flavours contain the same programs and wrappers (including bpftool, built without LLVM). They
+Since v2.1 both flavours contain the same programs and wrappers (including bpftool, built without LLVM, and
+bpftrace with its statically linked LLVM/clang). They
 differ only in the `flavour=` key and description of `module.prop`, the `flavour` field of `MANIFEST.json`
 and the NOTICE header. Both use the same module id and versionCode, so installing one replaces the other.
 (Up to v2.0 the full flavour added the Alpine bpftool with libLLVM, about 172 MB.)
 
 ## Contents (v2.2-r2)
 
-66 commands plus `alt-list`, 61 ELF programs; there is no `lib/` directory. Sizes are of the stripped
+67 commands plus `alt-list`, 62 ELF programs; there is no `lib/` directory. Sizes are of the stripped
 `$ALTDIR/libexec/` programs. Linkage `dynamic` = PIE against the system `libc.so`/`libm.so`/`libdl.so`
 (`libz.so` for curl) only, every third-party library linked in statically. Generated from
-`dist/MANIFEST-v2.json` of the v2.2-r2 build.
+`dist/MANIFEST-v2.json` of the v2.2-r2 build, plus bpftrace from branch `bpftrace`.
 
 | ZIP | Bytes | Unpacked |
 |---|---|---|
-| `android-linux-tools-v2.2-r2.zip` | 26140651 | 53.6 MB |
+| `android-linux-tools-v2.2-r2.zip` (release) | 26140651 | 53.6 MB |
+| `android-linux-tools-v2.2-r2.zip` (branch `bpftrace`, with bpftrace) | 60851827 | 135.7 MB |
 
 | Command | Recipe | Version | Linkage | libexec (KB) | Licence (SPDX) |
 |---|---|---|---|---|---|
@@ -112,6 +114,7 @@ and the NOTICE header. Both use the same module id and versionCode, so installin
 | `tc-ng` | iproute2 | 7.3.0 | dynamic | 451 (=tc) | GPL-2.0-or-later |
 | `ss-ng` | iproute2 | 7.3.0 | dynamic | 107 (=ss) | GPL-2.0-or-later |
 | `bpftool` | bpftool | 7.8.1 | static | 1020 | GPL-2.0-only OR BSD-2-Clause |
+| `bpftrace` | bpftrace | 0.27.1 | static | 83930 | Apache-2.0 AND (LGPL-2.1-only OR BSD-2-Clause) |
 | `getfacl` | acl | 2.4.0 | static | 294 | LGPL-2.1-or-later AND GPL-2.0-or-later |
 | `setfacl` | acl | 2.4.0 | static | 345 | LGPL-2.1-or-later AND GPL-2.0-or-later |
 | `mount.cifs` | cifs-utils | 7.9 | dynamic | 60 | GPL-3.0-or-later |
@@ -198,6 +201,11 @@ URL and sha256, how the checksum was verified, licence, patches, dependencies, l
   hash names. BIND (dig, host) uses OpenSSL 3.5 LTS (static) with `$ALTDIR/etc/ssl/cert.pem` as its default CA
   file (`dig +tls`).
 - bpftool: built without LLVM and libbfd, so there is no JIT disassembly and no skeleton features.
+- bpftrace: LLVM/clang 23.1.5 (BPF backend only) linked statically, plus bcc's symbol helpers, the libbpf
+  commit bpftrace pins, libelf, liblzma and libpcap. Its stdlib and headers are embedded, so it needs no
+  files besides the program; kprobe, tracepoint and uprobe probes need a kernel with BTF
+  (`/sys/kernel/btf/vmlinux`), BPF events and tracefs. Built without libdw (no DWARF-typed uprobe arguments),
+  blazesym and libbfd disassembly.
 - WireGuard/AmneziaWG: `wg`, `awg` and the upstream Android `wg-quick`/`awg-quick` (`src/wg-quick/android.c`, a
   C program: no bash needed; it drives the stock `ip`, `iptables`, `ndc` and the netd DnsResolver over binder).
   awg-quick is patched to use the kernel `amneziawg` link type when the kernel has it, before falling back to
@@ -301,6 +309,7 @@ skips are kernel features the device lacks):
 - v2.1: every tool is an NDK build; no musl runtime, no resolv.conf overlay.
 - v2.2: runtime files under `/system/etc/android-linux-tools`, so the tools work for non-root users.
 - v2.2-r2: same programs as v2.2-r1; adds the MIT `LICENSE` and drops the dead Alpine build code.
+- Branch `bpftrace` (unreleased): adds bpftrace 0.27.1; the builder image gains `g++` and `xxd`.
 
 ## Licences
 

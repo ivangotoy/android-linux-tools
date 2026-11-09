@@ -20,6 +20,7 @@ Builder facts (`ndk/Dockerfile`, `ndk/lib/env.sh`):
   dl.google.com/android/repository/repository2-3.xml (the Dockerfile also checks the size and a SHA-256 recorded
   at pin time).
 - Debian trixie-slim base pinned by digest, packages from snapshot.debian.org `20261101T000000Z`.
+  A second layer after the NDK adds `g++` and `xxd` from the same snapshot (LLVM native tablegen, bpftrace stdlib embedding).
 - Target `aarch64-linux-android`, API 35, compiler `aarch64-linux-android35-clang`, `llvm-ar`/`ld.lld`.
 - CFLAGS `-O2 -g0 -fPIC -fstack-protector-strong -D_FORTIFY_SOURCE=2 -ffunction-sections -fdata-sections` plus
   `-ffile-prefix-map` for the build paths; LDFLAGS `-Wl,--gc-sections -Wl,--build-id=sha1`; `pkgconf --static`
@@ -72,7 +73,7 @@ The rule applied:
   `$MODDIR/lib` and no RUNPATH.
 - Dynamic (v2.2): nft, ipset, wg, wg-quick, awg, awg-quick, ip, tc, ss, bridge, mount.cifs, iperf3, tcpdump,
   curl, dig, host, mtr, socat, rsync, traceroute, arping, tracepath, ncat, iftop.
-- Static: everything else (for example conntrack, nfct, drill, mtr-packet, strace, bpftool).
+- Static: everything else (for example conntrack, nfct, drill, mtr-packet, strace, bpftool, bpftrace).
 - Option (B) of the survey was rejected: a static binary with a `--wrap=getaddrinfo` shim speaking the dnsproxyd
   protocol would be new code with no upstream reference to cite.
 
@@ -1126,7 +1127,8 @@ Sources checked:
 
 Chosen approach: `configure_std --enable-sandbox=no --disable-doc --disable-scripts --disable-lzmainfo
 --disable-lzmadec --disable-xzdec --disable-lzma-links`, then `make LDFLAGS="$LT_LDFLAGS"`. Only `src/xz/xz` is
-installed, and `unxz` (`-d`) and `xzcat` (`-dc`) are wrappers. No patches. CHECKSUM_SOURCE: `.sig`, Lasse Collin
+installed, and `unxz` (`-d`) and `xzcat` (`-dc`) are wrappers. `make -C src/liblzma install` also puts
+`liblzma.a` and its headers into the build prefix for bcc/bpftrace (the xz program is unchanged). No patches. CHECKSUM_SOURCE: `.sig`, Lasse Collin
 key `3690C240CE51B4670D30AD1C38EE757D69184620`.
 
 Why:
@@ -1493,6 +1495,65 @@ Why:
 - src/btf.c calls `qsort_r`, which is API 36. It is hidden by the API-35 headers but present in the static
   `libc.a`, so a prototype is enough and the code is unchanged.
 - On older Android kernels BTF is usually absent, but `prog show`/`map show` still work as root [survey].
+
+### LLVM 23.1.5, bcc 0.37.0 (symbol helpers), cereal 1.3.2 and bpftrace 0.27.1
+Sources checked (2026-11-09):
+| Source | Observed |
+|---|---|
+| github.com/bpftrace/bpftrace v0.27.1 | tag = commit `24e9fe60faff` (GitHub-verified signature). LLVM 18-23 accepted in Release builds; release binaries are a Nix build with LLVM 23 (flake.nix `defaultLlvmVersion = 23`); static CI (`.github/include/static.sh`, `docker/Dockerfile.static`) uses Alpine 3.22 with LLVM 18 static and `-DSTATIC_LINKING=ON -DBUILD_TESTING=OFF`. Static LLVM link (src/ast/CMakeLists.txt): `bpfcodegen coverage frontenddriver frontendhlsl frontendopenmp ipo irreader lto mcjit option orcjit` + `LLVM_TARGETS_TO_BUILD`, clang `libclang_static clangDriver clangFrontend clangCodeGen`. Only the BPF backend is initialised (codegen_llvm.cpp). Uses bcc only through `bcc_syms.h`, `bcc_elf.h`, `bcc_proc.h`. libbpf is the submodule at `85c0d575a447`. Has an `if(ANDROID)` branch for `STATIC_LINKING` |
+| facebookexperimental/ExtendedAndroidTools | main `c80b92fb2da2` (2026-02-06): the only NDK bpftrace build found (v0.24.1, LLVM 18.1.8, NDK r27b, API 30). No patch files: host LLVM build of `llvm-config llvm-tblgen clang-tblgen`, target build with `LLVM_TABLEGEN`/`CLANG_TABLEGEN`, `LLVM_ENABLE_RTTI=yes`, `LIBCLANG_BUILD_STATIC=ON`, BPF-only targets in its static CI job; full libbcc (`-include strings.h`, `BPS_LINK_RT=OFF`); bpftrace `-DSTATIC_LINKING=ON -DBUILD_TESTING=OFF -DENABLE_MAN=OFF -DUSE_SYSTEM_LIBBPF=ON` |
+| AOSP | no platform/external/bpftrace (404). external/bcc `8aa864777004` builds only `libbpf.c perf_reader.c bcc_zip.c` (no LLVM) |
+| Termux | no bpftrace or bcc package (request termux-packages#27981). packages/libllvm 21.1.8: host tablegen stage, `LLVM_NATIVE_TOOL_DIR`, `LLVM_HOST_TRIPLE=aarch64-unknown-linux-android<API>`, RTTI on. Its `#undef CS`/`#undef SS` patches are for x86 NDK headers only |
+| Alpine community/bpftrace, community/bcc | 0.27.1 with LLVM 20, system bcc 0.37.0 and libbpf; one patch for 32-bit `HAVE_DW_UNWIND` code (x86_64-only here) |
+| buildroot package/bpftrace, bcc, llvm-project | bpftrace 0.27.0, LLVM 23.1.5 shared, glibc only; RTTI mandatory (bpftrace issue #1156); bcc patch for LLVM 23 touches only `src/cc/bcc_debug.cc` (not built here) |
+| Nixpkgs pkgs/by-name/bp/bpftrace | 0.27.1, shared LLVM, system bcc/libbpf, `-DSYSTEM_INCLUDE_PATHS=<glibc>/include`; pkgsCross/pkgsStatic not evaluated [U] |
+| llvm.org/docs/CMake.html | `LLVM_NATIVE_TOOL_DIR`: directory with native llvm-tblgen/clang-tblgen, no native sub-build is made |
+
+Chosen approach:
+- Builder: `ndk/Dockerfile` adds `g++` and `xxd` (same Debian snapshot, separate layer after the NDK). g++ builds
+  LLVM's native tablegen tools; xxd is required by bpftrace's `cmake/Embed.cmake`.
+- `llvm` (library recipe, nothing shipped): stage 1 builds `llvm-min-tblgen llvm-tblgen clang-tblgen` for the
+  host with gcc/g++. Stage 2 cross-builds with the NDK cmake toolchain, `LLVM_NATIVE_TOOL_DIR` = stage 1,
+  `LLVM_HOST_TRIPLE=aarch64-unknown-linux-android35` (as Termux), `LLVM_ENABLE_PROJECTS=clang`,
+  `LLVM_TARGETS_TO_BUILD=BPF`, Release, `LLVM_ENABLE_RTTI=ON`, `LIBCLANG_BUILD_STATIC=ON`, `LLVM_ENABLE_PIC=ON`
+  (with PIC off libclang is built static-only under the name `libclang`, and bpftrace links the target
+  `libclang_static`, which exists only next to the shared one), tools/utils/tests/benchmarks/examples/docs/bindings off, static analyzer, ObjC
+  rewriter and plugins off, zlib/zstd/libxml2/libedit/libpfm/ffi/curl/telemetry off, no libLLVM dylib,
+  `LLVM_PARALLEL_LINK_JOBS=2`. Installed into the private prefix only (headers, static libraries, CMake
+  package files; the shared libclang/libclang-cpp built because of PIC are not used).
+- `bcc` (library recipe): only upstream's `bcc-loader-static` sources (`bcc_syms.cc bcc_elf.c bcc_perf_map.c
+  bcc_proc.c bcc_zip.c common.cc`, src/cc/CMakeLists.txt) compiled with the NDK compiler into
+  `libbcc-loader-static.a`, plus `bcc_syms.h bcc_proc.h bcc_elf.h`. No LLVM, no clang frontend, no debuginfod;
+  `-DHAVE_LIBLZMA` (liblzma from the xz recipe) so symbols in `.gnu_debugdata` (MiniDebugInfo, as in Android
+  system libraries) are read. bpftrace's static link requires liblzma anyway (src/CMakeLists.txt; EAT adds
+  `liblzma.a` by hand for the same reason). bpftrace's `LIBBCC_LIBRARIES`, `LIBBCC_BPF_LIBRARIES` and
+  `LIBBCC_LOADER_LIBRARY_STATIC` all point to this archive; `common.cc`'s BTF calls resolve to bpftrace's libbpf.
+- `cereal`: header-only, `include/cereal` copied. Patch `0001-tuple-template-args-from-upstream.patch` is
+  upstream commit `d81e2f7df7b3` (2026-03-06, not in a release): clang 19+ rejects `::template apply(`
+  without template arguments, which bpftrace's `src/required_resources.cpp` instantiates.
+- `bpftrace`: the libbpf submodule commit is an `EXTRA_SRCS` archive unpacked into `libbpf/`, built by
+  bpftrace's own `cmake/FindLibBpf.cmake` with `BUILD_STATIC_ONLY=y` and the recipe's CFLAGS. CMake with the
+  NDK toolchain, `-DSTATIC_LINKING=ON -DBUILD_TESTING=OFF -DENABLE_MAN=OFF -DENABLE_SYSTEMD=OFF
+  -DENABLE_SKB_OUTPUT=ON` (libpcap recipe) `-DUSE_SYSTEM_LIBBPF=OFF`, LLVM/Clang CMake packages and the bcc,
+  libelf, liblzma, cereal and libpcap paths from the private prefix; only the `bpftrace` target is built.
+  `SYSTEM_INCLUDE_PATHS` keeps upstream's `auto` (it runs `clang-23` at run time if present, else falls back).
+- Patch `ndk/patches/bpftrace/0001-android-static-link.patch` drops `-Wl,-Bdynamic` from the Android
+  `STATIC_LINKING` branch so `-ldl -lm -lz` come from the NDK static archives: bpftrace calls neither
+  `dlopen()` nor `getaddrinfo()`, so the static rule above applies.
+- CHECKSUM_SOURCE: LLVM `.sig` verified with key `FFB3368980F3E6BB5737145A316C56D064CACBA5` (Douglas Yung,
+  releases.llvm.org/release-keys.asc); bpftrace: the tag archive is identical to the git tree of the
+  GitHub-signed tag commit; bcc: GitHub release asset digest (no signature); cereal and the libbpf commit
+  archive: no upstream checksum, sha256 recorded at pin time.
+
+Why:
+- LLVM 23 is the newest major bpftrace 0.27.1 accepts and the one its release binaries use; 23.1.5 is its
+  latest point release. BPF is the only backend bpftrace initialises; clang is needed because bpftrace
+  compiles its C stdlib and C definitions in-process (clang CodeGen, libclang C API).
+- bcc's full library needs its own LLVM frontend (and an unreleased fix for LLVM 23); bpftrace uses only the
+  symbol-resolution helpers, which upstream already builds LLVM-free as `bcc-loader-static`.
+- bpftrace needs no runtime files: its stdlib, headers and libbpf headers are embedded in the binary.
+  Without libdw, DWARF-based uprobe argument types are unavailable (BTF and C definitions still work);
+  blazesym, libbfd disassembly and systemd are off.
 
 ### talloc 2.5.0 (library for mount.cifs)
 Sources checked:

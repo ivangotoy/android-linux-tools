@@ -32,6 +32,12 @@ RUN curl -fsSL --retry 5 -o /opt/ndk.zip "https://dl.google.com/android/reposito
  && cd /opt && unzip -q ndk.zip && rm ndk.zip && mv "android-ndk-${NDK_RELEASE}" ndk \
  && test -x /opt/ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang
 
+# Host C++ compiler for LLVM's native tablegen tools (llvm recipe) and xxd for bpftrace's embedded stdlib.
+# A separate layer after the NDK, from the same snapshot, so the layers above stay unchanged.
+RUN apt-get -o Acquire::Retries=5 update \
+ && apt-get -o Acquire::Retries=5 install -y --no-install-recommends g++ xxd \
+ && apt-get clean && rm -rf /var/lib/apt/lists/*
+
 ENV ANDROID_NDK_HOME=/opt/ndk NDK_RELEASE=${NDK_RELEASE} \
     PATH=/opt/ndk/toolchains/llvm/prebuilt/linux-x86_64/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 WORKDIR /work
