@@ -34,8 +34,8 @@ Builder facts (`ndk/Dockerfile`, `ndk/lib/env.sh`):
   two `./build-ndk.sh --clean` runs give byte-identical binaries and ZIP.
 
 ### API level 35
-- API 35 is Android 15, the oldest Android version on the target phones (Android 15 to 17). A lower floor only hides newer bionic functions and
-  forces fallbacks (API 29 needed a curl workaround for `memset_explicit`, API 34).
+- API 35 is Android 15, the Android version of the oldest tested phone. A lower floor only hides newer
+  bionic functions and forces fallbacks (API 29 needed a curl workaround for `memset_explicit`, API 34).
 - From API 33 bionic has `backtrace()`; in a static link `backtrace_symbols()` needs `dladdr()`
   from libdl, so the htop recipe hides `execinfo.h` (crash-handler backtraces are not needed).
 - Static binaries carry the NDK's newest Android note (37) because r30 ships `crtbegin_static.o`
@@ -118,7 +118,7 @@ The rule applied:
 - The survey suggested preferring the apex directory first. The wrapper prefers the system directory.
 
 ### Runtime layout: /system/etc/android-linux-tools (v2.2)
-Problem (Android 15, KernelSU with the NoMount metamodule): `/data/adb` is `0700 root`, so for
+Problem (KernelSU with the NoMount metamodule): `/data/adb` is `0700 root`, so for
 adb shell (uid 2000), Termux and apps every wrapper failed when it exec'd `$MODDIR/libexec/<tool>`:
 `/system/bin/dig[11]: /data/adb/modules/android-linux-tools/libexec/dig: inaccessible or not found`. The wrapper
 itself, a new file in the module's `system/bin`, ran fine as uid 2000: what the manager mounts from `system/`
@@ -401,7 +401,7 @@ Chosen approach:
   `amneziawg-go` whenever the config has any AmneziaWG parameter (Jc, Jmin, Jmax, S1-S4, H1-H4, I1-I5), and only
   plain configs use `ip link add <if> type amneziawg`. The patch tries the kernel link type first and falls back
   to amneziawg-go only when that fails and `/sys/module/amneziawg` is absent, which is what upstream's own
-  `linux.bash` `add_if()` does. Without it a kernel with built-in AmneziaWG (a custom kernel) would never be
+  `linux.bash` `add_if()` does. Without it a kernel with built-in AmneziaWG would never be
   used for obfuscated configs, and amneziawg-go is not shipped.
 - CHECKSUM_SOURCE: no signed tarball or published checksum upstream; the GitHub tag archive for v3.1.20260812
   (tag ref resolved to commit `ee0f0a9aa34ff0a0da4b3433b9512781cfe02843` via the GitHub API) is pinned by sha256.
@@ -945,7 +945,7 @@ Why:
 - setpriv needs libcap-ng, so libcap-ng 0.9.6 is built for it.
 - setpriv (v2.2): bionic `getpwuid()` returns NULL `pw_passwd`/`pw_gecos` for Android IDs; upstream `passwd_copy()`
   `xstrdup()`s every field and aborts (xalloc.h assertion) on any `--reuid`/`--regid`. Patch 0002 copies NULL
-  fields as NULL. Found on an Android 15 vendor ROM.
+  fields as NULL. Seen on a vendor ROM whose passwd entries have NULL fields.
 
 ### htop 3.5.3
 Sources checked:

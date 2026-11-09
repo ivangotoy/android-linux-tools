@@ -10,13 +10,13 @@ mounts from its `system/` tree.
 - Repository: <https://git.digtvbg.com/ivangotoy/android-linux-tools> (Forgejo), mirrored to
   <https://github.com/ivangotoy/android-linux-tools>.
 - Module id `android-linux-tools`, module directory `/data/adb/modules/android-linux-tools`.
-- Version `v2.M-rN`, versionCode `major*100000 + minor*1000 + N` (`v2.3-r1` = `203001`), set in `ndk/build.conf`.
+- Version `v2.M-rN`, versionCode `major*100000 + minor*1000 + N` (`v2.3-r2` = `203002`), set in `ndk/build.conf`.
 - One ZIP (see "One ZIP"); tool list in "Contents".
 
 ## Install
 
 - In the root manager app: Modules, Install from storage, pick the ZIP. Then reboot.
-- Command line, as root: `ksud module install /sdcard/Download/android-linux-tools-v2.3-r1.zip` (KernelSU).
+- Command line, as root: `ksud module install /sdcard/Download/android-linux-tools-v2.3-r2.zip` (KernelSU).
   Magisk (`magisk --install-module ZIP`) and APatch (`apd module install ZIP`) have the same module interface.
 - Upgrading: install the new ZIP over the old one and reboot. The installer recognises wrappers of this
   module (also of v1/v2.0/v2.1 and of the `prototype-tools` prototype) and never renames them as device binaries.
@@ -86,16 +86,16 @@ the same programs and differed only in metadata (up to v2.0 the full flavour add
 libLLVM, about 172 MB). The module id is unchanged, so the ZIP installs over either flavour like any upgrade;
 `module.prop` and `MANIFEST.json` no longer have a `flavour` field.
 
-## Contents (v2.3-r1)
+## Contents (v2.3-r2)
 
 67 commands plus `alt-list`, 62 ELF programs; there is no `lib/` directory. Sizes are of the stripped
 `$ALTDIR/libexec/` programs. Linkage `dynamic` = PIE against the system `libc.so`/`libm.so`/`libdl.so`
 (`libz.so` for curl) only, every third-party library linked in statically. Generated from
-`dist/MANIFEST-v2.json` of the v2.3-r1 build.
+`dist/MANIFEST-v2.json` of the v2.3-r2 build.
 
 | ZIP | Bytes | Unpacked |
 |---|---|---|
-| `android-linux-tools-v2.3-r1.zip` | 60852843 | 135.7 MB |
+| `android-linux-tools-v2.3-r2.zip` | 60852845 | 135.7 MB |
 
 | Command | Recipe | Version | Linkage | libexec (KB) | Licence (SPDX) |
 |---|---|---|---|---|---|
@@ -288,12 +288,6 @@ Phone test: `sh /system/etc/android-linux-tools/share/android-linux-tools/phone-
 - Kernel features are read from `/proc/config.gz`; a missing feature is a SKIP, not a failure. The script
   cleans up everything it creates and ends with `TOTAL pass=N fail=M`.
 
-Tested devices (root manager KernelSU with NoMount; root run plus the uid 2000 run, 0 failures; the skips
-are kernel features the device lacks; v2.3-r1 adds 8 bpftrace checks):
-
-| Device | Android | Kernel | Module | Result |
-|---|---|---|---|---|
-
 ## Releases
 
 - Releases are published on Forgejo (<https://git.digtvbg.com/ivangotoy/android-linux-tools/releases>) with
@@ -315,6 +309,7 @@ are kernel features the device lacks; v2.3-r1 adds 8 bpftrace checks):
 - v2.2-r2: same programs as v2.2-r1; adds the MIT `LICENSE` and drops the dead Alpine build code.
 - v2.3-r1: adds bpftrace 0.27.1; the builder image gains `g++` and `xxd`; one ZIP instead of the lite/full
   flavours.
+- v2.3-r2: same programs as v2.3-r1; removes device details from docs and shipped files.
 
 ## Licences
 

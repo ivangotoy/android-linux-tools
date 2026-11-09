@@ -20,7 +20,7 @@ add_server() {
   servers="$servers $a"
 }
 # Filter in the pipe: the full dump can exceed the 128 KB argument limit of /system/bin/printf
-# (some vendor ROMs: 'Argument list too long'), so only the two kinds of line needed are kept.
+# (seen on a vendor ROM: 'Argument list too long'), so only the two kinds of line needed are kept.
 dump=$(dumpsys connectivity 2>/dev/null | grep -E 'Active default network:|DnsAddresses: \[')
 net=$(printf '%s\n' "$dump" | sed -n 's/^ *Active default network: *\([0-9][0-9]*\).*/\1/p' | head -n 1)
 if [ -n "$net" ]; then
