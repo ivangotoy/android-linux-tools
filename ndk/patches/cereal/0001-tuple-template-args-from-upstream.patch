@@ -19,12 +19,10 @@ index 80c680756..d6bef1103 100644
          ar( CEREAL_NVP_(tuple_element_name<Height - 1>::c_str(),
              std::get<Height - 1>( tuple )) );
        }
-@@ -116,7 +116,7 @@ namespace cereal
-   template <class Archive, class ... Types> inline
+@@ -117,5 +117,5 @@ namespace cereal
    void CEREAL_SERIALIZE_FUNCTION_NAME( Archive & ar, std::tuple<Types...> & tuple )
    {
 -    tuple_detail::serialize<std::tuple_size<std::tuple<Types...>>::value>::template apply( ar, tuple );
 +    tuple_detail::serialize<std::tuple_size<std::tuple<Types...>>::value>::template apply<Archive, Types...>( ar, tuple );
    }
  } // namespace cereal
- 

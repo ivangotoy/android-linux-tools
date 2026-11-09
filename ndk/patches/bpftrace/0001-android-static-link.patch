@@ -11,8 +11,7 @@ it is unchanged.
 
 --- a/src/CMakeLists.txt
 +++ b/src/CMakeLists.txt
-@@ -201,8 +201,8 @@
- 
+@@ -202,7 +202,7 @@
  if (STATIC_LINKING)
    if(ANDROID)
 -    target_link_libraries(libbpftrace "-Wl,-Bdynamic" "-ldl" "-lm" "-lz")
