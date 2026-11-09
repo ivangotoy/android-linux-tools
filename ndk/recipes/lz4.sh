@@ -6,4 +6,7 @@ LICENSE="BSD-2-Clause AND GPL-2.0-or-later"
 build() {
   make -j"$JOBS" -C programs lz4 CC="$CC" AR="$AR" CFLAGS="$CFLAGS" LDFLAGS="$LDFLAGS"
   install_bin programs/lz4 lz4
+  # liblz4.a + headers + liblz4.pc for dependants (erofs-utils, squashfs-tools)
+  make -j"$JOBS" -C lib liblz4.a CC="$CC" AR="$AR" CFLAGS="$CFLAGS"
+  install_lib -C lib install PREFIX=/usr BUILD_SHARED=no CC="$CC" AR="$AR" CFLAGS="$CFLAGS"
 }

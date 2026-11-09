@@ -21,6 +21,15 @@ Builder facts (`ndk/Dockerfile`, `ndk/lib/env.sh`):
   at pin time).
 - Debian trixie-slim base pinned by digest, packages from snapshot.debian.org `20261101T000000Z`.
   A second layer after the NDK adds `g++` and `xxd` from the same snapshot (LLVM native tablegen, bpftrace stdlib embedding).
+- Two more layers after those (v2.5, for eCapture): Go 1.27.3 `go1.27.3.linux-amd64.tar.gz` from dl.google.com,
+  checked against its size (70588678) and the SHA-256 `65efbc80fdc1fa2cd2631cad5b481777a68e8725f34e89f50fc6ac714e379b40`
+  that go.dev/dl/?mode=json publishes (the detached `.asc` signature, Google Linux Packages Signing Authority
+  `EB4C1BFD4F042F6DDDCCEC917721F63BD38B4796`, was verified at pin time), installed in `/opt/go` with
+  `GOTOOLCHAIN=local` and `GOTELEMETRY=off`; and Debian trixie `bc` 1.07.1-4 from the same snapshot, fetched by
+  its content address `snapshot.debian.org/file/3a6da630d418b7d971f0025c0a1e00ccb4375843/bc_1.07.1-4_amd64.deb` and
+  checked against the SHA-256 in that snapshot's Packages index (`d055a11f0f9c5f8fe78b31d502c01dfe46ddf9c24f753aaddadaaff95fcc75ad`);
+  apt installs it with its dependency libreadline8t64. The NDK pin pattern (release, size, published hash) is
+  followed for Go; `bc` is only used by the kernel's `make prepare`.
 - Target `aarch64-linux-android`, API 35, compiler `aarch64-linux-android35-clang`, `llvm-ar`/`ld.lld`.
 - CFLAGS `-O2 -g0 -fPIC -fstack-protector-strong -D_FORTIFY_SOURCE=2 -ffunction-sections -fdata-sections` plus
   `-ffile-prefix-map` for the build paths; LDFLAGS `-Wl,--gc-sections -Wl,--build-id=sha1`; `pkgconf --static`
@@ -1116,6 +1125,9 @@ Why:
 - `BACKTRACE=0`: `backtrace()` is API 33.
 - The survey suggested `HAVE_ZLIB=1` (NDK `libz.a`). The recipe builds without gzip, lzma or lz4 formats, which
   the separate xz and lz4 tools cover.
+- Since v2.5 the recipe also builds `lib/libzstd.a` with the same flags and installs it, the headers and
+  `libzstd.pc` into the build prefix (`install-static install-includes install-pc`) for erofs-utils and
+  squashfs-tools; the program is unchanged.
 
 ### xz 5.8.4 (xz, unxz, xzcat)
 Sources checked:
@@ -1153,6 +1165,8 @@ Why:
 - lz4 is plain C99 and POSIX, and threads come from bionic's pthread. No one patches it.
 - 1.11.0 was 4 days old at survey time, and only Termux had shipped it. The survey therefore rated it less proven
   than 1.10.0.
+- Since v2.5 the recipe also builds `lib/liblz4.a` and installs it with its headers and `liblz4.pc`
+  (`make -C lib install BUILD_SHARED=no`) for erofs-utils and squashfs-tools; the program is unchanged.
 
 ### rsync 3.5.2 (dynamic)
 Sources checked:
@@ -1446,7 +1460,7 @@ Why:
 - mkfs.f2fs is not built, so the survey's static libuuid for proper UUIDs is not linked.
 - Android's own make_f2fs/fsck.f2fs are in /system/bin.
 
-### elfutils 0.197 (libelf only, for bpftool)
+### elfutils 0.197 (libelf for bpftool, bcc, bpftrace and ltrace; eu-stack, eu-readelf, eu-nm, eu-unstrip, eu-addr2line since v2.5)
 Sources checked:
 | Source | Observed |
 |---|---|
@@ -1474,6 +1488,27 @@ Why:
   config.h without building them.
 - libelf needs those four libeu objects. The rest of libeu needs argp.
 - AOSP does the same thing by listing the sources. This avoids Termux's full-elfutils patch set.
+
+v2.5 (the programs; the approach above is replaced, the shipped `libelf.a` keeps the same objects):
+- Sources checked (2026-11-09): Termux packages/libelf and packages/argp at termux-packages
+  `57bf2145ca743a9a639ccc59cecbac9a5756ca25` (libelf builds the full elfutils with argp-standalone 1.5.0, copied
+  obstack.h, `-D__USE_BSD -DFNM_EXTMATCH=0` and patches for `program_invocation_short_name` (lib/color.c,
+  lib/system.h), strings.c, strip.c and others).
+- `EXTRA_SRCS`: argp-standalone 1.5.0 (GitHub tag archive, sha256
+  `c29eae929dfebd575c38174f2c8c315766092cec99a8f987569d0cad3c6d64f6`, the same as Termux) and musl-obstack 1.2.3
+  (void-linux, GitHub tag archive, sha256 `9ffb3479b15df0170eba4480e51723c3961dbe0b461ec289744622db03a69395`), each
+  built with `configure_std` into a private prefix inside the elfutils build tree, so dependants' sysroots stay as
+  before. Their licence notices ship as `LICENSE.argp-standalone` (the LGPL notice of argp-parse.c; the package has
+  no licence file) and `LICENSE.musl-obstack`.
+- Real configure probes (argp `-largp`, obstack `-lobstack`, bionic's fts), the libintl shim gains `ngettext` and
+  `dngettext`, and `compat/progname.h` (`-include`) maps `program_invocation_short_name`/`program_invocation_name`
+  to bionic's `getprogname()` instead of Termux's lib/color.c and lib/system.h patches. `-Wno-error`: libcpu's x86
+  tables use `%n`, which bionic's format checking rejects.
+- elfutils builds its shared libraries unless gprof/gcov is enabled (`BUILD_STATIC`). The recipe builds the static
+  archives only (`libelf.a libebl.a libebl_backends.a libcpu.a libdwelf.a libdwfl.a libdwfl_stacktrace.a libdw.a`;
+  `libdw.a` contains the others' objects) and links `src/{stack,readelf,nm,unstrip,addr2line}` with
+  `libdw='../libdw/libdw.a -lz ../libelf/libelf.a' libelf='../libelf/libelf.a -lz'` and empty
+  `<prog>_DEPENDENCIES` (the generated Makefile names the .so files). Installed as `eu-<prog>`. No patches.
 
 ### bpftool 7.8.1 (no LLVM)
 Sources checked:
@@ -1570,6 +1605,9 @@ Why:
 - bcc's full library needs its own LLVM frontend (and an unreleased fix for LLVM 23); bpftrace uses only the
   symbol-resolution helpers, which upstream already builds LLVM-free as `bcc-loader-static`.
 - bpftrace needs no runtime files: its stdlib, headers and libbpf headers are embedded in the binary.
+- Since v2.5 the recipe also copies upstream's `tools/*.bt` (39 scripts of the same tarball; not `tools/old/`) to
+  `/work/out/data/rt/bpftrace/share/bpftrace/tools/`, shipped as plain 0644 files in
+  `$ALTDIR/share/bpftrace/tools/`; there is no wrapper per script.
 - Kernels without `CONFIG_FUNCTION_TRACER` lack `available_filter_functions`. In 0.27.1
   (src/symbols/kernel.cpp, src/ast/passes/ap_probe_expansion.cpp) a missing file only warns, but kprobe names
   then never match; the code's documented bypass is `--unsafe` (skips the match for kprobes) or
@@ -1771,8 +1809,146 @@ emulation needs `/dev/ashmem` or `ASharedMemory_create`; with `--disable-shm` (a
 threads. `--as-needed` drops the `-llog` the Makefile adds for Android (unused). The net engine resolves host
 names, so fio is dynamic. The status file goes to `$TMPDIR` (set by the wrapper).
 
+## v2.5 additions
+
+Sources checked (2026-11-09): termux-packages at `57bf2145ca743a9a639ccc59cecbac9a5756ca25` (packages/binutils,
+packages/dtc, packages/patchelf; no erofs-utils, squashfs-tools or fatrace package), AOSP
+platform/external/squashfs-tools main `33469ab3363ab75399f05818a70f00a5abae7a78`, and the upstream build files of each
+package.
+
+### GNU binutils 2.47 (objdump, nm, addr2line, readelf, strings; static)
+| Source | Observed |
+|---|---|
+| Termux packages/binutils | 2.47, `--disable-gprofng --enable-plugins --disable-werror --with-system-zlib --enable-new-dtags`, `development=false` in bfd/development.sh; the programs that clash with LLVM's are renamed `g<name>` |
+
+Chosen approach: `development=false` in `bfd/development.sh` (as Termux). Out-of-tree `../configure` with the common
+flags plus `--target=aarch64-linux-android --disable-gdb --disable-gdbserver --disable-gas --disable-ld --disable-gold
+--disable-gprof --disable-gprofng --disable-sim --disable-libctf --disable-werror --disable-plugins --with-system-zlib
+--without-zstd --without-debuginfod --without-msgpack --disable-libdecnumber --disable-readline --disable-pgo-build`;
+`make configure-binutils all-libiberty all-bfd all-opcodes all-libsframe`, then
+`make -C binutils objdump nm-new addr2line readelf strings LDFLAGS="$LT_LDFLAGS"` (libtool `-all-static`). `nm-new`
+is installed as `nm`. No patches. CHECKSUM_SOURCE: `.sig`, Nick Clifton key `3A24BC1E8FB409FA9F14371813FCEF89DD9E3C4F`.
+
+Why: only the five programs are wanted, and the aarch64 ELF target is the default target of an
+`aarch64-linux-android` build (bfd's `elf64-littleaarch64` and the aarch64 disassembler in opcodes).
+`LT_LDFLAGS` is passed to the program link only: in the top-level make it reaches the sub-configures, whose link
+tests then fail (`-all-static` is a libtool flag). The wrappers keep the plain names; the installer renames
+them to `<name>-ng` where the device has `readelf`, `strings`, `nm`, ... (`customize.sh`, no per-tool rule).
+
+### patchelf 0.19.3 (static)
+| Source | Observed |
+|---|---|
+| Termux packages/patchelf | 0.19.3 from the GitHub tag archive, `./bootstrap.sh`, links the shared libc++ |
+
+Chosen approach: the release tarball (configure included), `configure_std` with `LDFLAGS+=-static-libstdc++`, `make`.
+No patches. CHECKSUM_SOURCE: no upstream signature; the sha256 equals the GitHub release asset digest; tag
+`0.19.3` = commit `2b4b49d36b62690860414dd127f567be4f1f3208` (GitHub-verified signature).
+
+### dtc 1.8.1 (dtc, fdtdump, fdtget, fdtput, fdtoverlay; static)
+| Source | Observed |
+|---|---|
+| Termux packages/dtc | 1.8.1 (git.kernel.org snapshot), meson `-Dtests=false -Dtools=true` |
+
+Chosen approach: upstream's Makefile, `make CC AR EXTRA_CFLAGS LDFLAGS NO_PYTHON=1 NO_YAML=1 NO_VALGRIND=1
+STATIC_BUILD=1 dtc fdtdump fdtget fdtput fdtoverlay` (`STATIC_BUILD=1` links the utilities against `libfdt.a`
+instead of `libfdt.so`). No patches. The licence texts are the files `GPL`, `BSD-2-Clause` and `README.license`,
+which the build driver's licence patterns do not match, so the recipe copies them as `LICENSE.*`.
+CHECKSUM_SOURCE: kernel.org `dtc-1.8.1.tar.sign` over the uncompressed tar, David Gibson signing subkey
+`3BE74DB14E04DF25D45D12B6CD0245DBBA31D867` (primary `BB38B1154955BA147D239FB6FC2A7DC16C4E2157`).
+
+### erofs-utils 1.9.4 (mkfs.erofs, fsck.erofs, dump.erofs; static)
+Upstream publishes no release tarball; the recipe uses the git.kernel.org snapshot of tag `v1.9.4` (tag object
+`20ca6747ae03043895a3120c1ea3c863a573213a`, commit `f36cadb5c563995ab3aa8572a60ed6b721b9557d`), sha256 recorded at pin
+time (two downloads gave the same sha256).
+
+Chosen approach: `DEPS="zstd xz lz4"`, `./autogen.sh`, `configure_std --enable-lz4 --enable-lzma --with-zlib
+--with-libzstd --without-uuid --without-selinux --disable-fuse --without-libdeflate --without-qpl --without-xxhash
+--disable-multithreading zlib_CFLAGS=" " zlib_LIBS=-lz`, `make LDFLAGS="$LT_LDFLAGS"`. No patches. Licence texts:
+`COPYING` and `LICENSES/{GPL-2.0,MIT}` (copied as `LICENSE.*`).
+
+Why: the NDK has `libz.a` but no `zlib.pc`, so the pkg-config check gets its variables directly. The
+multi-threaded build requires a separate libpthread (`AC_CHECK_LIB(pthread, pthread_mutex_lock)`), which bionic
+does not have. Without libuuid mkfs.erofs generates the UUID itself.
+
+### squashfs-tools 4.7.5 (mksquashfs, unsquashfs; static)
+| Source | Observed |
+|---|---|
+| AOSP external/squashfs-tools | 33469ab3 (2024-12-19); its restore.c calls `pthread_cancel()` as upstream does |
+
+Chosen approach: `DEPS="zstd xz lz4"`; in `squashfs-tools/`, `make CC EXTRA_CFLAGS EXTRA_LDFLAGS GZIP_SUPPORT=1
+XZ_SUPPORT=1 LZ4_SUPPORT=1 ZSTD_SUPPORT=1 LZO_SUPPORT=0 LZMA_XZ_SUPPORT=0 XATTR_SUPPORT=1 mksquashfs unsquashfs`, with
+an empty `libpthread.a` on the library path (the Makefile links `-lpthread`; bionic has pthreads in libc). Patch
+`squashfs-tools/0001-mksquashfs-android-pthread-cancel.patch` (written for this module): bionic has no
+`pthread_cancel()`; on Android mksquashfs.h maps it to a SIGUSR2 sent with `pthread_kill()` whose handler calls
+`pthread_exit()`, so the cancelled thread runs its cleanup handlers as with cancellation (the idle writer thread
+after the last write, and every worker thread when an append is interrupted). CHECKSUM_SOURCE: no upstream
+signature (tag `4.7.5` is an unsigned tag object, commit `708c59ae80853b0845017c33b42e56061cc546cd`); the sha256
+equals the GitHub release asset digest.
+
+### fatrace 0.19.1 (static)
+Chosen approach: GitHub tag archive (tag object `febf47e0570108dff0894661ae8c39a8db97ad25` with a GitHub-verified
+signature, commit `62bd8e6d7ad7f112b37a8d5fe3dbb88c13b34844`). bionic has no `<sys/fanotify.h>`: the recipe writes
+`compat/sys/fanotify.h` (the uapi `<linux/fanotify.h>`, syscall wrappers for `fanotify_init`, `fanotify_mark` and
+`open_by_handle_at`, and glibc's `struct file_handle`), `make CC CFLAGS="... -I$PWD/compat -Wall" LDFLAGS fatrace`
+(upstream's `-Werror` dropped). No patches.
+
+### eCapture 2.10.0 (ecapture; static)
+Sources checked: upstream v2.10.0 (`Makefile`, `variables.mk`, `functions.mk`, `builder/Makefile.release`,
+`docs/compilation.md`, `docs/agent/build-test.md`, `.github/workflows/release.yml`). Termux, AOSP: absent.
+- docs/compilation.md, "Build an arm64 Android non-CO-RE artifact on Linux": `KERN_HEADERS=<configured kernel source>
+  ANDROID=1 TARGET_ARCH=arm64 make nocore`. The release workflow builds the Android tarball with `make` (CO-RE and
+  non-CO-RE objects) against Ubuntu's `linux-source` after `make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu-
+  prepare`, with clang/llc 14 for BPF and `aarch64-linux-gnu-gcc` for cgo and a static PIE (glibc).
+- `ANDROID=1` selects the `ecap_android` build tag and the BPF targets `boringssl_*`, `openssl_*`, `gotls` and `bash`
+  (no zsh, GnuTLS, NSPR, MySQL or PostgreSQL modules). go.mod requires Go 1.26 or newer.
+
+Chosen approach (as upstream's Android release: CO-RE and non-CO-RE objects in one binary):
+- Go 1.27.3 from the builder image (`GOTOOLCHAIN=local`). Go modules: `GOFLAGS=-mod=readonly`,
+  `GOMODCACHE=.work/ndk/dl/go-mod` (next to the other downloads, kept by `--clean`), `GOSUMDB=sum.golang.org`.
+  `go mod download` runs with `GOPROXY=off` first; only if modules are missing it runs again with
+  `GOPROXY=https://proxy.golang.org`, which checks every module against go.sum and the checksum database; then
+  `go mod verify`. All later Go commands run with `GOPROXY=off`, so a rebuild with that cache is offline.
+- Kernel headers: linux 6.18.62 (`EXTRA_SRCS`, kernel.org `linux-6.18.62.tar.sign` over the uncompressed tar, Greg
+  Kroah-Hartman key `647F28654894E3BD457199BE38DBBDC86092693E`), `make ARCH=arm64 LLVM=1 HOSTCC=gcc defconfig` and
+  `prepare` with the NDK's clang/lld/llvm tools.
+- `make ANDROID=1 TARGET_ARCH=arm64 KERN_HEADERS=... KERNEL_HEADER_GEN=true KERN_RELEASE=6.18.62
+  CMD_CLANG=ecap-clang CMD_LLC=<shim> CMD_STRIP=llvm-strip CMD_BPFTOOL=true CMD_CC=$CC CMD_AR=llvm-ar CLANG_VERSION=21
+  SNAPSHOT_VERSION=v2.10.0 assets`: 26 CO-RE objects (`-target bpfel` with `kern/bpf/arm64/vmlinux.h` from the
+  source) and 26 non-CO-RE objects (against the kernel headers), both in one go-bindata asset.
+  `ecap-clang` is the NDK clang with `-ffile-prefix-map` (the objects' BTF line info contains source paths); the NDK
+  has no `llc`, so the shim compiles the LLVM IR from stdin with `clang --target=bpf -O2 -c -x ir -` (llc's default
+  is -O2). `CLANG_VERSION`: variables.mk cannot parse the NDK clang banner. `KERNEL_HEADER_GEN=true`: the headers
+  are prepared above. bpftool is not used for arm64.
+- libpcap from the libpcap recipe (`DEPS="libpcap"`) is copied to `.build/ecap_android-arm64/libpcap/libpcap.a`, so
+  the Makefile's submodule build (lib/libpcap is not in the tag archive) is skipped.
+- The program: upstream's gobuild command for the `build` target (`-trimpath -mod=readonly -tags
+  'ecap_android,netgo,ebpfassets,dynamic'`, `GitVersion=ecap_android_arm64:v2.10.0:6.18.62` (upstream puts the build
+  host's `uname -r` there; here the release of the kernel headers), `ByteCodeFiles=all`, `-linkmode=external`) with `GOOS=linux GOARCH=arm64`, `CC` = the NDK clang for API 35,
+  `-buildmode=exe` and `-extldflags "$LDFLAGS"` (`-static`) instead of a static PIE. Go's runtime/cgo links
+  `-lpthread` (an empty `libpthread.a`) and, for `__ANDROID__`, calls `__android_log_vprint` on a fatal cgo error;
+  liblog has no static library, so a no-op stub is linked (the message is printed to stderr first).
+- Licences: eCapture's `LICENSE` (Apache-2.0), the licence files of every linked Go module (`go list -deps`, copied
+  as `LICENSE.go-<module>-<file>`), Go's `LICENSE` (`LICENSE.golang-toolchain`) and the kernel's `COPYING` (the BPF
+  objects are built from its headers and declare `Dual MIT/GPL`). `github.com/gojue/ecapture_decryptor` v1.4.0 is
+  proprietary with an "eCapture Integration Exception" that allows compiling, linking and redistributing it as part
+  of eCapture binaries if its notices are kept (its `LICENSE`, `LICENSE-BINARY` and `COPYRIGHT` are shipped);
+  `github.com/jschwinger233/elibpcap` v1.1.0 has no licence file.
+- CHECKSUM_SOURCE: tag `v2.10.0` = commit `eb363adcaeb094eb82c943f60297a2629d14420f` (GitHub-verified signature);
+  GitHub tag archive, sha256 recorded at pin time.
+
+- Run-time selection (upstream, unchanged): with the default `--btf=0` (auto), `internal/probe/bytecode/selector.go`
+  calls `IsEnableBTF()` (`pkg/util/ebpf/bpf.go`: `/sys/kernel/btf/vmlinux`, else `CONFIG_DEBUG_INFO_BTF=y` in
+  `/proc/config.gz`, `bpf_ecandroid.go`) and loads the `_core.o` objects when the kernel has BTF, else the
+  `_noncore.o` ones; `--btf=1`/`--btf=2` force one set.
+
+Why: non-CO-RE objects carry the struct offsets of the kernel headers they were built against, so they are
+correct only for kernels with the same layout; CO-RE objects are relocated against the running kernel's BTF.
+Upstream's Android release therefore embeds both (docs/compilation.md also documents a `nocore`-only build). The
+NDK clang and bionic replace upstream's glibc cross compiler as for every other tool; the static non-PIE link is
+the tree's static rule (`check.py` requires `statically linked`). eCapture resolves no host names (`netgo`).
+
 ### Not ported
-None since v2.1: every tool of v1 (and wg-quick, awg, awg-quick, drill, ethtool-ng, and the v2.4 additions) is an NDK build. Since
+None since v2.1: every tool of v1 (and wg-quick, awg, awg-quick, drill, ethtool-ng, and the v2.4 and v2.5 additions) is an NDK build. Since
 v2.2-r2 there is no Alpine fallback: `ndk/scripts/stage.py` fails if a tool of `ndk/tools.tsv` has no NDK build,
 and `ndk/scripts/check.py` fails on a `lib/` directory, the resolv.conf overlay, or ELF files outside
 `$ALTDIR/libexec/`.

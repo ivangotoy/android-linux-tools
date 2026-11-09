@@ -233,6 +233,15 @@ VERSION_PATTERNS = {
     'dropbear': 'Dropbear v[0-9]', 'dbclient': 'Dropbear v[0-9]', 'ssh': 'Dropbear v[0-9]',
     'scp': 'usage: scp ', 'dropbearkey': 'Usage: dropbearkey -t', 'dropbearconvert': 'Usage: dropbearconvert <inputtype>',
     'iw': 'iw version [0-9]', 'gdbserver': 'GNU gdbserver ', 'ltrace': '^ltrace [0-9]', 'fio': '^fio-[0-9]',
+    'eu-stack': r'^eu-stack \(elfutils\) [0-9]', 'eu-readelf': r'^eu-readelf \(elfutils\) [0-9]',
+    'eu-nm': r'^eu-nm \(elfutils\) [0-9]', 'eu-unstrip': r'^eu-unstrip \(elfutils\) [0-9]',
+    'eu-addr2line': r'^eu-addr2line \(elfutils\) [0-9]',
+    'objdump': r'\(GNU Binutils\) [0-9]', 'nm': r'\(GNU Binutils\) [0-9]', 'addr2line': r'\(GNU Binutils\) [0-9]',
+    'readelf': r'\(GNU Binutils\) [0-9]', 'strings': r'\(GNU Binutils\) [0-9]', 'patchelf': '^patchelf [0-9]',
+    'dtc': '^DTC [0-9]', 'fdtdump': '^DTC [0-9]', 'fdtget': '^DTC [0-9]', 'fdtput': '^DTC [0-9]', 'fdtoverlay': '^DTC [0-9]',
+    'mkfs.erofs': r'^mkfs\.erofs \(erofs-utils\) [0-9]', 'fsck.erofs': r'^fsck\.erofs \(erofs-utils\) [0-9]',
+    'dump.erofs': r'^dump\.erofs \(erofs-utils\) [0-9]', 'mksquashfs': 'version 4\\.[0-9]', 'unsquashfs': 'version 4\\.[0-9]',
+    'fatrace': '^Usage: fatrace ', 'ecapture': 'ecap_android_arm64:v[0-9]',
 }
 checks = []
 for line in pt.splitlines():

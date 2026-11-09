@@ -7,4 +7,8 @@ build() {
   make -j"$JOBS" -C programs zstd CC="$CC" AR="$AR" MOREFLAGS="$CFLAGS" LDFLAGS="$LDFLAGS" \
     HAVE_ZLIB=0 HAVE_LZMA=0 HAVE_LZ4=0 HAVE_THREAD=1 ZSTD_LEGACY_SUPPORT=0 BACKTRACE=0
   install_bin programs/zstd zstd
+  # libzstd.a + headers + libzstd.pc for dependants (erofs-utils, squashfs-tools)
+  make -j"$JOBS" -C lib libzstd.a CC="$CC" AR="$AR" MOREFLAGS="$CFLAGS" ZSTD_LEGACY_SUPPORT=0
+  install_lib -C lib install-static install-includes install-pc PREFIX=/usr CC="$CC" AR="$AR" MOREFLAGS="$CFLAGS" \
+    ZSTD_LEGACY_SUPPORT=0
 }

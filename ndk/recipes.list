@@ -67,3 +67,10 @@ iw
 gdbserver
 ltrace
 fio
+binutils
+patchelf
+dtc
+erofs-utils
+squashfs-tools
+fatrace
+ecapture

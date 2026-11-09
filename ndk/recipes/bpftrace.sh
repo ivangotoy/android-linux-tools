@@ -31,4 +31,9 @@ build() {
     -DLIBPCAP_INCLUDE_DIRS="$DEPROOT/include" -DLIBPCAP_LIBRARIES="$DEPROOT/lib/libpcap.a"
   cmake --build build -j"$JOBS" --target bpftrace
   install_bin build/src/bpftrace bpftrace
+  # upstream tool scripts (tools/*.bt) as plain runtime data: $ALTDIR/share/bpftrace/tools/<name>.bt
+  local t="$OUT/data/rt/bpftrace/share/bpftrace/tools"
+  rm -rf "$t"
+  mkdir -p "$t"
+  cp tools/*.bt "$t/"
 }

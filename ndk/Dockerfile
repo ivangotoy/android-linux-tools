@@ -38,6 +38,32 @@ RUN apt-get -o Acquire::Retries=5 update \
  && apt-get -o Acquire::Retries=5 install -y --no-install-recommends g++ xxd \
  && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-ENV ANDROID_NDK_HOME=/opt/ndk NDK_RELEASE=${NDK_RELEASE} \
-    PATH=/opt/ndk/toolchains/llvm/prebuilt/linux-x86_64/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+# Go toolchain for eCapture (cgo links with the NDK clang). Pinned by release, size and the SHA-256 Google
+# publishes (go.dev/dl/?mode=json); the detached signature <tarball URL>.asc (Google Linux Packages Signing
+# Authority, EB4C1BFD4F042F6DDDCCEC917721F63BD38B4796) was verified at pin time. A separate layer after the ones
+# above, so they stay unchanged.
+ARG GO_VERSION=1.27.3
+ARG GO_SIZE=70588678
+ARG GO_SHA256=65efbc80fdc1fa2cd2631cad5b481777a68e8725f34e89f50fc6ac714e379b40
+RUN curl -fsSL --retry 5 -o /opt/go.tar.gz "https://dl.google.com/go/go${GO_VERSION}.linux-amd64.tar.gz" \
+ && test "$(stat -c %s /opt/go.tar.gz)" = "${GO_SIZE}" \
+ && echo "${GO_SHA256}  /opt/go.tar.gz" | sha256sum -c - \
+ && tar -xzf /opt/go.tar.gz -C /opt --no-same-owner && rm /opt/go.tar.gz \
+ && test "$(/opt/go/bin/go env GOVERSION)" = "go${GO_VERSION}"
+
+# bc for `make prepare` of the kernel headers that eCapture's non-CO-RE BPF objects are compiled against.
+# Debian trixie bc 1.07.1-4 from the same snapshot, fetched by its content address (snapshot.debian.org/file/<sha1>)
+# and checked against the SHA-256 of the snapshot's Packages index; apt installs it with its dependency.
+ARG BC_DEB=bc_1.07.1-4_amd64.deb
+ARG BC_SHA1=3a6da630d418b7d971f0025c0a1e00ccb4375843
+ARG BC_SHA256=d055a11f0f9c5f8fe78b31d502c01dfe46ddf9c24f753aaddadaaff95fcc75ad
+RUN curl -fsSL --retry 5 -o "/opt/${BC_DEB}" "http://snapshot.debian.org/file/${BC_SHA1}/${BC_DEB}" \
+ && echo "${BC_SHA256}  /opt/${BC_DEB}" | sha256sum -c - \
+ && apt-get -o Acquire::Retries=5 update \
+ && apt-get -o Acquire::Retries=5 install -y --no-install-recommends "/opt/${BC_DEB}" \
+ && apt-get clean && rm -rf /var/lib/apt/lists/* "/opt/${BC_DEB}" \
+ && test "$(echo 2^10 | bc)" = 1024
+
+ENV ANDROID_NDK_HOME=/opt/ndk NDK_RELEASE=${NDK_RELEASE} GOTOOLCHAIN=local GOTELEMETRY=off \
+    PATH=/opt/ndk/toolchains/llvm/prebuilt/linux-x86_64/bin:/opt/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 WORKDIR /work

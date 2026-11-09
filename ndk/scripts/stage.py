@@ -249,7 +249,7 @@ write(os.path.join(ST, 'share', 'licenses', 'NOTICE.txt'), '\n'.join(notice) + '
 
 # ---- module.prop
 ndk_n = sum(1 for e in entries if e['name'])
-main = 'nft, ipset, conntrack, wg/awg (+wg-quick/awg-quick), ip-ng/tc-ng/ss-ng, bridge, ethtool-ng, iw, bpftool, bpftrace, tcpdump, strace, ltrace, gdbserver, nmap, curl, openssl, dropbear/ssh, dig, drill, mtr, socat, iperf3, fio, htop, tmux, bash, rsync, sqlite3, jq and more'
+main = 'nft, ipset, conntrack, wg/awg (+wg-quick/awg-quick), ip-ng/tc-ng/ss-ng, bridge, ethtool-ng, iw, bpftool, bpftrace, ecapture, tcpdump, strace, ltrace, fatrace, gdbserver, eu-stack, objdump/readelf, patchelf, dtc, mkfs.erofs, mksquashfs, nmap, curl, openssl, dropbear/ssh, dig, drill, mtr, socat, iperf3, fio, htop, tmux, bash, rsync, sqlite3, jq and more'
 write(os.path.join(ST, 'module.prop'),
       'id=%s\nname=Android Linux tools\nversion=%s\nversionCode=%d\nauthor=Ivan Angelov\n'
       'description=%d tools built with the Android NDK (bionic): %s. '

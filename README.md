@@ -1,8 +1,10 @@
 # Android Linux tools
 
 A root module that adds Linux userspace tools (netfilter, iproute2, WireGuard/AmneziaWG, Wi-Fi (iw), tracing
-and debugging (strace, ltrace, gdbserver), packet capture, BPF tracing (bpftool, bpftrace), nmap, OpenSSL, an SSH
-client and server (dropbear), DNS and network diagnostics, storage benchmarks (fio), compression, editors, shells)
+and debugging (strace, ltrace, fatrace, gdbserver, eu-stack), packet capture, BPF tracing (bpftool, bpftrace with its
+tool scripts, eCapture), ELF tools (GNU binutils, elfutils, patchelf), device trees (dtc), EROFS and SquashFS images,
+nmap, OpenSSL, an SSH client and server (dropbear), DNS and network diagnostics, storage benchmarks (fio),
+compression, editors, shells)
 to rooted aarch64 Android phones. Every
 program is compiled from upstream source with the Android NDK for bionic (`aarch64-linux-android`, API 35).
 The module does not depend on any particular device. It runs nothing at boot (no `post-fs-data.sh`,
@@ -12,13 +14,13 @@ mounts from its `system/` tree.
 - Repository: <https://git.digtvbg.com/ivangotoy/android-linux-tools> (Forgejo), mirrored to
   <https://github.com/ivangotoy/android-linux-tools>.
 - Module id `android-linux-tools`, module directory `/data/adb/modules/android-linux-tools`.
-- Version `v2.M-rN`, versionCode `major*100000 + minor*1000 + N` (`v2.4-r1` = `204001`), set in `ndk/build.conf`.
+- Version `v2.M-rN`, versionCode `major*100000 + minor*1000 + N` (`v2.5-r1` = `205001`), set in `ndk/build.conf`.
 - One ZIP (see "One ZIP"); tool list in "Contents".
 
 ## Install
 
 - In the root manager app: Modules, Install from storage, pick the ZIP. Then reboot.
-- Command line, as root: `ksud module install /sdcard/Download/android-linux-tools-v2.4-r1.zip` (KernelSU).
+- Command line, as root: `ksud module install /sdcard/Download/android-linux-tools-v2.5-r1.zip` (KernelSU).
   Magisk (`magisk --install-module ZIP`) and APatch (`apd module install ZIP`) have the same module interface.
 - Upgrading: install the new ZIP over the old one and reboot. The installer recognises wrappers of this
   module (also of v1/v2.0/v2.1) and never renames them as device binaries. No other module is touched.
@@ -43,6 +45,7 @@ runtime file is in the module's `system/` tree, which the root manager mounts ov
 | `system/etc/android-linux-tools/etc/ssl/openssl.cnf` | `$ALTDIR/etc/ssl/openssl.cnf` | default configuration of the `openssl` CLI |
 | `system/etc/android-linux-tools/share/nmap/` | `$ALTDIR/share/nmap` | nmap data files, NSE scripts and nselib (compiled-in data directory) |
 | `system/etc/android-linux-tools/share/ltrace/` | `$ALTDIR/share/ltrace` | ltrace prototype files (`libc.so.conf`, `syscalls.conf`, ...) |
+| `system/etc/android-linux-tools/share/bpftrace/tools/` | `$ALTDIR/share/bpftrace/tools` | bpftrace's upstream tool scripts (`tools/*.bt`) |
 | `system/etc/android-linux-tools/etc/alt-tools.map` | `$ALTDIR/etc/alt-tools.map` | rename map written by `customize.sh`, read by `alt-list` |
 | `system/etc/android-linux-tools/share/android-linux-tools/` | `$ALTSHARE` | `dns-servers`, `origins.txt`, `MANIFEST.json`, `phone-test.sh` |
 | `module.prop`, `customize.sh`, `META-INF/`, `share/licenses/` | `/data/adb/modules/android-linux-tools` | module metadata and licences only |
@@ -87,16 +90,16 @@ the same programs and differed only in metadata (up to v2.0 the full flavour add
 libLLVM, about 172 MB). The module id is unchanged, so the ZIP installs over either flavour like any upgrade;
 `module.prop` and `MANIFEST.json` no longer have a `flavour` field.
 
-## Contents (v2.4-r1)
+## Contents (v2.5-r1)
 
-80 commands plus `alt-list`, 74 ELF programs; there is no `lib/` directory. Sizes are of the stripped
+103 commands plus `alt-list`, 97 ELF programs; there is no `lib/` directory. Sizes are of the stripped
 `$ALTDIR/libexec/` programs. Linkage `dynamic` = PIE against the system `libc.so`/`libm.so`/`libdl.so`
 (`libz.so` for curl, nmap, dropbear, ltrace and fio) only, every third-party library linked in statically. Generated from
-`dist/MANIFEST-v2.json` of the v2.4-r1 build.
+`dist/MANIFEST-v2.json` of the v2.5-r1 build.
 
 | ZIP | Bytes | Unpacked |
 |---|---|---|
-| `android-linux-tools-v2.4-r1.zip` | 77816094 | 189.7 MB |
+| `android-linux-tools-v2.5-r1.zip` | 95483947 | 220.7 MB |
 
 | Command | Recipe | Version | Linkage | libexec (KB) | Licence (SPDX) |
 |---|---|---|---|---|---|
@@ -180,6 +183,29 @@ libLLVM, about 172 MB). The module id is unchanged, so the ZIP installs over eit
 | `gdbserver` | gdbserver | 18.1 | dynamic | 611 | GPL-3.0-or-later |
 | `ltrace` | ltrace | 0.8.1 | dynamic | 415 | GPL-2.0-or-later |
 | `fio` | fio | 3.43 | dynamic | 1626 | GPL-2.0-only |
+| `eu-stack` | elfutils | 0.197 | static | 901 | (LGPL-3.0-or-later OR GPL-2.0-or-later) AND GPL-3.0-or-later AND LGPL-2.0-or-later AND LGPL-2.1-or-later |
+| `eu-readelf` | elfutils | 0.197 | static | 988 | (LGPL-3.0-or-later OR GPL-2.0-or-later) AND GPL-3.0-or-later AND LGPL-2.0-or-later AND LGPL-2.1-or-later |
+| `eu-nm` | elfutils | 0.197 | static | 793 | (LGPL-3.0-or-later OR GPL-2.0-or-later) AND GPL-3.0-or-later AND LGPL-2.0-or-later AND LGPL-2.1-or-later |
+| `eu-unstrip` | elfutils | 0.197 | static | 901 | (LGPL-3.0-or-later OR GPL-2.0-or-later) AND GPL-3.0-or-later AND LGPL-2.0-or-later AND LGPL-2.1-or-later |
+| `eu-addr2line` | elfutils | 0.197 | static | 881 | (LGPL-3.0-or-later OR GPL-2.0-or-later) AND GPL-3.0-or-later AND LGPL-2.0-or-later AND LGPL-2.1-or-later |
+| `objdump` | binutils | 2.47 | static | 3064 | GPL-3.0-or-later AND LGPL-2.1-or-later |
+| `nm` | binutils | 2.47 | static | 1602 | GPL-3.0-or-later AND LGPL-2.1-or-later |
+| `addr2line` | binutils | 2.47 | static | 1585 | GPL-3.0-or-later AND LGPL-2.1-or-later |
+| `readelf` | binutils | 2.47 | static | 1010 | GPL-3.0-or-later AND LGPL-2.1-or-later |
+| `strings` | binutils | 2.47 | static | 1499 | GPL-3.0-or-later AND LGPL-2.1-or-later |
+| `patchelf` | patchelf | 0.19.3 | static | 811 | GPL-3.0-or-later |
+| `dtc` | dtc | 1.8.1 | static | 370 | GPL-2.0-or-later AND (GPL-2.0-or-later OR BSD-2-Clause) |
+| `fdtdump` | dtc | 1.8.1 | static | 255 | GPL-2.0-or-later AND (GPL-2.0-or-later OR BSD-2-Clause) |
+| `fdtget` | dtc | 1.8.1 | static | 260 | GPL-2.0-or-later AND (GPL-2.0-or-later OR BSD-2-Clause) |
+| `fdtput` | dtc | 1.8.1 | static | 266 | GPL-2.0-or-later AND (GPL-2.0-or-later OR BSD-2-Clause) |
+| `fdtoverlay` | dtc | 1.8.1 | static | 272 | GPL-2.0-or-later AND (GPL-2.0-or-later OR BSD-2-Clause) |
+| `mkfs.erofs` | erofs-utils | 1.9.4 | static | 1159 | MIT AND (GPL-2.0-or-later OR MIT) |
+| `fsck.erofs` | erofs-utils | 1.9.4 | static | 883 | MIT AND (GPL-2.0-or-later OR MIT) |
+| `dump.erofs` | erofs-utils | 1.9.4 | static | 894 | MIT AND (GPL-2.0-or-later OR MIT) |
+| `mksquashfs` | squashfs-tools | 4.7.5 | static | 1270 | GPL-2.0-or-later |
+| `unsquashfs` | squashfs-tools | 4.7.5 | static | 1091 | GPL-2.0-or-later |
+| `fatrace` | fatrace | 0.19.1 | static | 321 | GPL-3.0-or-later |
+| `ecapture` | ecapture | 2.10.0 | static | 19181 | Apache-2.0 AND (MIT OR GPL-2.0-only) AND BSD-3-Clause AND MIT AND MPL-2.0 AND LicenseRef-ecapture_decryptor |
 | `alt-list` | (module script) | | | | MIT |
 
 `$ALTSHARE/MANIFEST.json` (and `dist/MANIFEST-v2.json`) records per tool the recipe, upstream version, source
@@ -189,7 +215,8 @@ URL and sha256, how the checksum was verified, licence, patches, dependencies, l
 ## Build and runtime details
 
 - Toolchain: Android NDK r30 (LTS, 30.0.16248370) from dl.google.com, verified with Google's published SHA-1
-  and a pinned SHA-256, in a Debian trixie-slim image pinned by digest (packages from snapshot.debian.org).
+  and a pinned SHA-256, in a Debian trixie-slim image pinned by digest (packages from snapshot.debian.org). The
+  image also has Go 1.27.3 (dl.google.com, pinned size and SHA-256) for eCapture and `bc` for its kernel headers.
 - Target `aarch64-linux-android35`. API 35 (Android 15) is the floor, so bionic functions up to API 35 are used directly. `ndk/lib/api-site.py` generates a `CONFIG_SITE` that
   marks every bionic function introduced after API 35 as unavailable (the static `libc.a` contains them, so
   configure link tests would otherwise find them).
@@ -225,6 +252,7 @@ URL and sha256, how the checksum was verified, licence, patches, dependencies, l
   its aarch64 backend and the bionic linker's library list; its prototype files are in `$ALTDIR/share/ltrace`.
   fio is built without SysV shared memory (bionic has none), so it runs jobs as threads.
 - bpftool: built without LLVM and libbfd, so there is no JIT disassembly and no skeleton features.
+- bpftrace tool scripts: run them with `bpftrace /system/etc/android-linux-tools/share/bpftrace/tools/<name>.bt`.
 - bpftrace: LLVM/clang 23.1.5 (BPF backend only) linked statically, plus bcc's symbol helpers, the libbpf
   commit bpftrace pins, libelf, liblzma and libpcap. Its stdlib and headers are embedded, so it needs no
   files besides the program; kprobe, tracepoint and uprobe probes need a kernel with BTF
@@ -237,6 +265,18 @@ URL and sha256, how the checksum was verified, licence, patches, dependencies, l
     `system()` and other destructive builtins, so the wrapper does not add it.
   - Without `CONFIG_FTRACE_SYSCALLS` there is no `tracepoint:syscalls:*`; `tracepoint:raw_syscalls:sys_enter`
     and `sys_exit` (the syscall number is `args.id`) still work.
+- eCapture 2.10.0 (`ecapture`): as upstream's Android release, the BPF objects of the Android modules (`tls` for
+  OpenSSL/BoringSSL, `gotls`, `bash`) twice: CO-RE (used when the kernel has BTF) and non-CO-RE, compiled against
+  arm64 kernel headers (used otherwise; `--btf=1`/`--btf=2` force one set); Go and cgo with the NDK clang, libpcap from the libpcap recipe,
+  linked fully static. It needs root.
+- ELF tools: GNU binutils 2.47 `objdump`, `nm`, `addr2line`, `readelf`, `strings` (aarch64 ELF target); elfutils
+  0.197 `eu-stack`, `eu-readelf`, `eu-nm`, `eu-unstrip`, `eu-addr2line` (zlib only: no zstd-compressed sections or
+  bzip2/xz-compressed files; no debuginfod, no C++ demangling); patchelf 0.19.3. On devices that ship `readelf`, `strings`, `nm` and so on,
+  the installer renames the binutils wrappers to `<name>-ng`.
+- Filesystem images: erofs-utils 1.9.4 (`mkfs.erofs`, `fsck.erofs`, `dump.erofs`; lz4/lz4hc, lzma, deflate, zstd;
+  single-threaded, no FUSE) and squashfs-tools 4.7.5 (`mksquashfs`, `unsquashfs`; gzip, xz, lz4, zstd), with the
+  zstd, xz and lz4 libraries of those recipes and the NDK zlib. dtc 1.8.1 with `fdtdump`, `fdtget`, `fdtput`,
+  `fdtoverlay` (no YAML output). fatrace 0.19.1 reports file access events system-wide (fanotify, root).
 - WireGuard/AmneziaWG: `wg`, `awg` and the upstream Android `wg-quick`/`awg-quick` (`src/wg-quick/android.c`, a
   C program: no bash needed; it drives the stock `ip`, `iptables`, `ndc` and the netd DnsResolver over binder).
   awg-quick is patched to use the kernel `amneziawg` link type when the kernel has it, before falling back to
@@ -258,7 +298,8 @@ JOBS=8 MEM=12G ./build-ndk.sh  # make -j and memory limit (defaults)
 - The host needs only docker (no `--privileged`; the container runs as the calling user with all capabilities
   dropped and `/src` read-only) and systemd. The run is wrapped in `systemd-run --user --scope
   -p MemoryMax=$MEM -p MemorySwapMax=0`, and the same limit is passed as `docker run --memory/--memory-swap`,
-  which is what actually bounds the compilers. Network access is needed for the image and the source downloads.
+  which is what actually bounds the compilers. Network access is needed for the image and the source downloads
+  (including eCapture's Go modules, kept in `.work/ndk/dl/go-mod`; a rebuild with that cache runs offline).
 - Everything else (NDK, autotools, meson, python, zip) is inside the image. Scratch space is `.work/ndk/`
   (`dl/` sources, `build/` trees and logs, `out/` binaries, `stage/`). Output: `dist/android-linux-tools-<ver>.zip`,
   its `.sha256` file, `dist/MANIFEST-v2.json` and `dist/phone-test.sh`.
@@ -270,14 +311,15 @@ JOBS=8 MEM=12G ./build-ndk.sh  # make -j and memory limit (defaults)
   `manifest.py`, `layout_test.py`, `common.py`), `phone-test.sh` (self-check script).
 - Recipes: `VERSION`, `URL`, `SHA256`, `CHECKSUM_SOURCE` (signature key fingerprint or the published checksum
   the sha256 was verified against when pinning), `LICENSE`, `DEPS`, optional `LINKAGE=dynamic`, `EXTRA_SRCS`
-  (e.g. bash's official patch series) and a `build()` function. Runtime data of a program (nmap's and
-  ltrace's) goes to `/work/out/data/rt/<recipe>/<path under $ALTDIR>` and is merged into the runtime tree. Each recipe builds against a private sysroot
+  (e.g. bash's official patch series) and a `build()` function. Runtime data of a program (nmap's,
+  ltrace's and bpftrace's tool scripts) goes to `/work/out/data/rt/<recipe>/<path under $ALTDIR>` and is merged into the runtime tree. Each recipe builds against a private sysroot
   with only its declared dependencies and is cached by a hash of recipe, patches, environment and dependency
   hashes. A failed recipe stops the build before packaging.
 - Patches are applied in order; each starts with a header saying why and citing its source (termux-packages,
   buildroot, or written for this module).
 - Reproducible: two `./build-ndk.sh --clean` runs give byte-identical binaries, ZIP and MANIFEST
-  (`SOURCE_DATE_EPOCH`, `-ffile-prefix-map`, sorted ZIP entries, fixed mtimes, `zip -X -D` in TZ=UTC).
+  (`SOURCE_DATE_EPOCH`, `-ffile-prefix-map`, sorted ZIP entries, fixed mtimes, `zip -X -D` in TZ=UTC), except
+  `ecapture`: upstream's go-bindata step records the build-time mtimes of the BPF objects in the embedded asset.
 
 ## Releases
 
@@ -304,6 +346,9 @@ JOBS=8 MEM=12G ./build-ndk.sh  # make -j and memory limit (defaults)
   longer handles the old prototype module.
 - v2.4-r1: adds nmap and nping (with NSE), the openssl CLI, dropbear (dropbear, dbclient/ssh, scp, dropbearkey,
   dropbearconvert), iw (with libnl), gdbserver, ltrace and fio.
+- v2.5-r1: adds eCapture, the elfutils programs eu-stack, eu-readelf, eu-nm, eu-unstrip and eu-addr2line, GNU
+  binutils objdump, nm, addr2line, readelf and strings, patchelf, dtc (with fdtdump, fdtget, fdtput, fdtoverlay),
+  erofs-utils, squashfs-tools, fatrace and bpftrace's tool scripts; the builder image gains Go and `bc`.
 
 ## Licences
 

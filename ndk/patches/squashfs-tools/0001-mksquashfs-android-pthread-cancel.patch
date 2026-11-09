@@ -1,0 +1,43 @@
+Subject: mksquashfs on Android: emulate pthread_cancel()
+
+Why: bionic does not implement pthread_cancel() (bionic/docs/status.md lists it as unsupported), so
+mksquashfs.c and restore.c do not compile for Android. mksquashfs cancels its idle writer thread after the
+last write, and when an append is interrupted it cancels every worker thread before restoring the original
+filesystem. On Android a signal (SIGUSR2, unused by squashfs-tools) makes the target thread call
+pthread_exit(), which runs its cleanup handlers as cancellation does; unsquashfs does not cancel threads.
+Source: written for this module.
+
+--- a/squashfs-tools/mksquashfs.h
++++ b/squashfs-tools/mksquashfs.h
+@@ -27,6 +27,31 @@
+ #include <pthread.h>
+ #include <unistd.h>
+ 
++#ifdef __ANDROID__
++/*
++ * bionic has no pthread_cancel(). mksquashfs cancels its idle writer thread
++ * after the last write and, when an append is interrupted, every worker
++ * thread before restoring the original filesystem. Emulate it: SIGUSR2 (not
++ * used by squashfs-tools) makes the target thread call pthread_exit(), which
++ * runs the thread's cleanup handlers as cancellation does.
++ */
++#include <signal.h>
++static inline void android_cancel_handler(int sig)
++{
++	(void) sig;
++	pthread_exit(NULL);
++}
++static inline int android_pthread_cancel(pthread_t thread)
++{
++	struct sigaction sa = { .sa_handler = android_cancel_handler };
++
++	sigemptyset(&sa.sa_mask);
++	sigaction(SIGUSR2, &sa, NULL);
++	return pthread_kill(thread, SIGUSR2);
++}
++#define pthread_cancel(thread) android_pthread_cancel(thread)
++#endif
++
+ struct dir_info {
+ 	char			*pathname;
+ 	char			*subpath;
