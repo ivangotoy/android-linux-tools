@@ -1,0 +1,39 @@
+Subject: liblog: stderr logger for the tools built against bionic
+
+Why: the vendored AOSP liblog is compiled into adb, fastboot and the partition tools. With
+__ANDROID__ defined (any bionic target) logger_write.cpp selects the platform configuration: the
+logd/pmsg writers, which the packaging does not build, and logd as the default logger, so messages
+of a command-line tool would go to the system log instead of the terminal. Undefine __ANDROID__
+after the includes, which selects the host configuration (default logger: stderr).
+android/log.h (vendored copy) declares __android_log_logd_logger_with_timestamp() as introduced in
+API 37; logger_write.cpp defines and calls it, which fails for a lower target API with
+"is unavailable: introduced in Android 37". The function comes from this static library, not from
+the system liblog.so: drop the annotation.
+Source: termux-packages packages/android-tools/vendor_logging_liblog_logger_write.cpp.patch (the
+#undef) and vendor_logging_liblog_include_android_log.h.patch (which lowers every __INTRODUCED_IN
+of the header to 24) at commit a45b6a4948f9098c21af75af9710c1edf81ba02e; here only the one
+declaration above the target API is changed.
+
+--- a/vendor/logging/liblog/logger_write.cpp
++++ b/vendor/logging/liblog/logger_write.cpp
+@@ -41,6 +41,9 @@
+ #include "logger.h"
+ #include "uio.h"
+
++/* not a platform build: no logd/pmsg writers, the default logger writes to stderr */
++#undef __ANDROID__
++
+ #ifdef __ANDROID__
+ #include "logd_writer.h"
+ #endif
+--- a/vendor/logging/liblog/include/android/log.h
++++ b/vendor/logging/liblog/include/android/log.h
+@@ -304,7 +304,7 @@
+  * Available since API level 37.
+  */
+ void __android_log_logd_logger_with_timestamp(const struct __android_log_message* log_message,
+-                                              const struct timespec* timestamp) __INTRODUCED_IN(37);
++                                              const struct timespec* timestamp);
+
+ /**
+  * Writes the log message to stderr.  This is an {@link __android_logger_function} and can be provided to

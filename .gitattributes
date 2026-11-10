@@ -1,0 +1,2 @@
+# unified diffs of tab-indented sources have " <TAB>" context lines: not a whitespace error in a patch file
+ndk/patches/**/*.patch whitespace=-space-before-tab

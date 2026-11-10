@@ -1,5 +1,5 @@
 # libelf (for libbpf/bpftool, bcc, bpftrace, ltrace) and the programs eu-stack, eu-readelf, eu-nm, eu-unstrip,
-# eu-addr2line. argp (argp-standalone) and obstack (musl-obstack) are linked into the programs only.
+# eu-addr2line, eu-strip, eu-elflint, eu-elfcmp, eu-size, eu-elfclassify. argp (argp-standalone) and obstack (musl-obstack) are linked into the programs only.
 VERSION=0.197
 URL=https://sourceware.org/elfutils/ftp/$VERSION/elfutils-$VERSION.tar.bz2
 SHA256=1fdf525f22dcf796d99a99ba3ea00a1f7b1ae5421bc62e8443a708920b99b904
@@ -35,7 +35,8 @@ build() {
     '#define program_invocation_name ((char *) getprogname())' > compat/progname.h
   # -Wno-error: libcpu's x86 tables use printf %n, which bionic's format checking rejects
   export CFLAGS="$CFLAGS -Wno-error"
-  export CPPFLAGS="$CPPFLAGS -I$top/compat -I$dep/include -include $top/compat/progname.h" LDFLAGS="$LDFLAGS -L$dep/lib"
+  # FNM_EXTMATCH (glibc extension, eu-strip's section name patterns): 0, plain fnmatch() patterns
+  export CPPFLAGS="$CPPFLAGS -I$top/compat -I$dep/include -include $top/compat/progname.h -DFNM_EXTMATCH=0" LDFLAGS="$LDFLAGS -L$dep/lib"
   configure_std --disable-debuginfod --disable-libdebuginfod --without-zstd --without-bzlib --without-lzma \
     --disable-symbol-versioning --disable-demangler --disable-textrelcheck
   # static archives only (elfutils always builds its shared libraries otherwise); libdw.a contains libdwfl,
@@ -46,10 +47,15 @@ build() {
            libdwfl/libdwfl.a libdwfl_stacktrace/libdwfl_stacktrace.a libdw/libdw.a; do
     make -j"$JOBS" -C "${a%/*}" "${a#*/}"
   done
-  make -j"$JOBS" -C src readelf nm unstrip addr2line stack \
+  make -j"$JOBS" -C src readelf nm unstrip addr2line stack elflint elfcmp size elfclassify \
     libdw='../libdw/libdw.a -lz ../libelf/libelf.a' libelf='../libelf/libelf.a -lz' \
-    readelf_DEPENDENCIES= nm_DEPENDENCIES= unstrip_DEPENDENCIES= addr2line_DEPENDENCIES= stack_DEPENDENCIES=
-  for a in stack readelf nm unstrip addr2line; do
+    readelf_DEPENDENCIES= nm_DEPENDENCIES= unstrip_DEPENDENCIES= addr2line_DEPENDENCIES= stack_DEPENDENCIES= \
+    elflint_DEPENDENCIES= elfcmp_DEPENDENCIES= size_DEPENDENCIES= elfclassify_DEPENDENCIES=
+  # eu-strip calls elfutils' own crc32() (lib/crc32.c, the .gnu_debuglink CRC) and libdw pulls zlib's crc32.o
+  # for inflate: two definitions of the same CRC-32 in a static link; the first one (elfutils') is used
+  make -j"$JOBS" -C src strip LDFLAGS="$LDFLAGS -Wl,--allow-multiple-definition" \
+    libdw='../libdw/libdw.a -lz ../libelf/libelf.a' libelf='../libelf/libelf.a -lz' strip_DEPENDENCIES=
+  for a in stack readelf nm unstrip addr2line strip elflint elfcmp size elfclassify; do
     install_bin "src/$a" "eu-$a"
   done
   # libelf for dependants: libelf objects and the four libeu helpers it uses

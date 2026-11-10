@@ -1,0 +1,52 @@
+Subject: resconf: nameservers from ALT_DNS_SERVERS when there is no resolv.conf (nslookup, delv, nsupdate)
+
+Why: delv (findserver) and nsupdate (setup_system) take their default servers from
+irs_resconf_load(), which fills a missing or empty resolv.conf with ::1 and 127.0.0.1. Android has
+no /etc/resolv.conf and nothing listens on localhost port 53, so both time out unless a server is
+given. The module wrapper exports the DNS servers of the active default network in ALT_DNS_SERVERS
+(as for dig/host, patch 0002); use them in place of the localhost fallback. A server given on the
+command line (delv @server, nsupdate "server" command) still wins, and a resolv.conf with nameserver
+lines is used unchanged.
+Source: written for this module (see ndk/REFERENCES.md).
+
+--- a/lib/dns/resconf.c
++++ b/lib/dns/resconf.c
+@@ -632,9 +632,36 @@
+ 	if (conf->numns == 0U) {
+ 		INSIST(ISC_LIST_EMPTY(conf->nameservers));
+
++		/*
++		 * Android has no resolv.conf: the module wrapper exports the
++		 * DNS servers of the active default network (space separated)
++		 * in ALT_DNS_SERVERS.
++		 */
++		if (getenv("ALT_DNS_SERVERS") != NULL) {
++			char *alt_list = strdup(getenv("ALT_DNS_SERVERS"));
++			char *alt_save = NULL;
++			char *alt_ns;
++
++			for (alt_ns = alt_list != NULL
++					      ? strtok_r(alt_list, " \t\n",
++							 &alt_save)
++					      : NULL;
++			     alt_ns != NULL;
++			     alt_ns = strtok_r(NULL, " \t\n", &alt_save))
++			{
++				(void)add_server(conf->mctx, alt_ns,
++						 &conf->nameservers);
++			}
++			free(alt_list);
++		}
++
+ 		/* XXX: should we catch errors? */
+-		(void)add_server(conf->mctx, "::1", &conf->nameservers);
+-		(void)add_server(conf->mctx, "127.0.0.1", &conf->nameservers);
++		if (ISC_LIST_EMPTY(conf->nameservers)) {
++			(void)add_server(conf->mctx, "::1",
++					 &conf->nameservers);
++			(void)add_server(conf->mctx, "127.0.0.1",
++					 &conf->nameservers);
++		}
+ 	}
+
+ error:

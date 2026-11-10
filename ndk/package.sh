@@ -24,7 +24,7 @@ find "$st" -exec touch -h -d "@$SOURCE_DATE_EPOCH" {} +
 log "zip -> $(basename "$zipf")"
 unzip -tq "$zipf" >/dev/null
 zip -T "$zipf" >/dev/null
-if grep -a -q -e /home/ivan -e /work/build -e /work/out -e /.work/ -e /opt/ndk "$zipf"; then
+if grep -a -q ${ALT_HOST_HOME:+-e "$ALT_HOST_HOME"} -e /work/build -e /work/out -e /.work/ -e /opt/ndk "$zipf"; then
   echo "host path found in $zipf" >&2
   exit 1
 fi

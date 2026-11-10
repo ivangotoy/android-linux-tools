@@ -1,0 +1,38 @@
+Subject: chrt: sched_setattr()/sched_getattr() through syscall() on bionic
+
+Why: bionic's <sched.h> includes <linux/sched/types.h>, which defines struct sched_attr at every API
+level, and declares sched_setattr()/sched_getattr() only from API 37. Without HAVE_SCHED_SETATTR
+schedutils/sched_attr.h defines its own struct sched_attr and static wrappers, which fails with
+"redefinition of 'sched_attr'" and "'sched_getattr' is unavailable: introduced in Android 37".
+Use the kernel's struct and syscall() wrappers under private names instead.
+Source: written for this module (see ndk/REFERENCES.md); bionic libc/include/sched.h
+(__INTRODUCED_IN(37) on both functions) and the fallback already in schedutils/sched_attr.h.
+
+--- a/schedutils/sched_attr.h
++++ b/schedutils/sched_attr.h
+@@ -80,5 +80,25 @@
+ # define SYS_sched_getattr __NR_sched_getattr
+ #endif
+
++/* bionic: <sched.h> provides struct sched_attr (<linux/sched/types.h>) at every API level, but declares
++ * sched_setattr()/sched_getattr() only from API 37: use the kernel struct and call the syscalls */
++#if defined (__BIONIC__) && !defined(HAVE_SCHED_SETATTR) && defined(SYS_sched_setattr)
++# define HAVE_SCHED_SETATTR
++# include <sched.h>
++# include <unistd.h>
++
++static inline int ul_sched_setattr(pid_t pid, const struct sched_attr *attr, unsigned int flags)
++{
++	return syscall(SYS_sched_setattr, pid, attr, flags);
++}
++
++static inline int ul_sched_getattr(pid_t pid, struct sched_attr *attr, unsigned int size, unsigned int flags)
++{
++	return syscall(SYS_sched_getattr, pid, attr, size, flags);
++}
++# define sched_setattr ul_sched_setattr
++# define sched_getattr ul_sched_getattr
++#endif
++
+ #if defined (__linux__) && !defined(HAVE_SCHED_SETATTR) && defined(SYS_sched_setattr)
+ # define HAVE_SCHED_SETATTR

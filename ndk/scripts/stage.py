@@ -28,6 +28,8 @@ EXTRA_ENV = {
     'mtr': ['export MTR_PACKET="$ALTDIR/libexec/mtr-packet"'],
     'tmux': ['[ -n "$TMUX_TMPDIR" ] || export TMUX_TMPDIR=/data/local/tmp',
              '[ -n "$SHELL" ] || export SHELL=/system/bin/sh'],
+    # adb keeps its key pair in $HOME/.android; root's home directory on Android is / (read-only)
+    'adb': ['[ -w "${HOME:-/}" ] || export HOME=/data/local/tmp'],
 }
 TERMS = ['xterm', 'xterm-256color', 'xterm-color', 'screen', 'screen-256color', 'tmux', 'tmux-256color',
          'linux', 'vt100', 'vt220', 'dumb', 'ansi', 'rxvt', 'rxvt-unicode', 'rxvt-unicode-256color']
@@ -249,7 +251,7 @@ write(os.path.join(ST, 'share', 'licenses', 'NOTICE.txt'), '\n'.join(notice) + '
 
 # ---- module.prop
 ndk_n = sum(1 for e in entries if e['name'])
-main = 'nft, ipset, conntrack, wg/awg (+wg-quick/awg-quick), ip-ng/tc-ng/ss-ng, bridge, ethtool-ng, iw, bpftool, bpftrace, ecapture, tcpdump, strace, ltrace, fatrace, gdbserver, eu-stack, objdump/readelf, patchelf, dtc, mkfs.erofs, mksquashfs, nmap, curl, openssl, dropbear/ssh, dig, drill, mtr, socat, iperf3, fio, htop, tmux, bash, rsync, sqlite3, jq and more'
+main = 'nft, ipset, conntrack, wg/awg (+wg-quick/awg-quick), ip-ng/tc-ng/ss-ng, bridge, ethtool-ng, iw, bpftool, bpftrace, bcc libbpf-tools (execsnoop, opensnoop, ...), ecapture, tcpdump, strace, ltrace, fatrace, gdbserver, lldb-server, rizin, eu-stack, objdump/readelf, patchelf, dtc, mkfs.erofs, mksquashfs, adb, fastboot, lpunpack, git, rg, fd, fzf, ncdu, picocom, mount.nfs, nmap, curl, openssl, dropbear/ssh, dig, drill, mtr, socat, iperf3, fio, htop, tmux, bash, rsync, sqlite3, jq and more'
 write(os.path.join(ST, 'module.prop'),
       'id=%s\nname=Android Linux tools\nversion=%s\nversionCode=%d\nauthor=Ivan Angelov\n'
       'description=%d tools built with the Android NDK (bionic): %s. '

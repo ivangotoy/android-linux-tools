@@ -15,7 +15,10 @@ SHARE = os.path.join(RT, 'share', MODID)
 BIONIC_INTERP = '/system/bin/linker64'
 BIONIC_LIBS = {'libc.so', 'libm.so', 'libdl.so', 'liblog.so', 'libz.so'}
 FORBID = set('iptables ip6tables ip tc ss ethtool nsenter unshare chroot lsof nc file vmstat getfattr setfattr'.split())
-HOSTPATHS = [b'/home/ivan', b'/work/build', b'/work/out', b'/opt/ndk', b'/.work/']
+# build paths that must not appear in a program; ALT_HOST_HOME = home directory of the user running build-ndk.sh
+HOSTPATHS = [b'/work/build', b'/work/out', b'/opt/ndk', b'/.work/']
+if os.environ.get('ALT_HOST_HOME', '').startswith('/'):
+    HOSTPATHS.append(os.environ['ALT_HOST_HOME'].encode())
 API = int(os.environ.get('API', '29'))
 
 res = {'errors': [], 'libexec': {}, 'wrappers': {}, 'scripts': {}, 'version_audit': {}}
@@ -242,6 +245,66 @@ VERSION_PATTERNS = {
     'mkfs.erofs': r'^mkfs\.erofs \(erofs-utils\) [0-9]', 'fsck.erofs': r'^fsck\.erofs \(erofs-utils\) [0-9]',
     'dump.erofs': r'^dump\.erofs \(erofs-utils\) [0-9]', 'mksquashfs': 'version 4\\.[0-9]', 'unsquashfs': 'version 4\\.[0-9]',
     'fatrace': '^Usage: fatrace ', 'ecapture': 'ecap_android_arm64:v[0-9]',
+    'nsenter-ng': 'nsenter from util-linux', 'unshare-ng': 'unshare from util-linux', 'lsns': 'lsns from util-linux',
+    'losetup': 'losetup from util-linux', 'dmesg': 'dmesg from util-linux', 'wipefs': 'wipefs from util-linux',
+    'fallocate': 'fallocate from util-linux', 'zramctl': 'zramctl from util-linux',
+    'taskset': 'taskset from util-linux', 'chrt': 'chrt from util-linux', 'ionice': 'ionice from util-linux',
+    'prlimit': 'prlimit from util-linux', 'rfkill': 'rfkill from util-linux', 'hexdump': 'hexdump from util-linux',
+    'script': 'script from util-linux', 'getcap': 'usage: getcap ', 'setcap': 'usage: setcap ',
+    'pscap': 'usage: pscap', 'netcap': 'usage: netcap', 'filecap': 'usage: filecap', 'debugfs': 'debugfs [0-9]',
+    'dumpe2fs': 'dumpe2fs [0-9]', 'e2image': 'e2image [0-9]', 'filefrag': 'filefrag [0-9]',
+    'mkfs.f2fs': r'mkfs\.f2fs Ver: ', 'resize.f2fs': r'Usage: resize\.f2fs ', 'sload.f2fs': r'Usage: sload\.f2fs ',
+    'f2fs_io': '^f2fs_io [a-z]', 'nstat': 'nstat utility, iproute2-', 'ifstat': 'ifstat utility, iproute2-',
+    'genl': 'genl utility, iproute2-', 'devlink': 'devlink utility, iproute2-', 'rtmon': 'rtmon utility, iproute2-',
+    'lnstat': 'lnstat Version ', 'nslookup': 'nslookup [0-9]', 'delv': 'delv [0-9]', 'nsupdate': 'nsupdate [0-9]',
+    'objcopy': r'\(GNU Binutils\) [0-9]', 'strip': r'\(GNU Binutils\) [0-9]', 'size': r'\(GNU Binutils\) [0-9]',
+    'ar': r'\(GNU Binutils\) [0-9]', 'c++filt': r'\(GNU Binutils\) [0-9]', 'elfedit': r'\(GNU Binutils\) [0-9]',
+    'eu-strip': r'^eu-strip \(elfutils\) [0-9]', 'eu-elflint': r'^eu-elflint \(elfutils\) [0-9]',
+    'eu-elfcmp': r'^eu-elfcmp \(elfutils\) [0-9]', 'eu-size': r'^eu-size \(elfutils\) [0-9]',
+    'eu-elfclassify': r'^eu-elfclassify \(elfutils\) [0-9]', 'sqldiff': r'sqlite\.org/sqldiff\.html',
+    'sqlite3_rsync': 'sqlite3_rsync ORIGIN REPLICA', 'sar': 'sysstat version [0-9]', 'sqfstar': 'version 4\\.[0-9]',
+    'sqfscat': 'version 4\\.[0-9]', 'procan': 'procan by Gerhard Rieger', 'filan': 'filan by Gerhard Rieger',
+    'bashreadline': '^bashreadline [0-9]+\\.[0-9]', 'bindsnoop': '^bindsnoop [0-9]+\\.[0-9]',
+    'biolatency': '^biolatency [0-9]+\\.[0-9]', 'biopattern': '^biopattern [0-9]+\\.[0-9]',
+    'biosnoop': '^biosnoop [0-9]+\\.[0-9]', 'biostacks': '^biostacks [0-9]+\\.[0-9]',
+    'biotop': '^biotop [0-9]+\\.[0-9]', 'bitesize': '^bitesize [0-9]+\\.[0-9]',
+    'cachestat': '^cachestat [0-9]+\\.[0-9]', 'capable': '^capable [0-9]+\\.[0-9]',
+    'cpudist': '^cpudist [0-9]+\\.[0-9]', 'cpufreq': '^cpufreq [0-9]+\\.[0-9]', 'drsnoop': '^drsnoop [0-9]+\\.[0-9]',
+    'execsnoop': '^execsnoop [0-9]+\\.[0-9]', 'exitsnoop': '^exitsnoop [0-9]+\\.[0-9]',
+    'filelife': '^filelife [0-9]+\\.[0-9]', 'filetop': '^filetop [0-9]+\\.[0-9]', 'fsdist': '^fsdist [0-9]+\\.[0-9]',
+    'fsslower': '^fsslower [0-9]+\\.[0-9]', 'funclatency': '^funclatency [0-9]+\\.[0-9]',
+    'futexctn': '^futexctn [0-9]+\\.[0-9]', 'gethostlatency': '^gethostlatency [0-9]+\\.[0-9]',
+    'hardirqs': '^hardirqs [0-9]+\\.[0-9]', 'javagc': '^javagc [0-9]+\\.[0-9]',
+    'klockstat': '^klockstat [0-9]+\\.[0-9]', 'llcstat': '^llcstat [0-9]+\\.[0-9]',
+    'mdflush': '^mdflush [0-9]+\\.[0-9]', 'memleak': '^memleak [0-9]+\\.[0-9]',
+    'mountsnoop': '^mountsnoop [0-9]+\\.[0-9]', 'numamove': '^numamove [0-9]+\\.[0-9]',
+    'offcputime': '^offcputime [0-9]+\\.[0-9]', 'oomkill': '^oomkill [0-9]+\\.[0-9]',
+    'opensnoop': '^opensnoop [0-9]+\\.[0-9]', 'profile': '^profile [0-9]+\\.[0-9]',
+    'readahead': '^readahead [0-9]+\\.[0-9]', 'runqlat': '^runqlat [0-9]+\\.[0-9]',
+    'runqlen': '^runqlen [0-9]+\\.[0-9]', 'runqslower': '^runqslower [0-9]+\\.[0-9]',
+    'sigsnoop': '^sigsnoop [0-9]+\\.[0-9]', 'slabratetop': '^slabratetop [0-9]+\\.[0-9]',
+    'softirqs': '^softirqs [0-9]+\\.[0-9]', 'solisten': '^solisten [0-9]+\\.[0-9]',
+    'statsnoop': '^statsnoop [0-9]+\\.[0-9]', 'syncsnoop': '^syncsnoop [0-9]+\\.[0-9]',
+    'syscount': '^syscount [0-9]+\\.[0-9]', 'tcpconnect': '^tcpconnect [0-9]+\\.[0-9]',
+    'tcpconnlat': '^tcpconnlat [0-9]+\\.[0-9]', 'tcplife': '^tcplife [0-9]+\\.[0-9]',
+    'tcppktlat': '^tcppktlat [0-9]+\\.[0-9]', 'tcprtt': '^tcprtt [0-9]+\\.[0-9]',
+    'tcpstates': '^tcpstates [0-9]+\\.[0-9]', 'tcpsynbl': '^tcpsynbl [0-9]+\\.[0-9]',
+    'tcptop': '^tcptop [0-9]+\\.[0-9]', 'tcptracer': '^tcptracer [0-9]+\\.[0-9]',
+    'vfsstat': '^vfsstat [0-9]+\\.[0-9]', 'wakeuptime': '^wakeuptime [0-9]+\\.[0-9]', 'ksnoop': r'\[COMMAND \| help\] FUNC',
+    'lldb-server': 'lldb version [0-9]', 'rg': '^ripgrep ', 'fd': 'A program to find entries in your filesystem',
+    'fzf': r'Usage: fzf \[options\]', 'ncdu': 'ncdu [0-9]', 'picocom': 'picocom v[0-9]',
+    'rizin': '[0-9]+\\.[0-9]+\\.[0-9]+ @ linux-arm', 'rz-bin': '[0-9]+\\.[0-9]+\\.[0-9]+ @ linux-arm',
+    'rz-asm': '[0-9]+\\.[0-9]+\\.[0-9]+ @ linux-arm', 'rz-hash': '[0-9]+\\.[0-9]+\\.[0-9]+ @ linux-arm',
+    'rz-diff': '[0-9]+\\.[0-9]+\\.[0-9]+ @ linux-arm', 'rz-find': '[0-9]+\\.[0-9]+\\.[0-9]+ @ linux-arm',
+    'rz-gg': '[0-9]+\\.[0-9]+\\.[0-9]+ @ linux-arm', 'rz-ax': '[0-9]+\\.[0-9]+\\.[0-9]+ @ linux-arm',
+    'rz-run': '[0-9]+\\.[0-9]+\\.[0-9]+ @ linux-arm', 'rz-sign': '[0-9]+\\.[0-9]+\\.[0-9]+ @ linux-arm',
+    'rz-ar': '[0-9]+\\.[0-9]+\\.[0-9]+ @ linux-arm', 'mount.nfs': 'linux nfs-utils [0-9]',
+    'mount.nfs4': 'linux nfs-utils [0-9]', 'umount.nfs': 'linux nfs-utils [0-9]',
+    'umount.nfs4': 'linux nfs-utils [0-9]', 'git': 'git version [0-9]', 'git-upload-pack': 'git version [0-9]',
+    'git-receive-pack': 'git version [0-9]', 'git-upload-archive': 'git version [0-9]',
+    'adb': 'Android Debug Bridge version ', 'fastboot': 'fastboot version ', 'simg2img': 'Usage: simg2img ',
+    'img2simg': 'Usage: img2simg ', 'lpunpack': 'tool for extracting partition images from super',
+    'lpmake': 'tool for creating Android Logical Partition images',
 }
 checks = []
 for line in pt.splitlines():

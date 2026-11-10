@@ -1,0 +1,51 @@
+Subject: support/nfs: getservbyname_r() and getdtablesize() for bionic
+
+Why: support/nfs/libnfs.la, which mount.nfs links, also contains the RPC service helpers
+svc_socket.c and rpcmisc.c. They use getservbyname_r() and getdtablesize(), which bionic does not
+have, so the library does not compile. Provide getservbyname_r() on top of getservbyname() and
+getdtablesize() as sysconf(_SC_OPEN_MAX). mount.nfs does not call either function.
+Source: written for this module (see ndk/REFERENCES.md).
+
+--- a/support/nfs/svc_socket.c
++++ b/support/nfs/svc_socket.c
+@@ -40,6 +40,26 @@
+ # define __close(f)		close ((f))
+ #endif
+
++#ifdef __BIONIC__
++/* bionic has no getservbyname_r(): getservbyname() and its static result */
++static int getservbyname_r(const char *name, const char *proto,
++			   struct servent *result_buf, char *buf,
++			   size_t buflen, struct servent **result)
++{
++	struct servent *s = getservbyname(name, proto);
++
++	(void)buf;
++	(void)buflen;
++	if (s == NULL) {
++		*result = NULL;
++		return ENOENT;
++	}
++	*result_buf = *s;
++	*result = result_buf;
++	return 0;
++}
++#endif
++
+ int getservport(u_long number, const char *proto)
+ {
+ 	char servdata[1024];
+--- a/support/nfs/rpcmisc.c
++++ b/support/nfs/rpcmisc.c
+@@ -34,6 +34,11 @@
+ #include "nfslib.h"
+ #include "rpcmisc.h"
+
++#ifdef __BIONIC__
++/* bionic has no getdtablesize() */
++#define getdtablesize() ((int)sysconf(_SC_OPEN_MAX))
++#endif
++
+ #if SIZEOF_SOCKLEN_T - 0 == 0
+ #define socklen_t int
+ #endif

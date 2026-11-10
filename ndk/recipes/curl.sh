@@ -14,4 +14,6 @@ build() {
     --without-ca-path --without-ca-fallback
   make -j"$JOBS" LDFLAGS="$LT_LDFLAGS"
   install_bin src/curl curl
+  # libcurl (static library, headers, curl-config) for git's https transport
+  install_lib install
 }

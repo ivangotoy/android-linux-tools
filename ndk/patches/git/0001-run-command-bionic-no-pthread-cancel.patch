@@ -1,0 +1,31 @@
+Subject: run-command: no pthread_setcancelstate() on bionic
+
+Why: atfork_prepare()/atfork_parent() disable thread cancellation around fork() with
+pthread_setcancelstate(). bionic implements no thread cancellation and has neither the function
+nor PTHREAD_CANCEL_DISABLE, so run-command.c does not compile. Without cancellation there is
+nothing to disable: a no-op that reports success.
+Source: written for this module (see ndk/REFERENCES.md). termux-packages
+packages/git/run-command.c.patch (commit b3baca4292b14c2dcded94058b2cc272dcb32b32) removes the two
+calls under __ANDROID__ instead.
+
+--- a/run-command.c
++++ b/run-command.c
+@@ -18,6 +18,18 @@
+ #include "packfile.h"
+ #include "compat/nonblock.h"
+
++#if defined(__BIONIC__) && !defined(PTHREAD_CANCEL_DISABLE)
++/* bionic has no thread cancellation: nothing to disable around fork() */
++#define PTHREAD_CANCEL_DISABLE 0
++static inline int bionic_setcancelstate(int state UNUSED, int *oldstate)
++{
++	if (oldstate)
++		*oldstate = 0;
++	return 0;
++}
++#define pthread_setcancelstate bionic_setcancelstate
++#endif
++
+ void child_process_init(struct child_process *child)
+ {
+ 	struct child_process blank = CHILD_PROCESS_INIT;

@@ -1,0 +1,38 @@
+Subject: nsenter: struct file_handle and the handle syscalls for bionic
+
+Why: nsenter's namespace-ID support (--net=<id> and friends) uses struct file_handle,
+name_to_handle_at() and open_by_handle_at(). glibc and musl declare them in <fcntl.h>; bionic has
+neither the struct nor the functions (the kernel UAPI headers do not export struct file_handle
+either), so nsenter.c does not compile. Define the kernel ABI struct and call the two syscalls.
+Source: written for this module (see ndk/REFERENCES.md); struct layout from the kernel's
+include/linux/exportfs.h / name_to_handle_at(2), syscall numbers from the NDK's <asm/unistd.h>.
+
+--- a/sys-utils/nsenter.c
++++ b/sys-utils/nsenter.c
+@@ -36,6 +36,26 @@
+ # define NS_GET_USERNS           _IO(0xb7, 0x1)
+ #endif
+
++#ifdef __BIONIC__
++/* bionic has no struct file_handle, name_to_handle_at() and open_by_handle_at(): the kernel ABI */
++# include <sys/syscall.h>
++struct file_handle {
++	unsigned int handle_bytes;
++	int handle_type;
++	unsigned char f_handle[0];
++};
++
++static int name_to_handle_at(int dfd, const char *name, struct file_handle *handle, int *mnt_id, int flags)
++{
++	return syscall(__NR_name_to_handle_at, dfd, name, handle, mnt_id, flags);
++}
++
++static int open_by_handle_at(int mount_fd, struct file_handle *handle, int flags)
++{
++	return syscall(__NR_open_by_handle_at, mount_fd, handle, flags);
++}
++#endif
++
+ #ifdef HAVE_LIBSELINUX
+ # include <selinux/selinux.h>
+ #endif

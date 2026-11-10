@@ -9,4 +9,8 @@ build() {
   configure_std --without-python --without-python3 --disable-cap-audit
   make -j"$JOBS" -C src libcap-ng.la
   install_lib -C src install
+  # pscap, netcap, filecap (libtool links them: -all-static)
+  make -j"$JOBS" -C utils LDFLAGS="$LT_LDFLAGS"
+  local p
+  for p in pscap netcap filecap; do install_bin "utils/$p" "$p"; done
 }

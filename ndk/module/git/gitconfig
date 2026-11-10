@@ -1,0 +1,14 @@
+# android-linux-tools: system-wide git configuration (/system/etc/android-linux-tools/etc/gitconfig).
+# git's shell-script commands are plain files in share/git-core (the exec path holds programs only). git falls
+# back to these aliases when it finds no such command; each runs the script with the module's bash from the
+# directory git was started in.
+[alias]
+	submodule = "!f() { cd \"${GIT_PREFIX:-.}\" && exec /system/etc/android-linux-tools/libexec/bash /system/etc/android-linux-tools/share/git-core/git-submodule \"$@\"; }; f"
+	mergetool = "!f() { cd \"${GIT_PREFIX:-.}\" && exec /system/etc/android-linux-tools/libexec/bash /system/etc/android-linux-tools/share/git-core/git-mergetool \"$@\"; }; f"
+	difftool--helper = "!f() { cd \"${GIT_PREFIX:-.}\" && exec /system/etc/android-linux-tools/libexec/bash /system/etc/android-linux-tools/share/git-core/git-difftool--helper \"$@\"; }; f"
+	merge-octopus = "!f() { cd \"${GIT_PREFIX:-.}\" && exec /system/etc/android-linux-tools/libexec/bash /system/etc/android-linux-tools/share/git-core/git-merge-octopus \"$@\"; }; f"
+	merge-one-file = "!f() { cd \"${GIT_PREFIX:-.}\" && exec /system/etc/android-linux-tools/libexec/bash /system/etc/android-linux-tools/share/git-core/git-merge-one-file \"$@\"; }; f"
+	merge-resolve = "!f() { cd \"${GIT_PREFIX:-.}\" && exec /system/etc/android-linux-tools/libexec/bash /system/etc/android-linux-tools/share/git-core/git-merge-resolve \"$@\"; }; f"
+	request-pull = "!f() { cd \"${GIT_PREFIX:-.}\" && exec /system/etc/android-linux-tools/libexec/bash /system/etc/android-linux-tools/share/git-core/git-request-pull \"$@\"; }; f"
+	filter-branch = "!f() { cd \"${GIT_PREFIX:-.}\" && exec /system/etc/android-linux-tools/libexec/bash /system/etc/android-linux-tools/share/git-core/git-filter-branch \"$@\"; }; f"
+	quiltimport = "!f() { cd \"${GIT_PREFIX:-.}\" && exec /system/etc/android-linux-tools/libexec/bash /system/etc/android-linux-tools/share/git-core/git-quiltimport \"$@\"; }; f"

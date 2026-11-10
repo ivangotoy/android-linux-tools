@@ -30,6 +30,16 @@ Builder facts (`ndk/Dockerfile`, `ndk/lib/env.sh`):
   checked against the SHA-256 in that snapshot's Packages index (`d055a11f0f9c5f8fe78b31d502c01dfe46ddf9c24f753aaddadaaff95fcc75ad`);
   apt installs it with its dependency libreadline8t64. The NDK pin pattern (release, size, published hash) is
   followed for Go; `bc` is only used by the kernel's `make prepare`.
+- Two more layers after those (v2.6): Rust 1.99.1 from static.rust-lang.org (`dist/2026-10-15/`):
+  `rust-1.99.1-x86_64-unknown-linux-gnu.tar.xz` (size 210515736, SHA-256
+  `231fcae47ee950621374725b5fc3b5441d2fbda2955ac45dd7dc816d8876cfe7`; `rustc`, `cargo` and the builder's standard
+  library are installed from it) and `rust-std-1.99.1-aarch64-linux-android.tar.xz` (size 30404588, SHA-256
+  `7463b06bb5f734c02d3bac967538b4de4da910fb90668398bc21b10b5620e35d`), both checked against the `xz_hash` values of
+  `dist/channel-rust-1.99.1.toml`; the detached `.asc` signatures (Rust Language Tag and Release Signing Key
+  `108F66205EAEB0AAA8DD5E1C85AB96E6FA1BE5FE`, from static.rust-lang.org/rust-key.gpg.ascii) were verified at pin
+  time. Installed in `/opt/rust` with the tarballs' `install.sh`; no rustup. And Debian trixie `libelf-dev` and
+  `zlib1g-dev` from the same snapshot: headers and libraries of the builder itself, for the native bootstrap
+  bpftool of the libbpf-tools recipe.
 - Target `aarch64-linux-android`, API 35, compiler `aarch64-linux-android35-clang`, `llvm-ar`/`ld.lld`.
 - CFLAGS `-O2 -g0 -fPIC -fstack-protector-strong -D_FORTIFY_SOURCE=2 -ffunction-sections -fdata-sections` plus
   `-ffile-prefix-map` for the build paths; LDFLAGS `-Wl,--gc-sections -Wl,--build-id=sha1`; `pkgconf --static`
@@ -1947,8 +1957,250 @@ Upstream's Android release therefore embeds both (docs/compilation.md also docum
 NDK clang and bionic replace upstream's glibc cross compiler as for every other tool; the static non-PIE link is
 the tree's static rule (`check.py` requires `statically linked`). eCapture resolves no host names (`netgo`).
 
+## v2.6 additions
+
+Sources checked (2026-11-10): termux-packages at `fa5d6fcc05dad7885a6cfc5c7f2925c93ef05224` (packages/ripgrep, fd, fzf,
+ncdu, picocom, rizin, git, libtirpc, libllvm, libprotobuf, brotli, pcre2; root-packages/nfs-utils; no bcc or
+libbpf-tools package) and, for android-tools, at `a45b6a4948f9098c21af75af9710c1edf81ba02e`; buildroot at
+`0f4bdcea832f698eb0dc929c8c73ea82cea35ac7` (package/nfs-utils, libtirpc, picocom, ncdu, git, android-tools, ripgrep,
+fd, bcc); Alpine aports (GitHub mirror) at the master of that day (main/nfs-utils, libtirpc, git, lldb;
+community/android-tools, ripgrep, fd, picocom, bcc); OpenWrt packages at `bc1d35804a3993c66c48e8f97415ec4ec6523c28`
+(net/nfs-kernel-server, libs/libtirpc, utils/picocom, utils/ncdu, utils/ripgrep, net/git); AOSP `platform/external`
+(bcc `8aa864777004a92873c2e9d863bf107eb53ac495`, protobuf, brotli, pcre present; no libtirpc, nfs-utils, picocom, fzf,
+ripgrep or git project); and the upstream build files of each package.
+
+### More programs of recipes that already existed
+The recipes build the same source trees with the same configure flags; only the make targets, `install_bin` lines
+and `ndk/tools.tsv` rows are new, except where noted.
+- util-linux 2.42.4: `nsenter`, `unshare`, `lsns`, `losetup`, `dmesg`, `wipefs`, `fallocate`, `zramctl`, `taskset`,
+  `chrt`, `ionice`, `prlimit`, `rfkill`, `hexdump`, `script`. Three needed changes:
+  - `script`: configure enables it only when `openpty()` is found in libutil; bionic has `openpty()` in libc, so an
+    empty `libutil.a` is put on the link path (the same device as the empty `libpthread.a` of other recipes).
+  - `chrt` (patch 0003): bionic's `<sched.h>` defines `struct sched_attr` at every API level and declares
+    `sched_setattr()`/`sched_getattr()` from API 37; util-linux's fallback redefines the struct. The patch uses the
+    kernel struct and `syscall()` wrappers.
+  - `nsenter` (patch 0004): bionic has no `struct file_handle`, `name_to_handle_at()` or `open_by_handle_at()` (used
+    for namespace IDs); the patch defines the kernel ABI struct and calls the syscalls.
+  - `nsenter` and `unshare` are installed as `nsenter-ng` and `unshare-ng` (fixed names, like `ip-ng`): `check.py`
+    refuses wrappers with names of its static list. The other names are renamed by the installer only where the
+    device has the command.
+  - The recipe also installs libuuid (header and static library) for nfs-utils.
+- libcap 2.78: `getcap`, `setcap`. libcap-ng 0.9.6: `pscap`, `netcap`, `filecap` (`make -C utils` with
+  `-all-static`).
+- e2fsprogs 1.47.4: `debugfs`, `dumpe2fs`, `e2image`, `filefrag`. f2fs-tools 1.17.0: `mkfs.f2fs`, `f2fs_io`, and
+  `resize.f2fs`/`sload.f2fs`, which are the fsck.f2fs program under another name (upstream installs links; the mode
+  is chosen by `argv[0]`, so the program is copied as for `dump.f2fs`). Built `--without-selinux`: sload.f2fs sets no
+  labels.
+- iproute2 7.3.0: `nstat`, `ifstat`, `lnstat` (misc), `genl`, `devlink` (two more `SUBDIRS`), `rtmon` (ip). Dynamic
+  like `ip`.
+- BIND 9.20.30: `nslookup`, `delv`, `nsupdate`. `delv` needs the generated `bind.keys.h` (`make bind.keys.h` in the
+  top directory). nslookup shares dighost.c with dig and uses `ALT_DNS_SERVERS` through patch 0002. delv and nsupdate
+  read resolv.conf through `irs_resconf_load()` (lib/dns/resconf.c), which falls back to `::1`/`127.0.0.1`; patch
+  0003 makes that fallback take the servers of `ALT_DNS_SERVERS` first. All three rows have the `dnsenv` flag.
+- binutils 2.47: `objcopy`, `strip` (built as `strip-new`), `size`, `ar`, `c++filt` (built as `cxxfilt`), `elfedit`.
+- elfutils 0.197: `eu-strip`, `eu-elflint`, `eu-elfcmp`, `eu-size`, `eu-elfclassify`. `strip.c` uses glibc's
+  `FNM_EXTMATCH`; it is defined as 0 (plain `fnmatch()` patterns for `--remove-section`/`--keep-section`). eu-strip
+  uses elfutils' own `crc32()` while libdw pulls zlib's `crc32.o` for inflate; both are the same CRC-32, and the
+  static link of that one program gets `-Wl,--allow-multiple-definition`. The `libelf.a` for dependants is unchanged
+  in content, but the recipe hash changes, so bpftool, bcc, bpftrace and ltrace are rebuilt.
+- sqlite 3.54.1: `sqldiff` and `sqlite3_rsync`. Their sources (`tool/sqldiff.c`, `tool/sqlite3_rsync.c`) are not in
+  the autoconf tarball; `sqlite-src-3540100.zip` of the same release is an extra source (SHA3-256
+  `877c6f4996ce7adb368686bce21638de9e3d91534832ad3d9d119037d1bc22ad` on sqlite.org/download.html, verified at pin
+  time). Compiled as `main.mk` does: the tool source with the amalgamation (`RSYNC_OPT` for sqlite3_rsync). The
+  zip's `LICENSE.md` (public-domain dedication) is shipped as the licence text; the autoconf tarball has none.
+- sysstat 12.8.0: `sar` and its collector `sadc`. sar starts `SADC_PATH` = `sa_lib_dir/sadc`; `sa_lib_dir` is now
+  `/system/etc/android-linux-tools/libexec`, and `sadc` is a libexec-only row.
+- squashfs-tools 4.7.5: `sqfstar`, `sqfscat` (upstream installs them as links to mksquashfs/unsquashfs; copied, mode
+  by `argv[0]`). socat 1.8.1.3: `procan`, `filan`.
+
+### bcc libbpf-tools 0.37.0 (57 tools; static)
+| Source | Observed |
+|---|---|
+| upstream `libbpf-tools/Makefile` | builds libbpf from `../src/cc/libbpf`, a bootstrap bpftool from the `bpftool` submodule, BPF objects with `clang -target bpf` against `$(ARCH)/vmlinux.h`, skeletons with `bpftool gen skeleton`, and links each tool with `-lelf -lz`; `ARCH`, `CC`, `CLANG`, `BPFTOOL`, `EXTRA_CFLAGS`, `EXTRA_LDFLAGS` are overridable; blazesym (Rust) only for x86 |
+| AOSP external/bcc | has `libbpf-tools/` with an `Android.bp` |
+| buildroot package/bcc, aports community/bcc | 0.37.0, the Python/LLVM bcc (not the libbpf-tools) |
+| Termux | absent |
+
+Chosen approach: a recipe of its own (`libbpf-tools.sh`) on the bcc tarball that the bcc recipe pins, so the bcc
+recipe (symbol helpers for bpftrace) stays as it is. Upstream's Makefile with `ARCH=arm64`, `CC` = the NDK clang,
+`CLANG=clang` (the NDK clang, `-target bpf`), `USE_BLAZESYM=0`:
+- libbpf: the tree has no libbpf recipe (bpftool and bpftrace bundle theirs); the tools are built against the
+  libbpf in the bcc tarball (`src/cc/libbpf`), which is the version they are written for. libelf from the elfutils
+  recipe, zlib from the NDK.
+- Bootstrap bpftool: the tarball's `libbpf-tools/bpftool` submodule has no libbpf of its own (nested submodule), so
+  the native `bootstrap/bpftool` is built from the bpftool 7.8.1 source release that the bpftool recipe pins, with
+  the builder's gcc, libelf and zlib (`SKIP_CRYPTO=1`). It only runs `gen skeleton`.
+- BPF objects: `BPFCFLAGS` gets `-idirafter` for the NDK sysroot's kernel UAPI headers (javagc's `usdt.bpf.h` includes
+  `<linux/errno.h>`, and the builder has no arm64 `<asm/...>`) and `-ffile-prefix-map`.
+- argp: bionic has none; argp-standalone 1.5.0 as in the elfutils recipe. `-Wno-error`: upstream compiles with
+  `-Werror`. mountsnoop.c defines a stub `strerrorname_np()` for non-glibc systems; bionic has the function (API
+  35), so the stub is disabled for bionic (sed).
+- All 57 programs of upstream's `APPS` list are installed; the recipe names them and fails if one does not build.
+  The alias names (`ext4dist`, `xfsslower`, `killsnoop`, ...: links that select a mode by `argv[0]`) are not
+  installed: `fsdist -t <fs>`, `fsslower -t <fs>` and `sigsnoop -k` do the same.
+
+### lldb-server (LLVM 23.1.5; static)
+| Source | Observed |
+|---|---|
+| aports main/lldb | 23.1.5, standalone lldb build against the installed LLVM (`LLDB_BUILT_STANDALONE=ON`, shared libLLVM) |
+| Termux packages/libllvm | 21.1.8, lldb as part of the LLVM package with Python (`LLDB_ENABLE_PYTHON=ON`, `LLVM_LINK_LLVM_DYLIB=ON`) |
+| AOSP external/lldb-utils | helper scripts only; the NDK ships a prebuilt static `lldb-server` |
+
+Chosen approach: a recipe of its own (`lldb-server.sh`) on the LLVM tarball that the llvm recipe pins, with its own
+build directories. The llvm recipe (BPF-only static libraries for bpftrace) is not changed, so bpftrace links the
+same libraries as before. `LLVM_ENABLE_PROJECTS="clang;lldb"` (lldb requires clang), `LLVM_TARGETS_TO_BUILD=AArch64`,
+Python, Lua, libedit, curses, lzma and libxml2 off; native `llvm-tblgen`, `clang-tblgen` and `lldb-tblgen` first with
+the builder's g++ (`LLVM_NATIVE_TOOL_DIR`); then only the `lldb-server` ninja target, linked static like the NDK's.
+
+### libtirpc 1.3.8 and nfs-utils 2.9.2 (mount.nfs, mount.nfs4, umount.nfs, umount.nfs4; dynamic)
+| Source | Observed |
+|---|---|
+| Termux root-packages/nfs-utils | 3.1.1 from SourceForge, full package (`--disable-gss`), depends on keyutils, libblkid, libcap, libdevmapper, libevent, libmount, libnl, libsqlite, libtirpc, libuuid, openldap |
+| Termux packages/libtirpc | 1.3.8, `--disable-gssapi --enable-rpcdb` |
+| buildroot package/nfs-utils | 3.1.1, `--enable-tirpc --disable-junction --disable-nfsdctl --without-tcp-wrappers`, host rpcgen, depends on libevent, libnl, libtirpc, sqlite, util-linux |
+| OpenWrt net/nfs-kernel-server | 2.9.1, `--disable-caps --disable-gss --with-rpcgen=internal` |
+| aports main/nfs-utils | 2.6.4, `--with-rpcgen=internal --enable-nfsv4` |
+| AOSP | absent |
+
+Chosen approach: nfs-utils 2.9.2 from kernel.org (the 2.x line; `sha256sums.asc` by the kernel.org autosigner), only
+`mount.nfs`: `--disable-nfsv4 --disable-nfsv41` (these switch off idmapd, nfsidmap and the NFSv4 server parts, not
+NFSv4 mounting, which is the kernel's), `--disable-gss --disable-uuid --disable-nfsdcld --disable-nfsrahead
+--disable-nfsdctl --disable-junction --disable-caps --disable-ldap --with-rpcgen=internal`; `make` in
+`tools/rpcgen` (with the builder's gcc), `support/{include,misc,nfs,export}`, `support/reexport libreexport.a` and
+`utils/mount mount.nfs`.
+- configure requires libnl, libevent, `<uuid/uuid.h>`, `res_querydomain` in libresolv and `getrpcbynumber()` even
+  for the mount helper: libnl and libevent recipes as dependencies, libuuid from the util-linux recipe, an empty
+  `libresolv.a` with `ac_cv_lib_resolv___res_querydomain=yes`, and `ac_cv_func_getrpcbynumber=yes` (libtirpc has
+  it; the check does not link libtirpc).
+- Patch 0001: `support/nfs` (in `libnfs.la`, which mount.nfs links) uses `getservbyname_r()` and `getdtablesize()`,
+  which bionic lacks. `-Dversionsort=alphasort` for the drop-in directory reader of conffile.c.
+- libtirpc: `--disable-gssapi`; `NETCONFIG` is `/system/etc/android-linux-tools/etc/netconfig` and the file
+  (libtirpc's `doc/netconfig`) is shipped there, because rpcbind queries (NFSv3) need the transport database and
+  Android has no `/etc/netconfig`.
+- The three other names are links to mount.nfs upstream (`install-exec-hook`); the module has one copy per name,
+  because the program selects mount/umount by `argv[0]`.
+- Dynamic: the server name is resolved with `getaddrinfo()`.
+
+### android-tools 37.0.0p1 (adb, fastboot, simg2img, img2simg, lpunpack, lpmake; dynamic)
+| Source | Observed |
+|---|---|
+| nmeum/android-tools | CMake packaging of the AOSP platform-tools sources; the release tarball contains the vendored AOSP trees (already patched), BoringSSL, fmt and libusb; needs protobuf (with protoc), brotli, lz4, zstd, PCRE2 and `gtest/gtest_prod.h`; options `ANDROID_TOOLS_USE_BUNDLED_LIBUSB`, `ANDROID_TOOLS_USE_BUNDLED_FMT`, `ANDROID_TOOLS_ADB_ENABLE_MDNS` (Rust, default off) |
+| Termux packages/android-tools | the same 37.0.0p1 tarball (same sha256), `-DANDROID_TOOLS_USE_BUNDLED_LIBUSB=ON`, system abseil/protobuf/fmt, about 30 patches: `#undef __ANDROID__` or `#if 0` around platform-only code (liblog, libbase properties, liblp, libziparchive), lowered `__INTRODUCED_IN` levels in the vendored `android/log.h`, and a termux-usb device path in the USB code |
+| aports community/android-tools | 37.0.0_p1, system libusb, `-DANDROID_TOOLS_ADB_ENABLE_MDNS=ON` |
+| buildroot package/android-tools | the 4.2.2 Debian source, not comparable |
+
+Chosen approach: the release tarball, the six programs as ninja targets, bundled libusb (usbfs through
+`/dev/bus/usb`; no udev), bundled fmt and BoringSSL, mDNS off (no Rust part).
+- protobuf 3.21.12 (`protobuf.sh`): the last release line without the abseil dependency; a native `protoc` of the
+  same version is built with the builder's g++ and passed as `Protobuf_PROTOC_EXECUTABLE`. On Android protobuf logs
+  through liblog; the two `__ANDROID__` blocks in `stubs/common.cc` and the `log` link line are disabled so that no
+  `liblog.so` dependency appears. brotli 1.2.1 and PCRE2 10.49 (`brotli.sh`, `pcre2.sh`), lz4 and zstd from the
+  tree. googletest 1.17.0 is an extra source for the one header.
+- The AOSP sources treat `__ANDROID__` as "part of the platform image". Two patches select the host code paths
+  where the platform variant cannot work in a stand-alone tool: 0001 liblog (default logger stderr instead of
+  logd/pmsg, and the vendored header's API-37 annotation on a function that the static liblog itself defines; from
+  the Termux patches), 0002 libutils (`vndksupport/linker.h`) and liblp (`android_get_control_file`).
+  `-DINCFS_SUPPORT_DISABLED=1`: libziparchive's incremental-fs signal handling needs the platform's incfs library.
+  The Termux USB patches (for termux-usb) are not used: libusb opens the usbfs nodes directly.
+- No `liblog.so`: the programs need `libc.so`, `libm.so`, `libdl.so` and `libz.so`. Dynamic because adb resolves
+  host names (`adb connect`).
+- The wrapper sets `HOME=/data/local/tmp` when `HOME` is unset or not writable (adb's key pair is in
+  `$HOME/.android`; root's home directory is `/`).
+
+### git 2.56.1 (git, git-remote-http/https; dynamic)
+| Source | Observed |
+|---|---|
+| Termux packages/git | 2.56.0, configure with `--with-curl --with-expat --with-shell=$PREFIX/bin/sh`, make `NO_NSEC=1 NO_GETTEXT=1 NO_INSTALL_HARDLINKS=1 USE_LIBPCRE2=1 CSPRNG_METHOD=openssl`, Rust enabled; patches include `run-command.c.patch` (no `pthread_setcancelstate` under `__ANDROID__`) |
+| buildroot package/git | 2.54.0, configure, optional openssl, pcre2, libcurl, expat |
+| aports main/git | 2.56.0 with subpackages for the Perl and daemon parts |
+| OpenWrt net/git | 2.50.1, `--without-iconv`, the http helpers as a separate package |
+| AOSP | absent |
+
+Chosen approach: the plain Makefile (no configure) with `NO_GETTEXT NO_PERL NO_PYTHON NO_TCLTK NO_EXPAT NO_OPENSSL
+NO_RUST NO_INSTALL_HARDLINKS`, `PTHREAD_LIBS=` (pthreads are in bionic's libc), `DEFAULT_PAGER=less`,
+`DEFAULT_EDITOR=nano`, and libcurl from the curl recipe (which now also installs its library, headers and
+`curl-config`): mbedTLS, CA file `$ALTDIR/etc/ssl/cert.pem`. SHA-1/SHA-256 are git's bundled implementations.
+- Paths are compiled in under `/system/etc/android-linux-tools`: `gitexecdir` = `libexec` (where every ELF of the
+  module must be: `git`, `git-remote-http`, `git-remote-https`), `template_dir` = `share/git-core/templates`,
+  `sysconfdir` = `etc` (system configuration `etc/gitconfig`). Nothing refers to the module directory.
+- Shell: `SHELL_PATH` is used both to run the build's own scripts and as the shell compiled into git. The build
+  runs with the builder's `/bin/sh`; only the C string (`SHELL_PATH_CQ` in the Makefile) is `/system/bin/sh`.
+- Script commands: `git submodule`, `mergetool`, `difftool--helper`, `merge-octopus`, `merge-one-file`,
+  `merge-resolve`, `request-pull`, `filter-branch` and `quiltimport` are shell scripts. The module's libexec holds
+  only ELF programs (`check.py`), and data files are installed non-executable, so the scripts are plain files in
+  `share/git-core` (their `. git-sh-setup`-style includes rewritten to full paths), and
+  `ndk/module/git/gitconfig` defines one alias per command that runs the script with the module's bash from the
+  directory git was started in. git consults aliases only when it finds no built-in or external command of that
+  name. `git-upload-pack`, `git-receive-pack` and `git-upload-archive` are wrappers (`git upload-pack ...`) for the
+  remote side of ssh transfers.
+- Patch 0001: bionic has no thread cancellation (`pthread_setcancelstate`); a no-op for run-command.c.
+- Not built: Perl/Python/Tcl parts, `git-http-push` (expat), `git-imap-send`, `git-daemon`, `git-shell`, the ftp
+  helper names, gettext.
+
+### ripgrep 15.2.0 (rg) and fd 10.5.2 (dynamic)
+| Source | Observed |
+|---|---|
+| Termux packages/ripgrep, packages/fd | the same versions from the GitHub tag archives, `cargo build --release` for the Android target; ripgrep with `--features pcre2` |
+| aports community/ripgrep, community/fd | `cargo fetch --target $CTARGET --locked`, then `cargo auditable build --release --frozen` (ripgrep with `pcre2`; fd also with `use-jemalloc`) |
+| buildroot, OpenWrt | ripgrep 14.1.1 / 15.1.0 through their cargo infrastructure |
+
+Chosen approach: Rust 1.99.1 from the builder image (see the builder facts), target `aarch64-linux-android`,
+linker `aarch64-linux-android35-clang` (`CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER`), `cargo build --release
+--locked --offline`.
+- How crates are fetched: `CARGO_HOME=.work/ndk/dl/cargo-home` (next to the other downloads, kept by `--clean`).
+  `cargo fetch --locked --offline --target aarch64-linux-android` runs first; only if crates are missing it runs
+  again without `--offline`, which downloads them from crates.io (the sparse index and static.crates.io) and
+  checks each against the SHA-256 recorded in the package's `Cargo.lock`. The build itself runs with `--offline`,
+  so a rebuild with that cache needs no network. `--locked` refuses any change to `Cargo.lock`.
+- `--remap-path-prefix` for the crate cache and the source directory (no build paths in the programs), build-id
+  from the linker, stripping by `install_bin`. `CFLAGS`/`LDFLAGS` of `env.sh` are not passed to cargo (build scripts
+  run on the builder).
+- ripgrep: default features (no PCRE2 engine). fd: `--no-default-features --features completions`: the default
+  `use-jemalloc` builds the bundled jemalloc, which is not set up for bionic; the system allocator is used.
+- Dynamic: Rust's standard library for this target links `libc.so` and `libdl.so`; all crates are static.
+- Licences: the packages' own files plus, per linked crate (`cargo tree -e normal,build`), its licence files as
+  `LICENSE.crate-<name>-<version>-<file>` and a list in `LICENSE.crates.txt`.
+
+### fzf 0.75.0 (static)
+Sources: upstream `Makefile` (`go build -a -ldflags "-s -w -X main.version=... -X main.revision=..." -trimpath`);
+Termux packages/fzf (0.75.0, `go build`); aports community/fzf (`go build -ldflags "-X main.version=... -X main.revision=..."`). Chosen approach: the pinned Go toolchain of the
+eCapture recipe and the same link (cgo, external link by the NDK clang, `-static`, the `libpthread`/`liblog` stubs),
+modules from `go.sum` in `.work/ndk/dl/go-mod` (offline when cached), upstream's version and revision strings
+(`c7bf2b8`, the tag's commit). Licences of the linked modules and of Go are collected as for eCapture.
+
+### ncdu 1.22 (static)
+Sources: buildroot package/ncdu and OpenWrt utils/ncdu (1.22 from dev.yorhel.nl, ncurses); Termux packages/ncdu
+(1.23.0 from another repository, `--with-shell`). Chosen approach: 1.22 from dev.yorhel.nl (signature of Yoran
+Heling, `74460D32B80810EBA9AFA2E962394C698C2739FA`), the C line of ncdu (2.x is written in Zig),
+`--with-ncursesw --with-shell=/system/bin/sh` with the ncurses recipe.
+
+### picocom 2024-07 (static)
+Sources: Termux packages/picocom, buildroot package/picocom and aports community/picocom all use 2024-07 from
+gitlab.com/wsakernel/picocom (the maintained continuation; OpenWrt still has 3.1 of the original repository). The
+source has an `Android.mk`. Chosen approach: the GitLab tag archive, upstream's Makefile with `CC` = the NDK clang
+(linenoise, flock locking and custom baud rates as in the Makefile's defaults).
+
+### rizin 0.9.1 (rizin, rz-bin, rz-asm, rz-hash, rz-diff, rz-find, rz-gg, rz-ax, rz-run, rz-sign, rz-ar; static)
+| Source | Observed |
+|---|---|
+| upstream `BUILDING.md`, `.github/meson-android-aarch64.ini` | Android: meson cross file for the NDK, `--default-library static -Dblob=true -Dstatic_runtime=true`; the blob is one executable that selects the program by the basename of `argv[0]`, the other names are installed as links |
+| Termux packages/rizin | 0.9.1 source release, shared build against system capstone, libzip, lz4, lzma, libmagic, openssl, tree-sitter, xxhash, zstd |
+| aports (main, community), buildroot | absent |
+
+Chosen approach: upstream's Android configuration with the subprojects bundled in the source release
+(`--wrap-mode=nodownload`), a generated cross file with the flags of `env.sh`, prefix
+`/system/etc/android-linux-tools` so that the data directory is `$ALTDIR/share/rizin` (shipped from the meson
+install).
+- A cross build compiles pcre2 and softfloat a second time for the builder; upstream's wraps clone them with git
+  (`pcre2_cross_native` at the pcre2-10.47 commit, `softfloat_cross_native` at the revision of `softfloat`). The
+  recipe copies the bundled `pcre2-10.47` and `softfloat` trees instead.
+- Patch 0001: the module's commands are wrappers that exec one file, so `argv[0]` is always `rizin`. The blob gets
+  `--blob-main=<program>`; the `rz-*` rows of `ndk/tools.tsv` pass it. One 52 MB program instead of eleven.
+- Static like upstream's Android build; host names in `rizin` URIs (`gdb://host:port`, `http://`) therefore need
+  numeric addresses.
+
 ### Not ported
-None since v2.1: every tool of v1 (and wg-quick, awg, awg-quick, drill, ethtool-ng, and the v2.4 and v2.5 additions) is an NDK build. Since
+None since v2.1: every tool of v1 (and wg-quick, awg, awg-quick, drill, ethtool-ng, and the v2.4, v2.5 and v2.6 additions) is an NDK build. Since
 v2.2-r2 there is no Alpine fallback: `ndk/scripts/stage.py` fails if a tool of `ndk/tools.tsv` has no NDK build,
 and `ndk/scripts/check.py` fails on a `lib/` directory, the resolv.conf overlay, or ELF files outside
 `$ALTDIR/libexec/`.

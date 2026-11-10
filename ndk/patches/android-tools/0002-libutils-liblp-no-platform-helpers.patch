@@ -1,0 +1,36 @@
+Subject: libutils, liblp: no platform-only helpers in a bionic build of the tools
+
+Why: with __ANDROID__ defined, libutils' misc.cpp includes <vndksupport/linker.h> (VNDK support
+library, not part of the NDK or of this source release) and liblp's utility.cpp calls libcutils'
+android_get_control_file() (file descriptors passed by init to platform services), which the
+packaging does not build: "vndksupport/linker.h file not found" and "undefined symbol:
+android_get_control_file". Both are for processes of the platform image. Undefine __ANDROID__ after
+the includes of the two files, which selects the host code paths (plain open()).
+Source: written for this module (see ndk/REFERENCES.md); termux-packages
+packages/android-tools/vendor_fs_mgr_liblp_utility.cpp.patch (commit
+a45b6a4948f9098c21af75af9710c1edf81ba02e) disables the same liblp block with "#if 0".
+
+--- a/vendor/core/libutils/misc.cpp
++++ b/vendor/core/libutils/misc.cpp
+@@ -23,6 +23,9 @@
+ #include <log/log.h>
+ #include <utils/Vector.h>
+
++/* not a platform build: no VNDK support library (vndksupport/linker.h) */
++#undef __ANDROID__
++
+ #if defined(__ANDROID__) && !defined(__ANDROID_RECOVERY__)
+ #include <dlfcn.h>
+ #include <vndksupport/linker.h>
+--- a/vendor/fs_mgr/liblp/utility.cpp
++++ b/vendor/fs_mgr/liblp/utility.cpp
+@@ -34,6 +34,9 @@
+ #include <ext4_utils/ext4_utils.h>
+ #include <openssl/sha.h>
+
++/* not a platform build: no init-provided control files (libcutils android_get_control_file) */
++#undef __ANDROID__
++
+ #ifdef __ANDROID__
+ #include <cutils/android_get_control_file.h>
+ #endif

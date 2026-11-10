@@ -64,6 +64,37 @@ RUN curl -fsSL --retry 5 -o "/opt/${BC_DEB}" "http://snapshot.debian.org/file/${
  && apt-get clean && rm -rf /var/lib/apt/lists/* "/opt/${BC_DEB}" \
  && test "$(echo 2^10 | bc)" = 1024
 
+# Rust toolchain for ripgrep and fd (linker: the NDK clang). Pinned by release, size and the SHA-256 that
+# static.rust-lang.org/dist/channel-rust-<version>.toml publishes (xz_hash); the detached signatures <tarball URL>.asc
+# (Rust Language Tag and Release Signing Key, 108F66205EAEB0AAA8DD5E1C85AB96E6FA1BE5FE) were verified at pin time.
+# rustc, cargo and the host std from the combined tarball; the aarch64-linux-android std from its own tarball.
+# A separate layer after the ones above, so they stay unchanged.
+ARG RUST_VERSION=1.99.1
+ARG RUST_DATE=2026-10-15
+ARG RUST_SIZE=210515736
+ARG RUST_SHA256=231fcae47ee950621374725b5fc3b5441d2fbda2955ac45dd7dc816d8876cfe7
+ARG RUST_STD_ANDROID_SIZE=30404588
+ARG RUST_STD_ANDROID_SHA256=7463b06bb5f734c02d3bac967538b4de4da910fb90668398bc21b10b5620e35d
+RUN curl -fsSL --retry 5 -o /opt/rust.tar.xz "https://static.rust-lang.org/dist/${RUST_DATE}/rust-${RUST_VERSION}-x86_64-unknown-linux-gnu.tar.xz" \
+ && test "$(stat -c %s /opt/rust.tar.xz)" = "${RUST_SIZE}" \
+ && echo "${RUST_SHA256}  /opt/rust.tar.xz" | sha256sum -c - \
+ && curl -fsSL --retry 5 -o /opt/rust-std.tar.xz "https://static.rust-lang.org/dist/${RUST_DATE}/rust-std-${RUST_VERSION}-aarch64-linux-android.tar.xz" \
+ && test "$(stat -c %s /opt/rust-std.tar.xz)" = "${RUST_STD_ANDROID_SIZE}" \
+ && echo "${RUST_STD_ANDROID_SHA256}  /opt/rust-std.tar.xz" | sha256sum -c - \
+ && mkdir /opt/rust-src && tar -xJf /opt/rust.tar.xz -C /opt/rust-src --no-same-owner && tar -xJf /opt/rust-std.tar.xz -C /opt/rust-src --no-same-owner \
+ && "/opt/rust-src/rust-${RUST_VERSION}-x86_64-unknown-linux-gnu/install.sh" --prefix=/opt/rust --disable-ldconfig \
+      --components=rustc,cargo,rust-std-x86_64-unknown-linux-gnu \
+ && "/opt/rust-src/rust-std-${RUST_VERSION}-aarch64-linux-android/install.sh" --prefix=/opt/rust --disable-ldconfig \
+ && rm -rf /opt/rust-src /opt/rust.tar.xz /opt/rust-std.tar.xz \
+ && test "$(/opt/rust/bin/rustc --version | cut -d' ' -f2)" = "${RUST_VERSION}" \
+ && test -d /opt/rust/lib/rustlib/aarch64-linux-android/lib
+
+# Host libelf and zlib headers for the native bootstrap bpftool that generates the BPF skeletons of the bcc
+# libbpf-tools (libbpf-tools recipe). From the same snapshot, a separate layer after the ones above.
+RUN apt-get -o Acquire::Retries=5 update \
+ && apt-get -o Acquire::Retries=5 install -y --no-install-recommends libelf-dev zlib1g-dev \
+ && apt-get clean && rm -rf /var/lib/apt/lists/*
+
 ENV ANDROID_NDK_HOME=/opt/ndk NDK_RELEASE=${NDK_RELEASE} GOTOOLCHAIN=local GOTELEMETRY=off \
-    PATH=/opt/ndk/toolchains/llvm/prebuilt/linux-x86_64/bin:/opt/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    PATH=/opt/ndk/toolchains/llvm/prebuilt/linux-x86_64/bin:/opt/go/bin:/opt/rust/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 WORKDIR /work

@@ -11,10 +11,15 @@ build() {
   sed -i -e '/^HAVE_ELF/d' -e '/^HAVE_SELINUX/d' -e '/^HAVE_CAP/d' -e '/^HAVE_BERKELEY_DB/d' -e '/^HAVE_TIRPC/d' config.mk
   # SHARED_LIBS=n links link types, qdiscs, filters and actions into ip/tc instead of looking them up
   # with dlopen(), which is a stub in static bionic
-  make -j"$JOBS" SUBDIRS="lib ip tc misc bridge" SHARED_LIBS=n CC="$CC" AR="$AR" \
+  make -j"$JOBS" SUBDIRS="lib ip tc misc bridge genl devlink" SHARED_LIBS=n CC="$CC" AR="$AR" \
     CCOPTS="$CFLAGS" LDFLAGS="$LDFLAGS" V=1
   install_bin ip/ip ip
   install_bin tc/tc tc
   install_bin misc/ss ss
   install_bin bridge/bridge bridge
+  install_bin ip/rtmon rtmon
+  install_bin genl/genl genl
+  install_bin devlink/devlink devlink
+  local p
+  for p in nstat ifstat lnstat; do install_bin "misc/$p" "$p"; done
 }

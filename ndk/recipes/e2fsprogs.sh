@@ -9,10 +9,14 @@ build() {
     --disable-backtrace --without-libarchive --disable-tdb ac_cv_func_qsort_r=no ac_cv_func_backtrace=no
   make -j"$JOBS" libs
   make -j"$JOBS" -C e2fsck e2fsck
-  make -j"$JOBS" -C misc mke2fs tune2fs
+  make -j"$JOBS" -C misc mke2fs tune2fs dumpe2fs e2image filefrag
+  make -j"$JOBS" -C debugfs debugfs
   make -j"$JOBS" -C resize resize2fs
   install_bin e2fsck/e2fsck e2fsck
   install_bin misc/mke2fs mke2fs
   install_bin misc/tune2fs tune2fs
   install_bin resize/resize2fs resize2fs
+  install_bin debugfs/debugfs debugfs
+  local p
+  for p in dumpe2fs e2image filefrag; do install_bin "misc/$p" "$p"; done
 }

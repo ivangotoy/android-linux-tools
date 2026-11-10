@@ -9,7 +9,13 @@ build() {
   configure_std --without-selinux --without-blkid --without-lzo2 --without-lz4
   make -j"$JOBS" -C lib
   make -j"$JOBS" -C fsck LDFLAGS="$LT_LDFLAGS"
+  make -j"$JOBS" -C mkfs LDFLAGS="$LT_LDFLAGS"
+  make -j"$JOBS" -C tools LDFLAGS="$LT_LDFLAGS"
   install_bin fsck/fsck.f2fs fsck.f2fs
   # same binary, mode chosen by argv[0]
   install_bin fsck/fsck.f2fs dump.f2fs
+  install_bin fsck/fsck.f2fs resize.f2fs
+  install_bin fsck/fsck.f2fs sload.f2fs
+  install_bin mkfs/mkfs.f2fs mkfs.f2fs
+  install_bin tools/f2fs_io/f2fs_io f2fs_io
 }

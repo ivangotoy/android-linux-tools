@@ -5,8 +5,9 @@ CHECKSUM_SOURCE="SHA1 bf343509a2a5a8019e72191ed6858659b868af6e published on syss
 LICENSE=GPL-2.0-or-later
 build() {
   configure_std --disable-sensors --disable-pcp --disable-documentation --disable-stripping --disable-file-attr \
-    sa_lib_dir=/data/local/lib/sa sa_dir=/data/local/var/log/sa conf_dir=/data/local/etc/sysconfig
-  make -j"$JOBS" iostat pidstat mpstat
+    sa_lib_dir=/system/etc/android-linux-tools/libexec sa_dir=/data/local/var/log/sa conf_dir=/data/local/etc/sysconfig
+  # sar starts its collector as SADC_PATH = sa_lib_dir/sadc: the module's libexec directory
+  make -j"$JOBS" iostat pidstat mpstat sar sadc
   local p
-  for p in iostat pidstat mpstat; do install_bin "$p" "$p"; done
+  for p in iostat pidstat mpstat sar sadc; do install_bin "$p" "$p"; done
 }

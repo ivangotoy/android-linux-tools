@@ -1,10 +1,12 @@
 # Android Linux tools
 
 A root module that adds Linux userspace tools (netfilter, iproute2, WireGuard/AmneziaWG, Wi-Fi (iw), tracing
-and debugging (strace, ltrace, fatrace, gdbserver, eu-stack), packet capture, BPF tracing (bpftool, bpftrace with its
-tool scripts, eCapture), ELF tools (GNU binutils, elfutils, patchelf), device trees (dtc), EROFS and SquashFS images,
-nmap, OpenSSL, an SSH client and server (dropbear), DNS and network diagnostics, storage benchmarks (fio),
-compression, editors, shells)
+and debugging (strace, ltrace, fatrace, gdbserver, lldb-server, eu-stack), packet capture, BPF tracing (bpftool,
+bpftrace with its tool scripts, the bcc libbpf-tools, eCapture), reverse engineering (rizin), ELF tools (GNU binutils,
+elfutils, patchelf), device trees (dtc), EROFS, SquashFS, ext4 and F2FS tools, Android platform tools (adb, fastboot,
+sparse and super image tools), git, ripgrep, fd, fzf, ncdu, picocom, an NFS mount helper, util-linux programs
+(nsenter, unshare, losetup, dmesg, ...), nmap, OpenSSL, an SSH client and server (dropbear), DNS and network
+diagnostics, storage benchmarks (fio), compression, editors, shells)
 to rooted aarch64 Android phones. Every
 program is compiled from upstream source with the Android NDK for bionic (`aarch64-linux-android`, API 35).
 The module does not depend on any particular device. It runs nothing at boot (no `post-fs-data.sh`,
@@ -14,13 +16,13 @@ mounts from its `system/` tree.
 - Repository: <https://git.digtvbg.com/ivangotoy/android-linux-tools> (Forgejo), mirrored to
   <https://github.com/ivangotoy/android-linux-tools>.
 - Module id `android-linux-tools`, module directory `/data/adb/modules/android-linux-tools`.
-- Version `v2.M-rN`, versionCode `major*100000 + minor*1000 + N` (`v2.5-r1` = `205001`), set in `ndk/build.conf`.
+- Version `v2.M-rN`, versionCode `major*100000 + minor*1000 + N` (`v2.6-r1` = `206001`), set in `ndk/build.conf`.
 - One ZIP (see "One ZIP"); tool list in "Contents".
 
 ## Install
 
 - In the root manager app: Modules, Install from storage, pick the ZIP. Then reboot.
-- Command line, as root: `ksud module install /sdcard/Download/android-linux-tools-v2.5-r1.zip` (KernelSU).
+- Command line, as root: `ksud module install /sdcard/Download/android-linux-tools-v2.6-r1.zip` (KernelSU).
   Magisk (`magisk --install-module ZIP`) and APatch (`apd module install ZIP`) have the same module interface.
 - Upgrading: install the new ZIP over the old one and reboot. The installer recognises wrappers of this
   module (also of v1/v2.0/v2.1) and never renames them as device binaries. No other module is touched.
@@ -46,6 +48,10 @@ runtime file is in the module's `system/` tree, which the root manager mounts ov
 | `system/etc/android-linux-tools/share/nmap/` | `$ALTDIR/share/nmap` | nmap data files, NSE scripts and nselib (compiled-in data directory) |
 | `system/etc/android-linux-tools/share/ltrace/` | `$ALTDIR/share/ltrace` | ltrace prototype files (`libc.so.conf`, `syscalls.conf`, ...) |
 | `system/etc/android-linux-tools/share/bpftrace/tools/` | `$ALTDIR/share/bpftrace/tools` | bpftrace's upstream tool scripts (`tools/*.bt`) |
+| `system/etc/android-linux-tools/share/git-core/` | `$ALTDIR/share/git-core` | git templates (`templates/`), git's shell-script commands and their libraries, `mergetools/` |
+| `system/etc/android-linux-tools/etc/gitconfig` | `$ALTDIR/etc/gitconfig` | git's system-wide configuration: aliases that run the script commands |
+| `system/etc/android-linux-tools/share/rizin/` | `$ALTDIR/share/rizin` | rizin data files (sdb databases, magic, themes, ...; compiled-in data directory) |
+| `system/etc/android-linux-tools/etc/netconfig` | `$ALTDIR/etc/netconfig` | libtirpc's transport database for `mount.nfs` |
 | `system/etc/android-linux-tools/etc/alt-tools.map` | `$ALTDIR/etc/alt-tools.map` | rename map written by `customize.sh`, read by `alt-list` |
 | `system/etc/android-linux-tools/share/android-linux-tools/` | `$ALTSHARE` | `dns-servers`, `origins.txt`, `MANIFEST.json`, `phone-test.sh` |
 | `module.prop`, `customize.sh`, `META-INF/`, `share/licenses/` | `/data/adb/modules/android-linux-tools` | module metadata and licences only |
@@ -90,16 +96,18 @@ the same programs and differed only in metadata (up to v2.0 the full flavour add
 libLLVM, about 172 MB). The module id is unchanged, so the ZIP installs over either flavour like any upgrade;
 `module.prop` and `MANIFEST.json` no longer have a `flavour` field.
 
-## Contents (v2.5-r1)
+## Contents (v2.6-r1)
 
-103 commands plus `alt-list`, 97 ELF programs; there is no `lib/` directory. Sizes are of the stripped
+246 commands plus `alt-list`, 230 ELF programs; there is no `lib/` directory. Sizes are of the stripped
 `$ALTDIR/libexec/` programs. Linkage `dynamic` = PIE against the system `libc.so`/`libm.so`/`libdl.so`
-(`libz.so` for curl, nmap, dropbear, ltrace and fio) only, every third-party library linked in statically. Generated from
-`dist/MANIFEST-v2.json` of the v2.5-r1 build.
+(`libz.so` for curl, nmap, dropbear, ltrace, fio, git and the android-tools programs) only, every third-party library
+linked in statically. Three more programs are in `libexec` without a command of their own: `mtr-packet`, `sadc`
+(started by `sar`) and `git-remote-http`/`git-remote-https` (started by `git`). Generated from
+`dist/MANIFEST-v2.json` of the v2.6-r1 build.
 
 | ZIP | Bytes | Unpacked |
 |---|---|---|
-| `android-linux-tools-v2.5-r1.zip` | 95483947 | 220.7 MB |
+| `android-linux-tools-v2.6-r1.zip` | 173393118 | 418.8 MB |
 
 | Command | Recipe | Version | Linkage | libexec (KB) | Licence (SPDX) |
 |---|---|---|---|---|---|
@@ -206,6 +214,149 @@ libLLVM, about 172 MB). The module id is unchanged, so the ZIP installs over eit
 | `unsquashfs` | squashfs-tools | 4.7.5 | static | 1091 | GPL-2.0-or-later |
 | `fatrace` | fatrace | 0.19.1 | static | 321 | GPL-3.0-or-later |
 | `ecapture` | ecapture | 2.10.0 | static | 19181 | Apache-2.0 AND (MIT OR GPL-2.0-only) AND BSD-3-Clause AND MIT AND MPL-2.0 AND LicenseRef-ecapture_decryptor |
+| `nsenter-ng` | util-linux | 2.42.4 | static | 318 (=nsenter) | GPL-2.0-or-later AND LGPL-2.1-or-later |
+| `unshare-ng` | util-linux | 2.42.4 | static | 330 (=unshare) | GPL-2.0-or-later AND LGPL-2.1-or-later |
+| `lsns` | util-linux | 2.42.4 | static | 1037 | GPL-2.0-or-later AND LGPL-2.1-or-later |
+| `losetup` | util-linux | 2.42.4 | static | 746 | GPL-2.0-or-later AND LGPL-2.1-or-later |
+| `dmesg` | util-linux | 2.42.4 | static | 386 | GPL-2.0-or-later AND LGPL-2.1-or-later |
+| `wipefs` | util-linux | 2.42.4 | static | 862 | GPL-2.0-or-later AND LGPL-2.1-or-later |
+| `fallocate` | util-linux | 2.42.4 | static | 262 | GPL-2.0-or-later AND LGPL-2.1-or-later |
+| `zramctl` | util-linux | 2.42.4 | static | 722 | GPL-2.0-or-later AND LGPL-2.1-or-later |
+| `taskset` | util-linux | 2.42.4 | static | 273 | GPL-2.0-or-later AND LGPL-2.1-or-later |
+| `chrt` | util-linux | 2.42.4 | static | 272 | GPL-2.0-or-later AND LGPL-2.1-or-later |
+| `ionice` | util-linux | 2.42.4 | static | 260 | GPL-2.0-or-later AND LGPL-2.1-or-later |
+| `prlimit` | util-linux | 2.42.4 | static | 695 | GPL-2.0-or-later AND LGPL-2.1-or-later |
+| `rfkill` | util-linux | 2.42.4 | static | 683 | GPL-2.0-or-later AND LGPL-2.1-or-later |
+| `hexdump` | util-linux | 2.42.4 | static | 324 | GPL-2.0-or-later AND LGPL-2.1-or-later |
+| `script` | util-linux | 2.42.4 | static | 320 | GPL-2.0-or-later AND LGPL-2.1-or-later |
+| `getcap` | libcap | 2.78 | static | 917 | BSD-3-Clause OR GPL-2.0-only |
+| `setcap` | libcap | 2.78 | static | 897 | BSD-3-Clause OR GPL-2.0-only |
+| `pscap` | libcap-ng | 0.9.6 | static | 309 | LGPL-2.1-or-later |
+| `netcap` | libcap-ng | 0.9.6 | static | 351 | LGPL-2.1-or-later |
+| `filecap` | libcap-ng | 0.9.6 | static | 304 | LGPL-2.1-or-later |
+| `debugfs` | e2fsprogs | 1.47.4 | static | 811 | GPL-2.0-or-later AND LGPL-2.0-or-later AND BSD-3-Clause AND MIT |
+| `dumpe2fs` | e2fsprogs | 1.47.4 | static | 542 | GPL-2.0-or-later AND LGPL-2.0-or-later AND BSD-3-Clause AND MIT |
+| `e2image` | e2fsprogs | 1.47.4 | static | 534 | GPL-2.0-or-later AND LGPL-2.0-or-later AND BSD-3-Clause AND MIT |
+| `filefrag` | e2fsprogs | 1.47.4 | static | 256 | GPL-2.0-or-later AND LGPL-2.0-or-later AND BSD-3-Clause AND MIT |
+| `mkfs.f2fs` | f2fs-tools | 1.17.0 | static | 407 | GPL-2.0-or-later OR LGPL-2.1-or-later |
+| `resize.f2fs` | f2fs-tools | 1.17.0 | static | 648 | GPL-2.0-or-later OR LGPL-2.1-or-later |
+| `sload.f2fs` | f2fs-tools | 1.17.0 | static | 648 | GPL-2.0-or-later OR LGPL-2.1-or-later |
+| `f2fs_io` | f2fs-tools | 1.17.0 | static | 299 | GPL-2.0-or-later OR LGPL-2.1-or-later |
+| `nstat` | iproute2 | 7.3.0 | dynamic | 21 | GPL-2.0-or-later |
+| `ifstat` | iproute2 | 7.3.0 | dynamic | 37 | GPL-2.0-or-later |
+| `lnstat` | iproute2 | 7.3.0 | dynamic | 17 | GPL-2.0-or-later |
+| `genl` | iproute2 | 7.3.0 | dynamic | 27 | GPL-2.0-or-later |
+| `devlink` | iproute2 | 7.3.0 | dynamic | 166 | GPL-2.0-or-later |
+| `rtmon` | iproute2 | 7.3.0 | dynamic | 14 | GPL-2.0-or-later |
+| `nslookup` | bind | 9.20.30 | dynamic | 8131 | MPL-2.0 |
+| `delv` | bind | 9.20.30 | dynamic | 8324 | MPL-2.0 |
+| `nsupdate` | bind | 9.20.30 | dynamic | 8099 | MPL-2.0 |
+| `objcopy` | binutils | 2.47 | static | 1725 | GPL-3.0-or-later AND LGPL-2.1-or-later |
+| `strip` | binutils | 2.47 | static | 1524 | GPL-3.0-or-later AND LGPL-2.1-or-later |
+| `size` | binutils | 2.47 | static | 1496 | GPL-3.0-or-later AND LGPL-2.1-or-later |
+| `ar` | binutils | 2.47 | static | 1524 | GPL-3.0-or-later AND LGPL-2.1-or-later |
+| `c++filt` | binutils | 2.47 | static | 350 | GPL-3.0-or-later AND LGPL-2.1-or-later |
+| `elfedit` | binutils | 2.47 | static | 274 | GPL-3.0-or-later AND LGPL-2.1-or-later |
+| `eu-strip` | elfutils | 0.197 | static | 753 | (LGPL-3.0-or-later OR GPL-2.0-or-later) AND GPL-3.0-or-later AND LGPL-2.0-or-later AND LGPL-2.1-or-later |
+| `eu-elflint` | elfutils | 0.197 | static | 790 | (LGPL-3.0-or-later OR GPL-2.0-or-later) AND GPL-3.0-or-later AND LGPL-2.0-or-later AND LGPL-2.1-or-later |
+| `eu-elfcmp` | elfutils | 0.197 | static | 707 | (LGPL-3.0-or-later OR GPL-2.0-or-later) AND GPL-3.0-or-later AND LGPL-2.0-or-later AND LGPL-2.1-or-later |
+| `eu-size` | elfutils | 0.197 | static | 355 | (LGPL-3.0-or-later OR GPL-2.0-or-later) AND GPL-3.0-or-later AND LGPL-2.0-or-later AND LGPL-2.1-or-later |
+| `eu-elfclassify` | elfutils | 0.197 | static | 402 | (LGPL-3.0-or-later OR GPL-2.0-or-later) AND GPL-3.0-or-later AND LGPL-2.0-or-later AND LGPL-2.1-or-later |
+| `sqldiff` | sqlite | 3.54.1 | static | 1376 | blessing |
+| `sqlite3_rsync` | sqlite | 3.54.1 | static | 1375 | blessing |
+| `sar` | sysstat | 12.8.0 | static | 448 | GPL-2.0-or-later |
+| `sqfstar` | squashfs-tools | 4.7.5 | static | 1270 | GPL-2.0-or-later |
+| `sqfscat` | squashfs-tools | 4.7.5 | static | 1091 | GPL-2.0-or-later |
+| `procan` | socat | 1.8.1.3 | dynamic | 36 | GPL-2.0-only WITH OpenSSL-Exception |
+| `filan` | socat | 1.8.1.3 | dynamic | 48 | GPL-2.0-only WITH OpenSSL-Exception |
+| `bashreadline` | libbpf-tools | 0.37.0 | static | 706 | (LGPL-2.1-only OR BSD-2-Clause) AND Apache-2.0 |
+| `bindsnoop` | libbpf-tools | 0.37.0 | static | 731 | (LGPL-2.1-only OR BSD-2-Clause) AND Apache-2.0 |
+| `biolatency` | libbpf-tools | 0.37.0 | static | 725 | (LGPL-2.1-only OR BSD-2-Clause) AND Apache-2.0 |
+| `biopattern` | libbpf-tools | 0.37.0 | static | 702 | (LGPL-2.1-only OR BSD-2-Clause) AND Apache-2.0 |
+| `biosnoop` | libbpf-tools | 0.37.0 | static | 730 | (LGPL-2.1-only OR BSD-2-Clause) AND Apache-2.0 |
+| `biostacks` | libbpf-tools | 0.37.0 | static | 693 | (LGPL-2.1-only OR BSD-2-Clause) AND Apache-2.0 |
+| `biotop` | libbpf-tools | 0.37.0 | static | 725 | (LGPL-2.1-only OR BSD-2-Clause) AND Apache-2.0 |
+| `bitesize` | libbpf-tools | 0.37.0 | static | 706 | (LGPL-2.1-only OR BSD-2-Clause) AND Apache-2.0 |
+| `cachestat` | libbpf-tools | 0.37.0 | static | 704 | (LGPL-2.1-only OR BSD-2-Clause) AND Apache-2.0 |
+| `capable` | libbpf-tools | 0.37.0 | static | 722 | (LGPL-2.1-only OR BSD-2-Clause) AND Apache-2.0 |
+| `cpudist` | libbpf-tools | 0.37.0 | static | 732 | (LGPL-2.1-only OR BSD-2-Clause) AND Apache-2.0 |
+| `cpufreq` | libbpf-tools | 0.37.0 | static | 674 | (LGPL-2.1-only OR BSD-2-Clause) AND Apache-2.0 |
+| `drsnoop` | libbpf-tools | 0.37.0 | static | 709 | (LGPL-2.1-only OR BSD-2-Clause) AND Apache-2.0 |
+| `execsnoop` | libbpf-tools | 0.37.0 | static | 779 | (LGPL-2.1-only OR BSD-2-Clause) AND Apache-2.0 |
+| `exitsnoop` | libbpf-tools | 0.37.0 | static | 732 | (LGPL-2.1-only OR BSD-2-Clause) AND Apache-2.0 |
+| `filelife` | libbpf-tools | 0.37.0 | static | 748 | (LGPL-2.1-only OR BSD-2-Clause) AND Apache-2.0 |
+| `filetop` | libbpf-tools | 0.37.0 | static | 729 | (LGPL-2.1-only OR BSD-2-Clause) AND Apache-2.0 |
+| `fsdist` | libbpf-tools | 0.37.0 | static | 721 | (LGPL-2.1-only OR BSD-2-Clause) AND Apache-2.0 |
+| `fsslower` | libbpf-tools | 0.37.0 | static | 729 | (LGPL-2.1-only OR BSD-2-Clause) AND Apache-2.0 |
+| `funclatency` | libbpf-tools | 0.37.0 | static | 716 | (LGPL-2.1-only OR BSD-2-Clause) AND Apache-2.0 |
+| `futexctn` | libbpf-tools | 0.37.0 | static | 714 | (LGPL-2.1-only OR BSD-2-Clause) AND Apache-2.0 |
+| `gethostlatency` | libbpf-tools | 0.37.0 | static | 707 | (LGPL-2.1-only OR BSD-2-Clause) AND Apache-2.0 |
+| `hardirqs` | libbpf-tools | 0.37.0 | static | 707 | (LGPL-2.1-only OR BSD-2-Clause) AND Apache-2.0 |
+| `javagc` | libbpf-tools | 0.37.0 | static | 709 | (LGPL-2.1-only OR BSD-2-Clause) AND Apache-2.0 |
+| `klockstat` | libbpf-tools | 0.37.0 | static | 909 | (LGPL-2.1-only OR BSD-2-Clause) AND Apache-2.0 |
+| `ksnoop` | libbpf-tools | 0.37.0 | static | 705 | (LGPL-2.1-only OR BSD-2-Clause) AND Apache-2.0 |
+| `llcstat` | libbpf-tools | 0.37.0 | static | 674 | (LGPL-2.1-only OR BSD-2-Clause) AND Apache-2.0 |
+| `mdflush` | libbpf-tools | 0.37.0 | static | 711 | (LGPL-2.1-only OR BSD-2-Clause) AND Apache-2.0 |
+| `memleak` | libbpf-tools | 0.37.0 | static | 755 | (LGPL-2.1-only OR BSD-2-Clause) AND Apache-2.0 |
+| `mountsnoop` | libbpf-tools | 0.37.0 | static | 758 | (LGPL-2.1-only OR BSD-2-Clause) AND Apache-2.0 |
+| `numamove` | libbpf-tools | 0.37.0 | static | 702 | (LGPL-2.1-only OR BSD-2-Clause) AND Apache-2.0 |
+| `offcputime` | libbpf-tools | 0.37.0 | static | 717 | (LGPL-2.1-only OR BSD-2-Clause) AND Apache-2.0 |
+| `oomkill` | libbpf-tools | 0.37.0 | static | 735 | (LGPL-2.1-only OR BSD-2-Clause) AND Apache-2.0 |
+| `opensnoop` | libbpf-tools | 0.37.0 | static | 759 | (LGPL-2.1-only OR BSD-2-Clause) AND Apache-2.0 |
+| `profile` | libbpf-tools | 0.37.0 | static | 691 | (LGPL-2.1-only OR BSD-2-Clause) AND Apache-2.0 |
+| `readahead` | libbpf-tools | 0.37.0 | static | 681 | (LGPL-2.1-only OR BSD-2-Clause) AND Apache-2.0 |
+| `runqlat` | libbpf-tools | 0.37.0 | static | 737 | (LGPL-2.1-only OR BSD-2-Clause) AND Apache-2.0 |
+| `runqlen` | libbpf-tools | 0.37.0 | static | 728 | (LGPL-2.1-only OR BSD-2-Clause) AND Apache-2.0 |
+| `runqslower` | libbpf-tools | 0.37.0 | static | 738 | (LGPL-2.1-only OR BSD-2-Clause) AND Apache-2.0 |
+| `sigsnoop` | libbpf-tools | 0.37.0 | static | 735 | (LGPL-2.1-only OR BSD-2-Clause) AND Apache-2.0 |
+| `slabratetop` | libbpf-tools | 0.37.0 | static | 707 | (LGPL-2.1-only OR BSD-2-Clause) AND Apache-2.0 |
+| `softirqs` | libbpf-tools | 0.37.0 | static | 703 | (LGPL-2.1-only OR BSD-2-Clause) AND Apache-2.0 |
+| `solisten` | libbpf-tools | 0.37.0 | static | 724 | (LGPL-2.1-only OR BSD-2-Clause) AND Apache-2.0 |
+| `statsnoop` | libbpf-tools | 0.37.0 | static | 698 | (LGPL-2.1-only OR BSD-2-Clause) AND Apache-2.0 |
+| `syncsnoop` | libbpf-tools | 0.37.0 | static | 680 | (LGPL-2.1-only OR BSD-2-Clause) AND Apache-2.0 |
+| `syscount` | libbpf-tools | 0.37.0 | static | 732 | (LGPL-2.1-only OR BSD-2-Clause) AND Apache-2.0 |
+| `tcpconnect` | libbpf-tools | 0.37.0 | static | 707 | (LGPL-2.1-only OR BSD-2-Clause) AND Apache-2.0 |
+| `tcpconnlat` | libbpf-tools | 0.37.0 | static | 697 | (LGPL-2.1-only OR BSD-2-Clause) AND Apache-2.0 |
+| `tcplife` | libbpf-tools | 0.37.0 | static | 738 | (LGPL-2.1-only OR BSD-2-Clause) AND Apache-2.0 |
+| `tcppktlat` | libbpf-tools | 0.37.0 | static | 739 | (LGPL-2.1-only OR BSD-2-Clause) AND Apache-2.0 |
+| `tcprtt` | libbpf-tools | 0.37.0 | static | 737 | (LGPL-2.1-only OR BSD-2-Clause) AND Apache-2.0 |
+| `tcpstates` | libbpf-tools | 0.37.0 | static | 723 | (LGPL-2.1-only OR BSD-2-Clause) AND Apache-2.0 |
+| `tcpsynbl` | libbpf-tools | 0.37.0 | static | 716 | (LGPL-2.1-only OR BSD-2-Clause) AND Apache-2.0 |
+| `tcptop` | libbpf-tools | 0.37.0 | static | 720 | (LGPL-2.1-only OR BSD-2-Clause) AND Apache-2.0 |
+| `tcptracer` | libbpf-tools | 0.37.0 | static | 755 | (LGPL-2.1-only OR BSD-2-Clause) AND Apache-2.0 |
+| `vfsstat` | libbpf-tools | 0.37.0 | static | 707 | (LGPL-2.1-only OR BSD-2-Clause) AND Apache-2.0 |
+| `wakeuptime` | libbpf-tools | 0.37.0 | static | 701 | (LGPL-2.1-only OR BSD-2-Clause) AND Apache-2.0 |
+| `lldb-server` | lldb-server | 23.1.5 | static | 12731 | Apache-2.0 WITH LLVM-exception |
+| `rg` | ripgrep | 15.2.0 | dynamic | 4304 | Unlicense OR MIT |
+| `fd` | fd | 10.5.2 | dynamic | 2940 | MIT OR Apache-2.0 |
+| `fzf` | fzf | 0.75.0 | static | 5328 | MIT AND BSD-3-Clause AND Apache-2.0 |
+| `ncdu` | ncdu | 1.22 | static | 866 | MIT |
+| `picocom` | picocom | 2024-07 | static | 333 | GPL-2.0-or-later |
+| `mount.nfs` | nfs-utils | 2.9.2 | dynamic | 132 | GPL-2.0-or-later |
+| `mount.nfs4` | nfs-utils | 2.9.2 | dynamic | 132 | GPL-2.0-or-later |
+| `umount.nfs` | nfs-utils | 2.9.2 | dynamic | 132 | GPL-2.0-or-later |
+| `umount.nfs4` | nfs-utils | 2.9.2 | dynamic | 132 | GPL-2.0-or-later |
+| `git` | git | 2.56.1 | dynamic | 3744 | GPL-2.0-only AND LGPL-2.1-or-later AND BSD-3-Clause AND MIT |
+| `git-upload-pack` | git | 2.56.1 | dynamic | 3744 (=git `upload-pack`) | GPL-2.0-only AND LGPL-2.1-or-later AND BSD-3-Clause AND MIT |
+| `git-receive-pack` | git | 2.56.1 | dynamic | 3744 (=git `receive-pack`) | GPL-2.0-only AND LGPL-2.1-or-later AND BSD-3-Clause AND MIT |
+| `git-upload-archive` | git | 2.56.1 | dynamic | 3744 (=git `upload-archive`) | GPL-2.0-only AND LGPL-2.1-or-later AND BSD-3-Clause AND MIT |
+| `rizin` | rizin | 0.9.1 | static | 53170 | LGPL-3.0-only AND GPL-2.0-or-later AND GPL-3.0-or-later AND LGPL-2.1-or-later AND Apache-2.0 AND BSD-2-Clause AND BSD-3-Clause AND MIT AND NCSA AND CC0-1.0 |
+| `rz-bin` | rizin | 0.9.1 | static | 53170 (=rizin `--blob-main=rz-bin`) | LGPL-3.0-only AND GPL-2.0-or-later AND GPL-3.0-or-later AND LGPL-2.1-or-later AND Apache-2.0 AND BSD-2-Clause AND BSD-3-Clause AND MIT AND NCSA AND CC0-1.0 |
+| `rz-asm` | rizin | 0.9.1 | static | 53170 (=rizin `--blob-main=rz-asm`) | LGPL-3.0-only AND GPL-2.0-or-later AND GPL-3.0-or-later AND LGPL-2.1-or-later AND Apache-2.0 AND BSD-2-Clause AND BSD-3-Clause AND MIT AND NCSA AND CC0-1.0 |
+| `rz-hash` | rizin | 0.9.1 | static | 53170 (=rizin `--blob-main=rz-hash`) | LGPL-3.0-only AND GPL-2.0-or-later AND GPL-3.0-or-later AND LGPL-2.1-or-later AND Apache-2.0 AND BSD-2-Clause AND BSD-3-Clause AND MIT AND NCSA AND CC0-1.0 |
+| `rz-diff` | rizin | 0.9.1 | static | 53170 (=rizin `--blob-main=rz-diff`) | LGPL-3.0-only AND GPL-2.0-or-later AND GPL-3.0-or-later AND LGPL-2.1-or-later AND Apache-2.0 AND BSD-2-Clause AND BSD-3-Clause AND MIT AND NCSA AND CC0-1.0 |
+| `rz-find` | rizin | 0.9.1 | static | 53170 (=rizin `--blob-main=rz-find`) | LGPL-3.0-only AND GPL-2.0-or-later AND GPL-3.0-or-later AND LGPL-2.1-or-later AND Apache-2.0 AND BSD-2-Clause AND BSD-3-Clause AND MIT AND NCSA AND CC0-1.0 |
+| `rz-gg` | rizin | 0.9.1 | static | 53170 (=rizin `--blob-main=rz-gg`) | LGPL-3.0-only AND GPL-2.0-or-later AND GPL-3.0-or-later AND LGPL-2.1-or-later AND Apache-2.0 AND BSD-2-Clause AND BSD-3-Clause AND MIT AND NCSA AND CC0-1.0 |
+| `rz-ax` | rizin | 0.9.1 | static | 53170 (=rizin `--blob-main=rz-ax`) | LGPL-3.0-only AND GPL-2.0-or-later AND GPL-3.0-or-later AND LGPL-2.1-or-later AND Apache-2.0 AND BSD-2-Clause AND BSD-3-Clause AND MIT AND NCSA AND CC0-1.0 |
+| `rz-run` | rizin | 0.9.1 | static | 53170 (=rizin `--blob-main=rz-run`) | LGPL-3.0-only AND GPL-2.0-or-later AND GPL-3.0-or-later AND LGPL-2.1-or-later AND Apache-2.0 AND BSD-2-Clause AND BSD-3-Clause AND MIT AND NCSA AND CC0-1.0 |
+| `rz-sign` | rizin | 0.9.1 | static | 53170 (=rizin `--blob-main=rz-sign`) | LGPL-3.0-only AND GPL-2.0-or-later AND GPL-3.0-or-later AND LGPL-2.1-or-later AND Apache-2.0 AND BSD-2-Clause AND BSD-3-Clause AND MIT AND NCSA AND CC0-1.0 |
+| `rz-ar` | rizin | 0.9.1 | static | 53170 (=rizin `--blob-main=rz-ar`) | LGPL-3.0-only AND GPL-2.0-or-later AND GPL-3.0-or-later AND LGPL-2.1-or-later AND Apache-2.0 AND BSD-2-Clause AND BSD-3-Clause AND MIT AND NCSA AND CC0-1.0 |
+| `adb` | android-tools | 37.0.0p1 | dynamic | 5146 | Apache-2.0 AND BSD-2-Clause AND BSD-3-Clause AND ISC AND MIT AND OpenSSL AND LGPL-2.1-or-later |
+| `fastboot` | android-tools | 37.0.0p1 | dynamic | 1230 | Apache-2.0 AND BSD-2-Clause AND BSD-3-Clause AND ISC AND MIT AND OpenSSL AND LGPL-2.1-or-later |
+| `simg2img` | android-tools | 37.0.0p1 | dynamic | 67 | Apache-2.0 AND BSD-2-Clause AND BSD-3-Clause AND ISC AND MIT AND OpenSSL AND LGPL-2.1-or-later |
+| `img2simg` | android-tools | 37.0.0p1 | dynamic | 68 | Apache-2.0 AND BSD-2-Clause AND BSD-3-Clause AND ISC AND MIT AND OpenSSL AND LGPL-2.1-or-later |
+| `lpunpack` | android-tools | 37.0.0p1 | dynamic | 344 | Apache-2.0 AND BSD-2-Clause AND BSD-3-Clause AND ISC AND MIT AND OpenSSL AND LGPL-2.1-or-later |
+| `lpmake` | android-tools | 37.0.0p1 | dynamic | 389 | Apache-2.0 AND BSD-2-Clause AND BSD-3-Clause AND ISC AND MIT AND OpenSSL AND LGPL-2.1-or-later |
 | `alt-list` | (module script) | | | | MIT |
 
 `$ALTSHARE/MANIFEST.json` (and `dist/MANIFEST-v2.json`) records per tool the recipe, upstream version, source
@@ -216,7 +367,10 @@ URL and sha256, how the checksum was verified, licence, patches, dependencies, l
 
 - Toolchain: Android NDK r30 (LTS, 30.0.16248370) from dl.google.com, verified with Google's published SHA-1
   and a pinned SHA-256, in a Debian trixie-slim image pinned by digest (packages from snapshot.debian.org). The
-  image also has Go 1.27.3 (dl.google.com, pinned size and SHA-256) for eCapture and `bc` for its kernel headers.
+  image also has Go 1.27.3 (dl.google.com, pinned size and SHA-256) for eCapture and fzf, `bc` for eCapture's kernel
+  headers, Rust 1.99.1 (static.rust-lang.org: `rustc`, `cargo` and the `aarch64-linux-android` standard library, pinned
+  sizes and SHA-256) for ripgrep and fd, and the builder's own libelf/zlib headers for the native bpftool that
+  generates the libbpf-tools skeletons.
 - Target `aarch64-linux-android35`. API 35 (Android 15) is the floor, so bionic functions up to API 35 are used directly. `ndk/lib/api-site.py` generates a `CONFIG_SITE` that
   marks every bionic function introduced after API 35 as unavailable (the static `libc.a` contains them, so
   configure link tests would otherwise find them).
@@ -224,14 +378,18 @@ URL and sha256, how the checksum was verified, licence, patches, dependencies, l
   netd client, so `getaddrinfo()` in a static binary cannot reach Android's resolver. Dynamic: nft, ipset, wg,
   bridge, ip-ng, tc-ng, ss-ng, mount.cifs, iperf3, tcpdump, curl, dig, host, mtr, socat, rsync, traceroute-ng,
   arping-ng, tracepath-ng, ncat, iftop, wg-quick, awg, awg-quick, nmap, nping, openssl, dropbear, dbclient/ssh, scp,
-  dropbearkey, dropbearconvert, gdbserver, ltrace, fio. Everything else is static. C++ programs (nmap, nping,
-  gdbserver) link the NDK libc++ statically.
+  dropbearkey, dropbearconvert, gdbserver, ltrace, fio, nstat, ifstat, lnstat, genl, devlink, rtmon, nslookup, delv,
+  nsupdate, procan, filan, rg, fd, mount.nfs (and its three other names), git, adb, fastboot, simg2img, img2simg,
+  lpunpack, lpmake. Everything else is static. C++ programs (nmap, nping, gdbserver, lldb-server, the android-tools
+  programs) link the NDK libc++ statically.
 - DNS: no resolv.conf is read or written. Dynamic tools resolve names through bionic/netd. `drill` (ldns) talks
   to a DNS server directly; without `@server` its wrapper adds `@<first DNS server of the active default
   network>` from `$ALTSHARE/dns-servers` (`dumpsys connectivity`, `getprop net.dns1/net.dns2` fallback; never a
   public resolver). `dig` and `host` (BIND) get the same servers through `ALT_DNS_SERVERS`, which their wrapper
   exports and a small dighost.c patch uses when neither `@server` (host: the server argument) nor a resolv.conf
-  names one.
+  names one. `nslookup`, `delv` and `nsupdate` (BIND) have the same wrapper; for `delv` and `nsupdate` BIND's
+  resolv.conf reader takes `ALT_DNS_SERVERS` in place of its localhost fallback (`delv @server` and nsupdate's
+  `server` command still win).
 - TLS/CA: curl uses mbedTLS 3.6 LTS with the Mozilla bundle from curl.se (pinned by sha256) as
   `$ALTDIR/etc/ssl/cert.pem`; the wrapper also passes `--capath /system/etc/security/cacerts` (or the conscrypt
   apex store) when present. mbedTLS loads every file of the directory, which works with Android's old-style
@@ -277,6 +435,42 @@ URL and sha256, how the checksum was verified, licence, patches, dependencies, l
   single-threaded, no FUSE) and squashfs-tools 4.7.5 (`mksquashfs`, `unsquashfs`; gzip, xz, lz4, zstd), with the
   zstd, xz and lz4 libraries of those recipes and the NDK zlib. dtc 1.8.1 with `fdtdump`, `fdtget`, `fdtput`,
   `fdtoverlay` (no YAML output). fatrace 0.19.1 reports file access events system-wide (fanotify, root).
+- util-linux 2.42.4 also provides `nsenter-ng`, `unshare-ng`, `lsns`, `losetup`, `dmesg`, `wipefs`, `fallocate`,
+  `zramctl`, `taskset`, `chrt`, `ionice`, `prlimit`, `rfkill`, `hexdump` and `script`; libcap `getcap`/`setcap`;
+  libcap-ng `pscap`, `netcap`, `filecap`; e2fsprogs `debugfs`, `dumpe2fs`, `e2image`, `filefrag`; f2fs-tools
+  `mkfs.f2fs`, `resize.f2fs`, `sload.f2fs` (no SELinux labelling), `f2fs_io`; iproute2 `nstat`, `ifstat`, `lnstat`,
+  `genl`, `devlink`, `rtmon`; binutils `objcopy`, `strip`, `size`, `ar`, `c++filt`, `elfedit`; elfutils `eu-strip`,
+  `eu-elflint`, `eu-elfcmp`, `eu-size`, `eu-elfclassify`; sqlite `sqldiff` and `sqlite3_rsync`; sysstat `sar` (its
+  collector `sadc` is in `$ALTDIR/libexec`; daily files default to `/data/local/var/log/sa`); squashfs-tools
+  `sqfstar`, `sqfscat`; socat `procan`, `filan`. Names that a device already has (`dmesg`, `losetup`, `hexdump`,
+  `taskset`, `strip`, ...) are renamed to `<name>-ng` by the installer; `nsenter-ng` and `unshare-ng` always carry
+  the suffix.
+- bcc libbpf-tools 0.37.0: the 57 CO-RE tools of upstream's `libbpf-tools/` (`execsnoop`, `opensnoop`, `tcpconnect`,
+  `biolatency`, `runqlat`, `offcputime`, `profile`, ...), each a static program with its BPF object embedded. They
+  need root and a kernel with BTF (`/sys/kernel/btf/vmlinux`). Upstream's alias names are not installed: use
+  `fsdist -t ext4` / `fsslower -t f2fs` (and so on) and `sigsnoop -k`.
+- lldb-server: from LLVM 23.1.5 (the release bpftrace's LLVM is built from), static, for remote debugging with
+  lldb (`lldb-server platform --listen '*:5039' --server` or `lldb-server gdbserver :5039 -- program`).
+- rizin 0.9.1: upstream's Android configuration, one static program with the bundled capstone, tree-sitter and
+  compression libraries; `rz-bin`, `rz-asm`, `rz-hash`, `rz-diff`, `rz-find`, `rz-gg`, `rz-ax`, `rz-run`, `rz-sign`
+  and `rz-ar` are commands that start it as that program. Data files are in `$ALTDIR/share/rizin`.
+- android-tools 37.0.0p1: `adb`, `fastboot`, `simg2img`, `img2simg`, `lpunpack`, `lpmake` from the AOSP sources in
+  the nmeum/android-tools CMake packaging, with its bundled libusb (usbfs, no udev), fmt and BoringSSL, and
+  protobuf 3.21.12, brotli, PCRE2, lz4 and zstd from this tree. `adb` keeps its key pair in `$HOME/.android`; the
+  wrapper sets `HOME=/data/local/tmp` when `HOME` is unset or not writable. No mDNS discovery.
+- git 2.56.1: with the https/http transport (libcurl with mbedTLS, CA file `$ALTDIR/etc/ssl/cert.pem`); ssh
+  remotes use the `ssh` command in `PATH` (the module's dbclient). No Perl, Python or Tcl/Tk parts (`git add -p`
+  is built in; no `git svn`, `git send-email`, gitk) and no WebDAV push. `git submodule`, `git mergetool`,
+  `git request-pull`, `git filter-branch` and `git quiltimport` are shell scripts in `$ALTDIR/share/git-core`,
+  started through aliases in `$ALTDIR/etc/gitconfig` with the module's bash. Pager `less`, default editor `nano`
+  (`GIT_EDITOR`/`core.editor` override it). `git-upload-pack`, `git-receive-pack` and `git-upload-archive` are
+  commands for serving a repository over ssh.
+- ripgrep 15.2.0 (`rg`) and fd 10.5.2: built with cargo from their `Cargo.lock`; fd uses the system allocator
+  (no bundled jemalloc), ripgrep is built without the optional PCRE2 engine. fzf 0.75.0 (Go, static). ncdu 1.22
+  (the C line) with the module's terminfo. picocom 2024-07 (serial terminal; custom baud rates, flock locking).
+- mount.nfs (nfs-utils 2.9.2, libtirpc 1.3.8): the NFS mount helper under its four upstream names (`mount.nfs`,
+  `mount.nfs4`, `umount.nfs`, `umount.nfs4`), for kernels with the NFS client. NFSv4: `mount.nfs4 server:/export
+  /mnt/point -o vers=4.2`. No GSS/Kerberos, no idmapd, no statd (NFSv3 mounts need `-o nolock`).
 - WireGuard/AmneziaWG: `wg`, `awg` and the upstream Android `wg-quick`/`awg-quick` (`src/wg-quick/android.c`, a
   C program: no bash needed; it drives the stock `ip`, `iptables`, `ndc` and the netd DnsResolver over binder).
   awg-quick is patched to use the kernel `amneziawg` link type when the kernel has it, before falling back to
@@ -299,7 +493,8 @@ JOBS=8 MEM=12G ./build-ndk.sh  # make -j and memory limit (defaults)
   dropped and `/src` read-only) and systemd. The run is wrapped in `systemd-run --user --scope
   -p MemoryMax=$MEM -p MemorySwapMax=0`, and the same limit is passed as `docker run --memory/--memory-swap`,
   which is what actually bounds the compilers. Network access is needed for the image and the source downloads
-  (including eCapture's Go modules, kept in `.work/ndk/dl/go-mod`; a rebuild with that cache runs offline).
+  (including the Go modules of eCapture and fzf, kept in `.work/ndk/dl/go-mod`, and the Rust crates of ripgrep
+  and fd, kept in `.work/ndk/dl/cargo-home`; a rebuild with those caches runs offline).
 - Everything else (NDK, autotools, meson, python, zip) is inside the image. Scratch space is `.work/ndk/`
   (`dl/` sources, `build/` trees and logs, `out/` binaries, `stage/`). Output: `dist/android-linux-tools-<ver>.zip`,
   its `.sha256` file, `dist/MANIFEST-v2.json` and `dist/phone-test.sh`.
@@ -307,12 +502,12 @@ JOBS=8 MEM=12G ./build-ndk.sh  # make -j and memory limit (defaults)
   `ndk/lib/env.sh` (cross environment), `ndk/build.conf` (`V2_VERSION`, `MODULE_RELEASE`, `SOURCE_DATE_EPOCH`),
   `ndk/recipes.list` (build order), `ndk/recipes/<name>.sh`, `ndk/patches/<name>/*.patch`, `ndk/tools.tsv`
   (wrapper name, recipe, program, fixed arguments, DNS flag; in module order), `ndk/module/` (`customize.sh`,
-  `alt-list`, `dns-servers`, `openssl.cnf`, `META-INF/`), `ndk/package.sh` and `ndk/scripts/` (`stage.py`, `check.py`,
+  `alt-list`, `dns-servers`, `openssl.cnf`, `git/gitconfig`, `META-INF/`), `ndk/package.sh` and `ndk/scripts/` (`stage.py`, `check.py`,
   `manifest.py`, `layout_test.py`, `common.py`), `phone-test.sh` (self-check script).
 - Recipes: `VERSION`, `URL`, `SHA256`, `CHECKSUM_SOURCE` (signature key fingerprint or the published checksum
   the sha256 was verified against when pinning), `LICENSE`, `DEPS`, optional `LINKAGE=dynamic`, `EXTRA_SRCS`
   (e.g. bash's official patch series) and a `build()` function. Runtime data of a program (nmap's,
-  ltrace's and bpftrace's tool scripts) goes to `/work/out/data/rt/<recipe>/<path under $ALTDIR>` and is merged into the runtime tree. Each recipe builds against a private sysroot
+  ltrace's, bpftrace's tool scripts, git's templates and scripts, rizin's data files) goes to `/work/out/data/rt/<recipe>/<path under $ALTDIR>` and is merged into the runtime tree. Each recipe builds against a private sysroot
   with only its declared dependencies and is cached by a hash of recipe, patches, environment and dependency
   hashes. A failed recipe stops the build before packaging.
 - Patches are applied in order; each starts with a header saying why and citing its source (termux-packages,
@@ -349,6 +544,15 @@ JOBS=8 MEM=12G ./build-ndk.sh  # make -j and memory limit (defaults)
 - v2.5-r1: adds eCapture, the elfutils programs eu-stack, eu-readelf, eu-nm, eu-unstrip and eu-addr2line, GNU
   binutils objdump, nm, addr2line, readelf and strings, patchelf, dtc (with fdtdump, fdtget, fdtput, fdtoverlay),
   erofs-utils, squashfs-tools, fatrace and bpftrace's tool scripts; the builder image gains Go and `bc`.
+- v2.6-r1: adds the bcc libbpf-tools, lldb-server, rizin, android-tools (adb, fastboot, simg2img, img2simg,
+  lpunpack, lpmake), git, ripgrep, fd, fzf, ncdu, picocom and mount.nfs, and more programs of sources already
+  built: util-linux (nsenter-ng, unshare-ng, lsns, losetup, dmesg, wipefs, fallocate, zramctl, taskset, chrt,
+  ionice, prlimit, rfkill, hexdump, script), libcap (getcap, setcap), libcap-ng (pscap, netcap, filecap), e2fsprogs
+  (debugfs, dumpe2fs, e2image, filefrag), f2fs-tools (mkfs.f2fs, resize.f2fs, sload.f2fs, f2fs_io), iproute2 (nstat,
+  ifstat, lnstat, genl, devlink, rtmon), BIND (nslookup, delv, nsupdate), binutils (objcopy, strip, size, ar,
+  c++filt, elfedit), elfutils (eu-strip, eu-elflint, eu-elfcmp, eu-size, eu-elfclassify), sqlite (sqldiff,
+  sqlite3_rsync), sysstat (sar), squashfs-tools (sqfstar, sqfscat) and socat (procan, filan); the builder image
+  gains Rust and the builder's libelf/zlib headers.
 
 ## Licences
 

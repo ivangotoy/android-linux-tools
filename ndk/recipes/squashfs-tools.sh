@@ -1,4 +1,4 @@
-# squashfs-tools: mksquashfs, unsquashfs with gzip (zlib), xz, lz4 and zstd
+# squashfs-tools: mksquashfs, unsquashfs, sqfstar, sqfscat with gzip (zlib), xz, lz4 and zstd
 VERSION=4.7.5
 URL=https://github.com/plougher/squashfs-tools/releases/download/$VERSION/squashfs-tools-$VERSION.tar.gz
 SHA256=547b7b7f4d2e44bf91b6fc554664850c69563701deab9fd9cd7e21f694c88ea6
@@ -15,4 +15,7 @@ build() {
     mksquashfs unsquashfs
   install_bin mksquashfs mksquashfs
   install_bin unsquashfs unsquashfs
+  # upstream installs sqfstar and sqfscat as links: same binaries, mode chosen by argv[0]
+  install_bin mksquashfs sqfstar
+  install_bin unsquashfs sqfscat
 }

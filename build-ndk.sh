@@ -51,7 +51,7 @@ mkdir -p "$WORK/build" "$WORK/out" "$WORK/dl" "$WORK/stage" "$ROOT/dist"
 run=(docker run --rm --init --network host
      --memory "$MEM" --memory-swap "$MEM"
      --user "$(id -u):$(id -g)" --security-opt no-new-privileges --cap-drop ALL
-     -e JOBS="$JOBS" -e HOME=/work/build/home -e TMPDIR=/work/build/tmp
+     -e JOBS="$JOBS" -e HOME=/work/build/home -e TMPDIR=/work/build/tmp -e ALT_HOST_HOME="$HOME"
      -v "$ROOT:/src:ro"
      -v "$WORK/build:/work/build" -v "$WORK/out:/work/out" -v "$WORK/dl:/work/dl"
      -v "$WORK/stage:/work/stage" -v "$ROOT/dist:/work/dist")

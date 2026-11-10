@@ -8,6 +8,7 @@ LINKAGE=dynamic
 build() {
   # bionic's struct __res_state is opaque: drop socat's resolver tweak options (lookups use getaddrinfo)
   ac_cv_header_resolv_h=no configure_std --disable-openssl --disable-readline --disable-libwrap --disable-fips
-  make -j"$JOBS" socat
-  install_bin socat socat
+  make -j"$JOBS" socat procan filan
+  local p
+  for p in socat procan filan; do install_bin "$p" "$p"; done
 }

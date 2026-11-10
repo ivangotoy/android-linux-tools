@@ -7,10 +7,12 @@ build() {
   local mk=(CC="$CC" BUILD_CC=gcc AR="$AR" RANLIB="$RANLIB" OBJCOPY="$OBJCOPY" SHARED=no LIBCSTATIC=yes
             PTHREADS=no GOLANG=no PAM_CAP=no USE_GPERF=no COPTS="$CFLAGS -DSHELL=\\\"/system/bin/sh\\\"")
   make -j"$JOBS" -C libcap "${mk[@]}" libcap.a
-  make -j"$JOBS" -C progs "${mk[@]}" capsh getpcaps
+  make -j"$JOBS" -C progs "${mk[@]}" capsh getpcaps getcap setcap
   mkdir -p "$PKGDIR/lib" "$PKGDIR/include/sys"
   cp libcap/libcap.a "$PKGDIR/lib/"
   cp libcap/include/sys/capability.h "$PKGDIR/include/sys/"
   install_bin progs/capsh capsh
   install_bin progs/getpcaps getpcaps
+  install_bin progs/getcap getcap
+  install_bin progs/setcap setcap
 }

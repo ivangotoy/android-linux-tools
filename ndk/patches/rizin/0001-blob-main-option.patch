@@ -1,0 +1,34 @@
+Subject: blob: select the program with --blob-main=<name>
+
+Why: the blob build (upstream's Android configuration, -Dblob=true) is one executable that picks
+rizin, rz-bin, rz-asm, ... from the basename of argv[0]; upstream installs the companion programs
+as symbolic links to it. The module's commands are shell wrappers that exec one file in the runtime
+libexec directory, so argv[0] is always "rizin" (/system/bin/sh cannot set argv[0] portably).
+"rizin --blob-main=rz-bin args" runs rz-bin with argv[0] = "rz-bin"; without the option the
+behaviour is unchanged.
+Source: written for this module (see ndk/REFERENCES.md).
+
+--- a/binrz/blob/main.c
++++ b/binrz/blob/main.c
+@@ -8,12 +8,20 @@
+ int MAIN_NAME(int argc, const ARGV_TYPE **argv) {
+ 	char **utf8_argv = ARGV_TYPE_TO_UTF8(argc, argv);
+ 	const char *prog_name = rz_file_basename(utf8_argv[0]);
++	int arg_off = 0;
++	/* "rizin --blob-main=<program> [args]" runs <program> of the blob, for callers
++	 * that cannot choose argv[0] (a shell wrapper that execs one installed file) */
++	if (argc > 1 && !strncmp(utf8_argv[1], "--blob-main=", 12)) {
++		utf8_argv[1] += 12;
++		prog_name = utf8_argv[1];
++		arg_off = 1;
++	}
+ 	RzMainCallback main_cb = rz_main_find(prog_name);
+ 	if (!main_cb) {
+ 		RZ_LOG_ERROR("rizin: Cannot find main for '%s'. using rizin instead\n", prog_name);
+ 		main_cb = rz_main_rizin;
+ 	}
+-	int rc = main_cb(argc, (const char **)utf8_argv);
++	int rc = main_cb(argc - arg_off, (const char **)utf8_argv + arg_off);
+ 	FREE_UTF8_ARGV(argc, utf8_argv);
+ 	return rc;
+ }
