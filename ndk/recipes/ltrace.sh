@@ -5,6 +5,9 @@ SHA256=11c85a1353fcf2b5438b19d0ccc2d376c96656ce6f11cf9537e3a92b84392c58
 CHECKSUM_SOURCE="no upstream signature or published checksum: GitLab archive of tag $VERSION (commit 7ef6e6097586b751cce298c256a919404dab259d), sha256 pinned at download; the same sha256 is in termux-packages packages/ltrace/build.sh"
 LICENSE=GPL-2.0-or-later
 DEPS="elfutils"
+# libtool links the program against the system libc.so/libz.so (plain -static in LDFLAGS does not make a libtool
+# program static), as README and REFERENCES describe; elfutils' libelf and libc++abi are linked statically
+LINKAGE=dynamic
 build() {
   ./autogen.sh
   # configure accepts only linux-gnu host systems; the backend is the same for bionic (patched)
