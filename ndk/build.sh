@@ -22,12 +22,14 @@ load_recipe() {
   SRCDIR=${SRCDIR:-$NAME-$VERSION}
 }
 
-# recipe_hash NAME: identity of a recipe = recipe file + patches + env + builder image (Dockerfile: NDK, Go, Rust
-# and Debian pins) + dependency hashes, so a toolchain bump rebuilds every recipe
+# recipe_hash NAME: identity of a recipe = recipe file + patches + files the recipe copies from ndk/module/NAME/
+# (git: gitconfig) + env + builder image (Dockerfile: NDK, Go, Rust and Debian pins) + dependency hashes, so a
+# toolchain bump rebuilds every recipe
 recipe_hash() {
   local n=$1 d h
   h=$( { cat "$(recipe_file "$n")" /src/ndk/lib/env.sh /src/ndk/lib/api-site.py /src/ndk/build.sh /src/ndk/Dockerfile;
          [ -d "/src/ndk/patches/$n" ] && find "/src/ndk/patches/$n" -type f | sort | xargs cat;
+         [ -d "/src/ndk/module/$n" ] && find "/src/ndk/module/$n" -type f | sort | xargs cat;
          for d in $(deps_of "$n"); do recipe_hash "$d"; done; } | sha256sum | cut -c1-16)
   echo "$h"
 }
