@@ -1,7 +1,9 @@
 # ci/github-release.py: the GitHub token must not follow a redirect to another host.
 import http.server
 import importlib.util
+import json
 import os
+import subprocess
 import sys
 import threading
 import unittest
@@ -60,6 +62,45 @@ class TokenOnRedirect(unittest.TestCase):
         self.assertEqual(seen.get('origin'), 'Bearer example-token')
         self.assertIn('target', seen)
         self.assertIsNone(seen['target'], 'token was sent to the redirect target')
+
+
+class EmptyChecksumAsset(unittest.TestCase):
+    def test_empty_sha256_asset_is_reported_by_die(self):
+        files = {'m.zip': b'zip bytes', 'm.zip.sha256': b''}
+
+        class Forgejo(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                port = self.server.server_address[1]
+                if self.path == '/api/v1/repos/o/r/releases/tags/v1.0-r1':
+                    assets = [{'name': n, 'size': len(d), 'browser_download_url': 'http://127.0.0.1:%d/dl/%s' % (port, n)}
+                              for n, d in files.items()]
+                    body = json.dumps({'tag_name': 'v1.0-r1', 'draft': False, 'assets': assets}).encode()
+                elif self.path.startswith('/dl/'):
+                    body = files[self.path[4:]]
+                else:
+                    self.send_response(404)
+                    self.end_headers()
+                    return
+                self.send_response(200)
+                self.send_header('Content-Length', str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *a):
+                pass
+
+        srv = server('127.0.0.1', Forgejo)
+        try:
+            r = subprocess.run([sys.executable, '-I', '-B', os.path.join(TREE, 'ci', 'github-release.py'),
+                                '--forgejo-api', 'http://127.0.0.1:%d/api/v1' % srv.server_address[1],
+                                '--repo', 'o/r', '--github-repo', 'o/r', '--tag', 'v1.0-r1', '--dry-run'],
+                               capture_output=True, text=True, timeout=60, env={'PATH': os.environ.get('PATH', '')})
+        finally:
+            srv.shutdown()
+            srv.server_close()
+        self.assertEqual(r.returncode, 1, r.stderr)
+        self.assertNotIn('Traceback', r.stderr)
+        self.assertIn('github-release: m.zip.sha256', r.stderr)
 
 
 if __name__ == '__main__':

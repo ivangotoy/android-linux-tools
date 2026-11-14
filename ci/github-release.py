@@ -153,7 +153,8 @@ def main():
             base = name[:-len('.sha256')]
             if base not in files:
                 die('%s has no matching file' % name)
-            if data.split()[0].decode() != sums[base]:
+            # first field of "<sha256>  <name>"; an empty or non-text file simply does not match
+            if data.split()[:1] != [sums[base].encode()]:
                 die('%s does not match %s' % (name, base))
         elif name + '.sha256' not in files:
             die('%s has no .sha256 asset' % name)
