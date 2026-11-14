@@ -511,7 +511,8 @@ JOBS=8 MEM=12G ./build-ndk.sh  # make -j and memory limit (defaults)
   with only its declared dependencies and is cached by a hash of recipe, patches, the files it copies from
   `ndk/module/<recipe>/` (git's `gitconfig`), environment, `SOURCE_DATE_EPOCH`, builder image (`ndk/Dockerfile`)
   and dependency hashes.
-  A failed recipe stops the build before packaging.
+  A failed recipe stops the build before packaging. All recipes share `.work/ndk/dl/`: the build stops before any
+  download if two recipes name different files (different SHA256) the same.
 - Patches are applied in order; each starts with a header saying why and citing its source (termux-packages,
   buildroot, or written for this module).
 - Reproducible: two `./build-ndk.sh --clean` runs give byte-identical binaries, ZIP and MANIFEST

@@ -147,9 +147,42 @@ PY
   rm -rf "$h"
 }
 
+# dl/ is shared by every recipe: two different files under one download name must stop the build before any
+# fetch; the same name with the same sha256 (one file used by several recipes) stays allowed
+case_dl_collision() {
+  local h sa sb
+  h=$(new_tree)
+  mkdir -p "$h/src/fx/a" "$h/src/fx/b" "$h/fx-src/x-1"
+  echo a > "$h/fx-src/x-1/hello.txt"; tar -C "$h/fx-src" -czf "$h/src/fx/a/x-1.tar.gz" x-1
+  echo b > "$h/fx-src/x-1/hello.txt"; tar -C "$h/fx-src" -czf "$h/src/fx/b/x-1.tar.gz" x-1
+  sa=$(sha256sum "$h/src/fx/a/x-1.tar.gz" | cut -d' ' -f1); sb=$(sha256sum "$h/src/fx/b/x-1.tar.gz" | cut -d' ' -f1)
+  recipe "$h" alta file:///src/fx/a/x-1.tar.gz "$sa" 'cat hello.txt'
+  recipe "$h" altb file:///src/fx/b/x-1.tar.gz "$sb" 'cat hello.txt'
+  printf 'SRCDIR=x-1\n' >> "$h/src/ndk/recipes/alta.sh"; printf 'SRCDIR=x-1\n' >> "$h/src/ndk/recipes/altb.sh"
+  if build "$h" alta altb > "$h/run1.txt" 2>&1; then
+    bad "dl collision: alta and altb (x-1.tar.gz, different sha256) both built"
+  elif grep -q ' fetch ' "$h/run1.txt"; then
+    bad "dl collision: build failed, but only after a fetch: $(grep -m1 ' fetch ' "$h/run1.txt")"
+  elif grep -q 'x-1.tar.gz' "$h/run1.txt"; then
+    ok "dl collision: different files under one download name stop the build before any fetch"
+  else
+    bad "dl collision: build failed without naming x-1.tar.gz: $(tail -n 2 "$h/run1.txt" | tr '\n' ' ')"
+  fi
+  rm -rf "$h/work"/*
+  recipe "$h" altb file:///src/fx/a/x-1.tar.gz "$sa" 'cat hello.txt'
+  printf 'SRCDIR=x-1\n' >> "$h/src/ndk/recipes/altb.sh"
+  if build "$h" alta altb > "$h/run2.txt" 2>&1; then
+    ok "dl collision: one file shared by two recipes (same name, same sha256) builds"
+  else
+    bad "dl collision: same name and sha256 refused: $(tail -n 2 "$h/run2.txt" | tr '\n' ' ')"
+  fi
+  rm -rf "$h"
+}
+
 case_module_input
 case_failed_rebuild
 case_source_date_epoch
 case_fetch_stall
 case_cacert_licence
+case_dl_collision
 [ "$FAILS" -eq 0 ]

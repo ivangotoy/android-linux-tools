@@ -139,12 +139,30 @@ PY
   DONE[$n]=1
 }
 
+# check_dl_names RECIPE...: the recipes and their dependencies share one download directory ($DL, files by
+# name): two different files (different SHA256) under one name would replace each other there. Fail before any
+# fetch; one name with one SHA256 (the same file used by several recipes) is fine.
+check_dl_names() {
+  local r x clash
+  clash=$(for r in $( { for x in "$@"; do all_deps "$x"; echo "$x"; done; } | awk '!seen[$0]++'); do
+            ( load_recipe "$r"
+              echo "$TARBALL $SHA256 $r"
+              for x in "${EXTRA_SRCS[@]}"; do echo "$(basename "${x% *}") ${x##* } $r"; done )
+          done | sort | awk '$1 == n && $2 != s {print n ": " s " (" r ") and " $2 " (" $3 ")"} {n = $1; s = $2; r = $3}')
+  if [ -n "$clash" ]; then
+    log "download name used for different files (set TARBALL or rename): $clash"
+    exit 1
+  fi
+}
+
 if [ $# -gt 0 ]; then
+  check_dl_names "$@"
   for t in "$@"; do build_one "$t"; done
   log "done (recipes only: $*)"
   exit 0
 fi
 
+check_dl_names $(grep -v '^#' /src/ndk/recipes.list)
 FAILED=()
 for t in $(grep -v '^#' /src/ndk/recipes.list); do
   # outside any conditional, so set -e stays in force inside build_one (see there)
