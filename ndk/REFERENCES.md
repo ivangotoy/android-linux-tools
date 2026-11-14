@@ -540,6 +540,10 @@ Chosen approach: download the immutable dated copy https://curl.se/ca/cacert-202
 `427c0642...97285`) and install it as `data/cacert.pem`. stage.py places it at `$ALTDIR/etc/ssl/cert.pem`
 (module `system/etc/android-linux-tools/etc/ssl/cert.pem`).
 CHECKSUM_SOURCE: https://curl.se/ca/cacert.pem.sha256 (the same file as cacert.pem on 2026-11-05).
+Licence text: the bundle has no licence file, so the recipe fetches the MPL-2.0 text from SPDX license-list-data
+by commit (tag v3.29.0 = 31ba1a50e5397e00a304dbadc76531740e89ee48, `text/MPL-2.0.txt`, sha256 `66a3107d...d5172`
+recorded at pin time; mozilla.org's index.txt is the same text except trailing spaces but is not versioned) and
+ships it as `share/licenses/ndk/cacert/LICENSE.MPL-2.0.txt`.
 
 Why: the Mozilla bundle does not depend on the device. The Android store reflects the device's trust settings,
 but user-disabled CAs are not honoured by a plain capath read [I]. Shipping both gives a working default on every

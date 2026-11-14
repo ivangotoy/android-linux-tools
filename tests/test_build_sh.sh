@@ -117,8 +117,39 @@ case_source_date_epoch() {
   rm -rf "$h"
 }
 
+# the real cacert recipe (offline: its downloads are placed in dl/ and the recipe's pins are set to them) must
+# leave the MPL-2.0 text of the CA bundle in out/licenses/cacert/ for stage.py's licence rows
+case_cacert_licence() {
+  local h v; h=$(new_tree)
+  mkdir -p "$h/work/dl"
+  v=$(sed -n 's/^VERSION=//p' "$ALT_TREE/ndk/recipes/cacert.sh")
+  printf '## example CA bundle\n-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----\n' > "$h/work/dl/cacert-$v.pem"
+  printf 'Mozilla Public License Version 2.0\n==================================\n(example text)\n' > "$h/work/dl/MPL-2.0.txt"
+  python3 -I - "$ALT_TREE/ndk/recipes/cacert.sh" "$h/src/ndk/recipes/cacert.sh" "$h/work/dl/cacert-$v.pem" "$h/work/dl/MPL-2.0.txt" <<'PY'
+import hashlib, re, sys
+src, dst, pem, mpl = sys.argv[1:5]
+sha = lambda p: hashlib.sha256(open(p, 'rb').read()).hexdigest()
+out = []
+for line in open(src):
+    if line.startswith('SHA256='):
+        line = 'SHA256=%s\n' % sha(pem)
+    elif 'MPL-2.0.txt' in line:
+        line = re.sub(r'[0-9a-f]{64}', sha(mpl), line)
+    out.append(line)
+open(dst, 'w').write(''.join(out))
+PY
+  build "$h" cacert > "$h/run.txt" 2>&1 || { bad "cacert: build failed: $(tail -n 3 "$h/run.txt" | tr '\n' ' ')"; rm -rf "$h"; return; }
+  if grep -l -s 'Mozilla Public License Version 2.0' "$h/work/out/licenses/cacert/"* > /dev/null; then
+    ok "cacert: MPL-2.0 text in out/licenses/cacert ($(ls "$h/work/out/licenses/cacert" | tr '\n' ' '))"
+  else
+    bad "cacert: no MPL-2.0 text in out/licenses/cacert ($(ls "$h/work/out/licenses/cacert" 2>/dev/null | tr '\n' ' '))"
+  fi
+  rm -rf "$h"
+}
+
 case_module_input
 case_failed_rebuild
 case_source_date_epoch
 case_fetch_stall
+case_cacert_licence
 [ "$FAILS" -eq 0 ]

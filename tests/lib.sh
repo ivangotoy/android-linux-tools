@@ -1,7 +1,7 @@
 # Helpers for the shell tests (sourced). ALT_TREE = source tree under test, scratch below $TMPDIR.
 set -u
 ALT_TOOLS="bash sh cat cp mv rm ln mkdir touch chmod ls basename dirname date tee sed grep awk cut sort uniq paste
-  xargs find head tail tr wc sha256sum tar gzip curl patch unzip zip python3 env true false sleep"
+  xargs find head tail tr wc sha256sum install tar gzip curl patch unzip zip python3 env true false sleep"
 alt_scratch() {
   local d
   d=$(mktemp -d "$TMPDIR/alt-test.XXXXXX") || exit 2
