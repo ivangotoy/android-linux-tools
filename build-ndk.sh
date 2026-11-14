@@ -9,7 +9,7 @@ JOBS=${JOBS:-8}
 MEM=${MEM:-12G}
 
 usage() {
-  echo "usage: ./build-ndk.sh [--clean] [--image-only] [--shell] [tool...]"
+  echo "usage: ./build-ndk.sh [--clean|--clean-all] [--image-only] [--shell] [tool...]"
   echo "  --clean       delete .work/ndk/{build,out,stage} and dist/ before building (downloads are kept)"
   echo "  --clean-all   like --clean and also delete the downloaded sources"
   echo "  --image-only  only build the container image"
