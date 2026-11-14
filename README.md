@@ -568,6 +568,7 @@ the wrappers, `alt-list`, `customize.sh`, `dns-servers`, `openssl.cnf` and `phon
 
 The bundled third-party tools keep their upstream licences. Their SPDX identifiers are listed in
 `share/licenses/NOTICE.txt` inside the module and in `MANIFEST.json`; the licence files each package ships
-are in `share/licenses/ndk/<package>/`, next to the patches applied to it. The patches in `ndk/patches/` (and
+are in `share/licenses/ndk/<package>/`, next to the patches applied to it. The notices of the Android NDK's C
+library (bionic, linked into every program) and sysroot headers are in `share/licenses/ndk/android-ndk-sysroot/NOTICE`. The patches in `ndk/patches/` (and
 those copies) keep the terms of their upstream authors. The source of every bundled tool is the upstream
 tarball named, with its sha256, in its recipe and in `MANIFEST.json`, plus the patches in `ndk/patches/`.

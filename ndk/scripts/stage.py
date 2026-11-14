@@ -237,6 +237,18 @@ for rname in sorted({e['recipe'] for e in entries} | {d for e in entries for d i
             files.append('share/licenses/ndk/%s/%s' % (rname, f))
     lic_rows.append({'source': 'ndk', 'name': rname, 'version': mt['version'], 'license': mt['license'],
                      'url': mt['url'], 'sha256': mt['sha256'], 'patches': mt['patches'], 'license_files': files})
+# bionic (the NDK's libc.a/libm.a/libdl.a and start files) is linked into every program and its sysroot headers
+# are compiled in: the notices of the NDK sysroot, with the NDK archive the builder image verified (ndk/Dockerfile)
+ndk_sha = re.search(r'^ARG NDK_SHA256=([0-9a-f]{64})$', open(os.path.join(SRC, 'ndk', 'Dockerfile')).read(), re.M)
+if not NDK_RELEASE or not ndk_sha:
+    raise SystemExit('NDK_RELEASE (builder image) or ARG NDK_SHA256 (ndk/Dockerfile) not set')
+copyfile(os.path.join(os.environ['SYSROOT'], 'NOTICE'),
+         os.path.join(ST, 'share', 'licenses', 'ndk', 'android-ndk-sysroot', 'NOTICE'), 0o644)
+lic_rows.append({'source': 'ndk', 'name': 'android-ndk-sysroot', 'version': NDK_RELEASE,
+                 'license': 'LicenseRef-NDK-sysroot-NOTICE',
+                 'url': 'https://dl.google.com/android/repository/android-ndk-%s-linux.zip' % NDK_RELEASE,
+                 'sha256': ndk_sha.group(1), 'patches': [],
+                 'license_files': ['share/licenses/ndk/android-ndk-sysroot/NOTICE']})
 notice = ['Android Linux tools %s - third-party licences' % VERSION, '',
           'The module\'s own files (wrappers, alt-list, customize.sh, dns-servers, openssl.cnf, phone-test.sh) and the build',
           'scripts in %s are MIT licensed:' % REPO_URL,
