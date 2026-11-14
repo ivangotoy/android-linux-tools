@@ -100,7 +100,25 @@ PY
   rm -rf "$h"
 }
 
+# SOURCE_DATE_EPOCH (ndk/build.conf) is exported into every build: a new value must rebuild the recipe
+case_source_date_epoch() {
+  local h sha; h=$(new_tree)
+  sha=$(tarball "$h" altsde)
+  recipe "$h" altsde file:///src/fx/altsde-1.tar.gz "$sha" \
+    'mkdir -p "$OUT/data"; echo "$SOURCE_DATE_EPOCH" > "$OUT/data/altsde"'
+  build "$h" altsde > "$h/run1.txt" 2>&1 || { bad "SOURCE_DATE_EPOCH: first build failed"; return; }
+  sed -i 's/^SOURCE_DATE_EPOCH=.*/SOURCE_DATE_EPOCH=1700000000/' "$h/src/ndk/build.conf"
+  build "$h" altsde > "$h/run2.txt" 2>&1 || { bad "SOURCE_DATE_EPOCH: second build failed"; return; }
+  if [ "$(cat "$h/work/out/data/altsde")" = 1700000000 ]; then
+    ok "SOURCE_DATE_EPOCH: a new value rebuilds the recipe"
+  else
+    bad "SOURCE_DATE_EPOCH: new value in build.conf, the cached build still has $(cat "$h/work/out/data/altsde")"
+  fi
+  rm -rf "$h"
+}
+
 case_module_input
 case_failed_rebuild
+case_source_date_epoch
 case_fetch_stall
 [ "$FAILS" -eq 0 ]
