@@ -64,6 +64,43 @@ case_failed_rebuild() {
   rm -rf "$h"
 }
 
+# a download that stalls (connection open, no data) must time out and be retried, not hang the build
+case_fetch_stall() {
+  local h sha port spid rc i; h=$(new_tree)
+  sha=$(tarball "$h" altnet)
+  cat > "$h/server.py" <<'PY'
+import socket, sys
+# first connection: accepted and never answered; later ones get the tarball
+data = open(sys.argv[1], 'rb').read()
+s = socket.socket()
+s.bind(('127.0.0.1', 0))
+s.listen(8)
+open(sys.argv[2], 'w').write(str(s.getsockname()[1]))
+held = [s.accept()[0]]
+while True:
+    c, _ = s.accept()
+    c.recv(65536)
+    c.sendall(b'HTTP/1.0 200 OK\r\nContent-Length: %d\r\n\r\n' % len(data) + data)
+    c.close()
+PY
+  python3 -I "$h/server.py" "$h/src/fx/altnet-1.tar.gz" "$h/port" & spid=$!
+  for i in $(seq 50); do [ -s "$h/port" ] && break; sleep 0.1; done
+  port=$(cat "$h/port")
+  recipe "$h" altnet "http://127.0.0.1:$port/altnet-1.tar.gz" "$sha" 'cat hello.txt'
+  timeout 150 bash -c "$(declare -f alt_bwrap build); build \"\$1\" altnet" _ "$h" > "$h/run.txt" 2>&1
+  rc=$?
+  kill "$spid" 2>/dev/null; wait "$spid" 2>/dev/null
+  if [ "$rc" -eq 0 ] && ls "$h/work/build/stamps/altnet."* >/dev/null 2>&1; then
+    ok "fetch stall: the stalled download timed out and the retry fetched the source"
+  elif [ "$rc" -eq 124 ]; then
+    bad "fetch stall: build.sh still waiting on the stalled download after 150 s"
+  else
+    bad "fetch stall: rc=$rc $(tail -n 3 "$h/run.txt" | tr '\n' ' ')"
+  fi
+  rm -rf "$h"
+}
+
 case_module_input
 case_failed_rebuild
+case_fetch_stall
 [ "$FAILS" -eq 0 ]

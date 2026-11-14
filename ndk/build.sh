@@ -53,11 +53,14 @@ mk_sysroot() {
   return 0
 }
 
+# curl has no transfer timeout of its own: a server that stops sending would hang the build. Less than 1 byte/s
+# for 60 s (or no connection in 30 s) fails the attempt, and --retry starts the next one.
+CURL_FETCH=(curl -fsSL --retry 5 --connect-timeout 30 --speed-limit 1 --speed-time 60)
 fetch() {
   local f="$DL/$TARBALL"
   if [ ! -f "$f" ] || ! echo "$SHA256  $f" | sha256sum -c --quiet - 2>/dev/null; then
     log "fetch $NAME $URL"
-    curl -fsSL --retry 5 -o "$f.part" "$URL"
+    "${CURL_FETCH[@]}" -o "$f.part" "$URL"
     mv "$f.part" "$f"
   fi
   echo "$SHA256  $f" | sha256sum -c --quiet - || { log "SHA256 MISMATCH $NAME $f"; exit 1; }
@@ -67,7 +70,7 @@ fetch() {
     u=${x% *}; h=${x##* }; f="$DL/$(basename "$u")"
     if [ ! -f "$f" ] || ! echo "$h  $f" | sha256sum -c --quiet - 2>/dev/null; then
       log "fetch $NAME $u"
-      curl -fsSL --retry 5 -o "$f.part" "$u"
+      "${CURL_FETCH[@]}" -o "$f.part" "$u"
       mv "$f.part" "$f"
     fi
     echo "$h  $f" | sha256sum -c --quiet - || { log "SHA256 MISMATCH $NAME $f"; exit 1; }
