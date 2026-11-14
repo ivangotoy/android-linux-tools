@@ -26,7 +26,8 @@ REPO_URL = 'https://git.digtvbg.com/ivangotoy/android-linux-tools'
 
 EXTRA_ENV = {
     'mtr': ['export MTR_PACKET="$ALTDIR/libexec/mtr-packet"'],
-    'tmux': ['[ -n "$TMUX_TMPDIR" ] || export TMUX_TMPDIR=/data/local/tmp',
+    # socket directory: the caller's TMPDIR (apps such as Termux cannot write /data/local/tmp)
+    'tmux': ['[ -n "$TMUX_TMPDIR" ] || export TMUX_TMPDIR="${TMPDIR:-/data/local/tmp}"',
              '[ -n "$SHELL" ] || export SHELL=/system/bin/sh'],
     # adb keeps its key pair in $HOME/.android; root's home directory on Android is / (read-only)
     'adb': ['[ -w "${HOME:-/}" ] || export HOME=/data/local/tmp'],

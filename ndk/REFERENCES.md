@@ -1007,8 +1007,9 @@ Chosen approach:
   `7A02B3521DC75C542BA015456AFEE6D49E92B601`.
 - tmux: `CPPFLAGS += -D_PATH_TMP=\"/data/local/tmp/\" -Dreallocarray=tmux_reallocarray`, then `configure_std
   --disable-utf8proc --enable-static` and `make`. Static, with ncursesw and libevent. No patches.
-- The wrapper sets `TMUX_TMPDIR=/data/local/tmp` and `SHELL=/system/bin/sh` when they are unset
-  (`ndk/scripts/stage.py`).
+- The wrapper sets `TMUX_TMPDIR` to the caller's `TMPDIR` (`/data/local/tmp` when that is unset; apps such as
+  Termux cannot write `/data/local/tmp` and have their own `TMPDIR`) and `SHELL=/system/bin/sh` when they are
+  unset (`ndk/scripts/stage.py`).
 - tmux CHECKSUM_SOURCE: upstream publishes no checksum or signature. The sha256 equals the GitHub release asset
   digest.
 
