@@ -36,6 +36,6 @@ jobs:
           set -eu
           case "$TAG" in v[0-9]*) ;; *) echo "bad tag: $TAG"; exit 1 ;; esac
           # Script at this run's commit, read anonymously.
-          curl -fsS -o github-release.py "$SERVER/$REPO/raw/commit/$SHA/ci/github-release.py"
+          curl -fsS --connect-timeout 30 --speed-limit 1 --speed-time 60 -o github-release.py "$SERVER/$REPO/raw/commit/$SHA/ci/github-release.py"
           python3 -I github-release.py --forgejo-api "$API" --repo "$REPO" \
             --github-repo ivangotoy/android-linux-tools --tag "$TAG" --wait-release 7200
