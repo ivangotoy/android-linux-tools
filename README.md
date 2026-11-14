@@ -508,8 +508,8 @@ JOBS=8 MEM=12G ./build-ndk.sh  # make -j and memory limit (defaults)
   the sha256 was verified against when pinning), `LICENSE`, `DEPS`, optional `LINKAGE=dynamic`, `EXTRA_SRCS`
   (e.g. bash's official patch series) and a `build()` function. Runtime data of a program (nmap's,
   ltrace's, bpftrace's tool scripts, git's templates and scripts, rizin's data files) goes to `/work/out/data/rt/<recipe>/<path under $ALTDIR>` and is merged into the runtime tree. Each recipe builds against a private sysroot
-  with only its declared dependencies and is cached by a hash of recipe, patches, environment and dependency
-  hashes. A failed recipe stops the build before packaging.
+  with only its declared dependencies and is cached by a hash of recipe, patches, environment, builder image
+  (`ndk/Dockerfile`) and dependency hashes. A failed recipe stops the build before packaging.
 - Patches are applied in order; each starts with a header saying why and citing its source (termux-packages,
   buildroot, or written for this module).
 - Reproducible: two `./build-ndk.sh --clean` runs give byte-identical binaries, ZIP and MANIFEST
