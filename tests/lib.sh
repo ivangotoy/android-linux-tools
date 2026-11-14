@@ -1,5 +1,7 @@
 # Helpers for the shell tests (sourced). ALT_TREE = source tree under test, scratch below $TMPDIR.
 set -u
+ALT_TOOLS="bash sh cat cp mv rm ln mkdir touch chmod ls basename dirname date tee sed grep awk cut sort uniq paste
+  xargs find head tail tr wc sha256sum tar gzip curl patch unzip zip python3 env true false sleep"
 alt_scratch() {
   local d
   d=$(mktemp -d "$TMPDIR/alt-test.XXXXXX") || exit 2
@@ -14,8 +16,13 @@ alt_bwrap() {
   for l in bin sbin lib lib64; do
     if [ -L "/$l" ]; then ln -sfn "$(readlink "/$l")" "$root/$l"; fi
   done
+  # PATH: only the tools build.sh and package.sh use, as symlinks to the host's programs
+  mkdir -p "$root/alt-path"
+  for l in $ALT_TOOLS; do
+    ln -sfn "$(command -v "$l")" "$root/alt-path/$l" || { echo "tests: missing host tool $l" >&2; exit 2; }
+  done
   bwrap --bind "$root" / --ro-bind /usr /usr --ro-bind /etc /etc --ro-bind "$src" /src --bind "$work" /work \
-    --dev /dev --proc /proc --clearenv --setenv PATH /usr/bin --setenv TMPDIR /work/build/tmp --setenv JOBS 2 \
+    --dev /dev --proc /proc --clearenv --setenv PATH /alt-path --setenv TMPDIR /work/build/tmp --setenv JOBS 2 \
     --setenv HOME /work/build/home "$@"
 }
 FAILS=0

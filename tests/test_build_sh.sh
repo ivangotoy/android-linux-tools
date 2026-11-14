@@ -87,7 +87,7 @@ PY
   for i in $(seq 50); do [ -s "$h/port" ] && break; sleep 0.1; done
   port=$(cat "$h/port")
   recipe "$h" altnet "http://127.0.0.1:$port/altnet-1.tar.gz" "$sha" 'cat hello.txt'
-  timeout 150 bash -c "$(declare -f alt_bwrap build); build \"\$1\" altnet" _ "$h" > "$h/run.txt" 2>&1
+  ALT_TOOLS=$ALT_TOOLS timeout 150 bash -c "$(declare -f alt_bwrap build); build \"\$1\" altnet" _ "$h" > "$h/run.txt" 2>&1
   rc=$?
   kill "$spid" 2>/dev/null; wait "$spid" 2>/dev/null
   if [ "$rc" -eq 0 ] && ls "$h/work/build/stamps/altnet."* >/dev/null 2>&1; then

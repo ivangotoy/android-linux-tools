@@ -2,6 +2,7 @@
 import http.server
 import importlib.util
 import os
+import sys
 import threading
 import unittest
 
@@ -9,6 +10,7 @@ TREE = os.environ['ALT_TREE']
 
 
 def load():
+    sys.dont_write_bytecode = True  # no ci/__pycache__ in the tree under test
     spec = importlib.util.spec_from_file_location('github_release', os.path.join(TREE, 'ci', 'github-release.py'))
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
