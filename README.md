@@ -101,7 +101,7 @@ libLLVM, about 172 MB). The module id is unchanged, so the ZIP installs over eit
 246 commands plus `alt-list`, 230 ELF programs; there is no `lib/` directory. Sizes are of the stripped
 `$ALTDIR/libexec/` programs. Linkage `dynamic` = PIE against the system `libc.so`/`libm.so`/`libdl.so`
 (`libz.so` for curl, nmap, dropbear, ltrace, fio, git and the android-tools programs) only, every third-party library
-linked in statically. Three more programs are in `libexec` without a command of their own: `mtr-packet`, `sadc`
+linked in statically. Four more programs are in `libexec` without a command of their own: `mtr-packet`, `sadc`
 (started by `sar`) and `git-remote-http`/`git-remote-https` (started by `git`). Generated from
 `dist/MANIFEST-v2.json` of the v2.6-r1 build.
 
