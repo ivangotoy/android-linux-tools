@@ -12,7 +12,9 @@ if [ ! -r "$MAP" ]; then
 fi
 case "$1" in
   -m) cat "$MAP" ;;
-  -r) while read -r t n d; do [ "$t" != "$n" ] && echo "$t -> $n (device has $d)"; done < "$MAP" ;;
+  -r) while read -r t n d; do
+        if [ "$t" != "$n" ]; then echo "$t -> $n (device has $d)"; fi
+      done < "$MAP" ;;
   '') while read -r t n d; do
         if [ "$t" = "$n" ]; then echo "$n"; else echo "$n (renamed from $t: device has $d)"; fi
       done < "$MAP" ;;
