@@ -22,7 +22,7 @@ mounts from its `system/` tree.
 ## Install
 
 - In the root manager app: Modules, Install from storage, pick the ZIP. Then reboot.
-- Command line, as root: `ksud module install /sdcard/Download/android-linux-tools-v2.6-r2.zip` (KernelSU).
+- Command line, as root: `ksud module install /sdcard/Download/android-linux-tools-v2.6-r3.zip` (KernelSU).
   Magisk (`magisk --install-module ZIP`) and APatch (`apd module install ZIP`) have the same module interface.
 - Upgrading: install the new ZIP over the old one and reboot. The installer recognises wrappers of this
   module (also of v1/v2.0/v2.1) and never renames them as device binaries. No other module is touched.
@@ -96,18 +96,18 @@ the same programs and differed only in metadata (up to v2.0 the full flavour add
 libLLVM, about 172 MB). The module id is unchanged, so the ZIP installs over either flavour like any upgrade;
 `module.prop` and `MANIFEST.json` no longer have a `flavour` field.
 
-## Contents (v2.6-r2)
+## Contents (v2.6-r3)
 
 246 commands plus `alt-list`, 230 ELF programs; there is no `lib/` directory. Sizes are of the stripped
 `$ALTDIR/libexec/` programs. Linkage `dynamic` = PIE against the system `libc.so`/`libm.so`/`libdl.so`
 (`libz.so` for curl, nmap, dropbear, ltrace, fio, git and the android-tools programs) only, every third-party library
 linked in statically. Four more programs are in `libexec` without a command of their own: `mtr-packet`, `sadc`
 (started by `sar`) and `git-remote-http`/`git-remote-https` (started by `git`). Generated from
-`dist/MANIFEST-v2.json` of the v2.6-r2 build.
+`dist/MANIFEST-v2.json` of the v2.6-r3 build.
 
 | ZIP | Bytes | Unpacked |
 |---|---|---|
-| `android-linux-tools-v2.6-r2.zip` | 173490096 | 421.6 MB |
+| `android-linux-tools-v2.6-r3.zip` | 173534442 | 422.1 MB |
 
 | Command | Recipe | Version | Linkage | libexec (KB) | Licence (SPDX) |
 |---|---|---|---|---|---|
@@ -560,6 +560,8 @@ JOBS=8 MEM=12G ./build-ndk.sh  # make -j and memory limit (defaults)
   every recipe when the builder image changes, ripgrep and fd ship the Rust standard library licence, tmux puts
   its socket directory in the caller's `TMPDIR`, `alt-list -r` exits 0, and the dead resolv.conf handling is
   gone from the installer and self-check.
+- v2.6-r3: same programs as v2.6-r2; ships the licence texts of the NDK sysroot (bionic) and of the Mozilla CA
+  bundle (MPL-2.0), and the self-check removes the tmux socket directory from the caller's `TMPDIR`.
 
 ## Licences
 
