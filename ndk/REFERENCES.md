@@ -2159,7 +2159,8 @@ linker `aarch64-linux-android35-clang` (`CARGO_TARGET_AARCH64_LINUX_ANDROID_LINK
   `use-jemalloc` builds the bundled jemalloc, which is not set up for bionic; the system allocator is used.
 - Dynamic: Rust's standard library for this target links `libc.so` and `libdl.so`; all crates are static.
 - Licences: the packages' own files plus, per linked crate (`cargo tree -e normal,build`), its licence files as
-  `LICENSE.crate-<name>-<version>-<file>` and a list in `LICENSE.crates.txt`.
+  `LICENSE.crate-<name>-<version>-<file>` and a list in `LICENSE.crates.txt`, and the notice of Rust's standard
+  library with the MIT and Apache-2.0 texts from the builder's toolchain (`LICENSE.rust-std-*`).
 
 ### fzf 0.75.0 (static)
 Sources: upstream `Makefile` (`go build -a -ldflags "-s -w -X main.version=... -X main.revision=..." -trimpath`);

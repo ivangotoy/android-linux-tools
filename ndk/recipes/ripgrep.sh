@@ -23,6 +23,16 @@ build() {
   # the Unlicense text (the MIT text is LICENSE-MIT; COPYING explains the dual licence)
   cp UNLICENSE LICENSE.UNLICENSE
   alt_crate_licenses
+  alt_rust_std_licenses
+}
+# Rust's standard library is linked into the program too (cargo tree does not list it): its notice file and
+# the MIT and Apache-2.0 texts from the toolchain of the builder image
+alt_rust_std_licenses() {
+  local d
+  d="$(rustc --print sysroot)/share/doc/rust"
+  cp "$d/COPYRIGHT-library.html" LICENSE.rust-std-COPYRIGHT-library.html
+  cp "$d/licenses/MIT.txt" LICENSE.rust-std-MIT.txt
+  cp "$d/licenses/Apache-2.0.txt" LICENSE.rust-std-Apache-2.0.txt
 }
 # licences of every crate linked into the program: cargo tree of the target's normal and build dependencies
 alt_crate_licenses() {
