@@ -427,7 +427,9 @@ vchk pv 'pv [0-9]' --version
 
 echo "== functional"
 TMUXDIR_EXISTED=0
-[ -d /data/local/tmp/tmux-0 ] && TMUXDIR_EXISTED=1
+# socket directory of the tmux wrapper: $TMUX_TMPDIR, else the caller's TMPDIR, else /data/local/tmp
+TMUXDIR="${TMUX_TMPDIR:-${TMPDIR:-/data/local/tmp}}/tmux-0"
+[ -d "$TMUXDIR" ] && TMUXDIR_EXISTED=1
 NFT=$(tn nft)
 kchk nft-add "CONFIG_NF_TABLES CONFIG_NF_TABLES_INET" nft add table inet alttoolstest
 if [ -n "$NFT" ] && "$NFT" list table inet alttoolstest >/dev/null 2>&1; then
@@ -554,8 +556,8 @@ echo "== cleanup"
 [ -n "$IPSET" ] && "$IPSET" destroy alttoolstest >/dev/null 2>&1
 [ -n "$T_TMUX" ] && "$T_TMUX" -L alttoolstest kill-server >/dev/null 2>&1
 rm -rf "$W"
-rm -f /data/local/tmp/tmux-0/alttoolstest
-[ "$TMUXDIR_EXISTED" = 0 ] && rmdir /data/local/tmp/tmux-0 2>/dev/null
+rm -f "$TMUXDIR/alttoolstest"
+[ "$TMUXDIR_EXISTED" = 0 ] && rmdir "$TMUXDIR" 2>/dev/null
 echo "renamed on this device: $(alt-list -r 2>/dev/null | tr '\n' ';')"
 echo "SKIPPED $SKIP"
 [ -n "$KCONF" ] && rm -f "$KCONF"

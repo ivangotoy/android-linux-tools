@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Regression tests of the build, packaging and release scripts (host only; nothing here ships in the module).
 #   tests/run.sh [TREE]   run every tests/test_* against the source tree TREE (default: this checkout)
-# Needs bwrap, python3, curl, zip and unzip. Scratch goes to $TMPDIR (never /tmp).
+# Needs bwrap, python3, curl, zip, unzip and docker (alpine:3.22 image). Scratch goes to $TMPDIR (never /tmp).
 set -u
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 tree=$(cd "${1:-$here/..}" && pwd) || exit 2
-for t in bwrap python3 curl zip unzip; do
+for t in bwrap python3 curl zip unzip docker; do
   command -v "$t" >/dev/null || { echo "tests: missing host tool $t" >&2; exit 2; }
 done
 case "${TMPDIR:-}" in
