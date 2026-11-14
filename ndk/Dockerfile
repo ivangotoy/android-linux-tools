@@ -25,7 +25,7 @@ RUN rm -f /etc/apt/sources.list.d/debian.sources \
     bison flex gperf m4 perl python3 gcc libc6-dev binutils patchelf texinfo groff-base \
  && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-RUN curl -fsSL --retry 5 -o /opt/ndk.zip "https://dl.google.com/android/repository/android-ndk-${NDK_RELEASE}-linux.zip" \
+RUN curl -fsSL --retry 5 --connect-timeout 30 --speed-limit 1 --speed-time 60 -o /opt/ndk.zip "https://dl.google.com/android/repository/android-ndk-${NDK_RELEASE}-linux.zip" \
  && test "$(stat -c %s /opt/ndk.zip)" = "${NDK_SIZE}" \
  && echo "${NDK_SHA1}  /opt/ndk.zip" | sha1sum -c - \
  && echo "${NDK_SHA256}  /opt/ndk.zip" | sha256sum -c - \
@@ -45,7 +45,7 @@ RUN apt-get -o Acquire::Retries=5 update \
 ARG GO_VERSION=1.27.3
 ARG GO_SIZE=70588678
 ARG GO_SHA256=65efbc80fdc1fa2cd2631cad5b481777a68e8725f34e89f50fc6ac714e379b40
-RUN curl -fsSL --retry 5 -o /opt/go.tar.gz "https://dl.google.com/go/go${GO_VERSION}.linux-amd64.tar.gz" \
+RUN curl -fsSL --retry 5 --connect-timeout 30 --speed-limit 1 --speed-time 60 -o /opt/go.tar.gz "https://dl.google.com/go/go${GO_VERSION}.linux-amd64.tar.gz" \
  && test "$(stat -c %s /opt/go.tar.gz)" = "${GO_SIZE}" \
  && echo "${GO_SHA256}  /opt/go.tar.gz" | sha256sum -c - \
  && tar -xzf /opt/go.tar.gz -C /opt --no-same-owner && rm /opt/go.tar.gz \
@@ -57,7 +57,7 @@ RUN curl -fsSL --retry 5 -o /opt/go.tar.gz "https://dl.google.com/go/go${GO_VERS
 ARG BC_DEB=bc_1.07.1-4_amd64.deb
 ARG BC_SHA1=3a6da630d418b7d971f0025c0a1e00ccb4375843
 ARG BC_SHA256=d055a11f0f9c5f8fe78b31d502c01dfe46ddf9c24f753aaddadaaff95fcc75ad
-RUN curl -fsSL --retry 5 -o "/opt/${BC_DEB}" "http://snapshot.debian.org/file/${BC_SHA1}/${BC_DEB}" \
+RUN curl -fsSL --retry 5 --connect-timeout 30 --speed-limit 1 --speed-time 60 -o "/opt/${BC_DEB}" "http://snapshot.debian.org/file/${BC_SHA1}/${BC_DEB}" \
  && echo "${BC_SHA256}  /opt/${BC_DEB}" | sha256sum -c - \
  && apt-get -o Acquire::Retries=5 update \
  && apt-get -o Acquire::Retries=5 install -y --no-install-recommends "/opt/${BC_DEB}" \
@@ -75,10 +75,10 @@ ARG RUST_SIZE=210515736
 ARG RUST_SHA256=231fcae47ee950621374725b5fc3b5441d2fbda2955ac45dd7dc816d8876cfe7
 ARG RUST_STD_ANDROID_SIZE=30404588
 ARG RUST_STD_ANDROID_SHA256=7463b06bb5f734c02d3bac967538b4de4da910fb90668398bc21b10b5620e35d
-RUN curl -fsSL --retry 5 -o /opt/rust.tar.xz "https://static.rust-lang.org/dist/${RUST_DATE}/rust-${RUST_VERSION}-x86_64-unknown-linux-gnu.tar.xz" \
+RUN curl -fsSL --retry 5 --connect-timeout 30 --speed-limit 1 --speed-time 60 -o /opt/rust.tar.xz "https://static.rust-lang.org/dist/${RUST_DATE}/rust-${RUST_VERSION}-x86_64-unknown-linux-gnu.tar.xz" \
  && test "$(stat -c %s /opt/rust.tar.xz)" = "${RUST_SIZE}" \
  && echo "${RUST_SHA256}  /opt/rust.tar.xz" | sha256sum -c - \
- && curl -fsSL --retry 5 -o /opt/rust-std.tar.xz "https://static.rust-lang.org/dist/${RUST_DATE}/rust-std-${RUST_VERSION}-aarch64-linux-android.tar.xz" \
+ && curl -fsSL --retry 5 --connect-timeout 30 --speed-limit 1 --speed-time 60 -o /opt/rust-std.tar.xz "https://static.rust-lang.org/dist/${RUST_DATE}/rust-std-${RUST_VERSION}-aarch64-linux-android.tar.xz" \
  && test "$(stat -c %s /opt/rust-std.tar.xz)" = "${RUST_STD_ANDROID_SIZE}" \
  && echo "${RUST_STD_ANDROID_SHA256}  /opt/rust-std.tar.xz" | sha256sum -c - \
  && mkdir /opt/rust-src && tar -xJf /opt/rust.tar.xz -C /opt/rust-src --no-same-owner && tar -xJf /opt/rust-std.tar.xz -C /opt/rust-src --no-same-owner \
