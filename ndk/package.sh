@@ -30,7 +30,9 @@ if grep -r -a -l ${ALT_HOST_HOME:+-e "$ALT_HOST_HOME"} -e /work/build -e /work/o
   echo "host path found in the files above (module $zipf)" >&2
   exit 1
 fi
-if unzip -l "$zipf" | grep -q -e '\.work' -e '__pycache__'; then
+# no grep -q: it stops reading at the first match, unzip then dies of SIGPIPE and under pipefail the
+# pipeline (and so this check) fails exactly when there is a match
+if unzip -l "$zipf" | grep -e '\.work' -e '__pycache__' >&2; then
   echo "unexpected entries in $zipf" >&2
   exit 1
 fi

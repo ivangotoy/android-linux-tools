@@ -27,6 +27,8 @@ if case == 'hostpath':
     # compressible text, so zip stores it deflated
     put('system/etc/android-linux-tools/share/nmap/scripts.db', 'Entry { filename = "x.nse" }\n' * 200 +
         'built in /work/build/src/nmap-1\n' + 'Entry { filename = "y.nse" }\n' * 200)
+elif case == 'pycache':
+    put('META-INF/__pycache__/x.cpython.pyc', 'pyc\n')
 PY
   printf 'import sys\nsys.exit(0)\n' > "$h/src/ndk/scripts/check.py"
   printf 'print("{}")\n' > "$h/src/ndk/scripts/layout_test.py"
@@ -41,4 +43,6 @@ r=$(run_case clean)
 case "$r" in rc=0) ok "clean module packages (rc=0)" ;; *) bad "clean module: $r" ;; esac
 r=$(run_case hostpath)
 case "$r" in rc=0*) bad "build-host path in a deflated file not detected: $r" ;; *"host path"*) ok "host path detected" ;; *) bad "hostpath: $r" ;; esac
+r=$(run_case pycache)
+case "$r" in rc=0*) bad "__pycache__ entry early in a long listing not detected: $r" ;; *"unexpected entries"*) ok "__pycache__ entry detected" ;; *) bad "pycache: $r" ;; esac
 [ "$FAILS" -eq 0 ]
