@@ -485,24 +485,7 @@ chk mount.cifs-help 'Usage: mount\.cifs|mount\.cifs' mount.cifs -h
 chk getfacl-dir 'owner' getfacl /data/local/tmp
 
 echo "== DNS"
-if [ -f "$ALTSHARE/resolv-refresh" ]; then
-  # v1 resolv.conf overlay, only shipped while some Alpine (musl) network tools remain
-  ALT_DNS_FORCE=1 /system/bin/sh "$ALTSHARE/resolv-refresh" >/dev/null 2>&1
-  if grep -q '^nameserver ' "$MODDIR/etc/resolv.conf" 2>/dev/null; then
-    result ok "dns-resolvconf ($(grep '^nameserver ' "$MODDIR/etc/resolv.conf" | sed 's/^nameserver //' | tr '\n' ' '))"
-    if [ -L /system/etc/resolv.conf ] && grep -q '^nameserver ' /etc/resolv.conf 2>/dev/null; then
-      result ok dns-overlay
-    elif [ -e /system/etc/resolv.conf ] && [ ! -L /system/etc/resolv.conf ]; then
-      result skip dns-overlay "device ships its own /system/etc/resolv.conf"
-    else
-      result bad dns-overlay 1 "/etc/resolv.conf does not point to $MODDIR/etc/resolv.conf (overlay not mounted?)"
-    fi
-  else
-    result skip dns-resolvconf "no DNS servers found on the active network (offline?)"
-  fi
-else
-  echo "no resolv.conf overlay in this build (all network tools use Android netd)"
-fi
+echo "no resolv.conf overlay (all network tools use Android netd)"
 [ -e /etc/resolv.conf ] && echo "note: /etc/resolv.conf exists ($(readlink /etc/resolv.conf 2>/dev/null || echo file))"
 NS=""
 [ -f "$ALTSHARE/dns-servers" ] && NS=$(/system/bin/sh "$ALTSHARE/dns-servers" 2>/dev/null | tr '\n' ' ')

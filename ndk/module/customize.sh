@@ -73,7 +73,7 @@ ALT_CTX=u:object_r:system_file:s0
 set_perm_recursive "$MODPATH" 0 0 0755 0644 "$ALT_CTX"
 set_perm_recursive "$ALT_BIN" 0 0 0755 0755 "$ALT_CTX"
 set_perm_recursive "$ALT_RT/libexec" 0 0 0755 0755 "$ALT_CTX"
-for alt_s in dns-servers resolv-refresh phone-test.sh; do
+for alt_s in dns-servers phone-test.sh; do
   [ -f "$ALT_RT/share/android-linux-tools/$alt_s" ] && set_perm "$ALT_RT/share/android-linux-tools/$alt_s" 0 0 0755 "$ALT_CTX"
 done
 # v2.1+: every program is an NDK (bionic) build (static, or linked against the system libc only): there is no

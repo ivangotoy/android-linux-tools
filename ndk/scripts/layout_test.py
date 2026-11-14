@@ -16,7 +16,7 @@ import sys, os, re, stat, subprocess, json
 MODID = 'android-linux-tools'
 ALTDIR = '/system/etc/' + MODID
 CTX = 'u:object_r:system_file:s0'
-SCRIPTS = {'dns-servers', 'resolv-refresh', 'phone-test.sh'}
+SCRIPTS = {'dns-servers', 'phone-test.sh'}
 
 if len(sys.argv) != 3:
     raise SystemExit('usage: layout_test.py MODULE.zip WORKDIR')
@@ -127,7 +127,7 @@ for w in wrappers:
 # ---- runtime scripts and data
 for s in sorted(SCRIPTS):
     f = os.path.join(rt, 'share', MODID, s)
-    if os.path.exists(f) and s != 'resolv-refresh' and s != 'phone-test.sh' and '/data/adb' in open(f).read():
+    if os.path.exists(f) and s != 'phone-test.sh' and '/data/adb' in open(f).read():
         err('%s refers to /data/adb' % os.path.relpath(f, mod))
 mapf = os.path.join(rt, 'etc', 'alt-tools.map')
 if not os.path.isfile(mapf) or not other_can(mapf, stat.S_IROTH):
