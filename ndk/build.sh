@@ -162,7 +162,8 @@ if [ $# -gt 0 ]; then
   exit 0
 fi
 
-check_dl_names $(grep -v '^#' /src/ndk/recipes.list)
+mapfile -t ALL_RECIPES < <(grep -v '^#' /src/ndk/recipes.list | tr ' ' '\n' | grep .)
+check_dl_names "${ALL_RECIPES[@]}"
 FAILED=()
 for t in $(grep -v '^#' /src/ndk/recipes.list); do
   # outside any conditional, so set -e stays in force inside build_one (see there)
