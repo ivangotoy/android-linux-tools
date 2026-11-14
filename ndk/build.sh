@@ -98,6 +98,9 @@ build_one() {
   if [ -f "$B/stamps/$n.$h" ]; then
     DONE[$n]=1; return 0
   fi
+  # drop the old stamp first: the step below removes the recipe's previous package and outputs, so after a
+  # failed build an old stamp (valid again once the recipe is reverted) would stand for outputs that are gone
+  rm -f "$B/stamps/$n".*
   # The subshell must not be part of a conditional (|| exit, if !): bash then ignores set -e for every
   # command in it, and a failed download, extraction or patch would still yield a stamped recipe.
   (
@@ -127,7 +130,6 @@ json.dump({"recipe": "$n", "version": "$VERSION", "url": "$URL", "sha256": "$SHA
            "recipe_hash": "$h", "linkage": "${LINKAGE:-static}"}, open(sys.argv[1], "w"), indent=1, sort_keys=True)
 PY
   )
-  rm -f "$B/stamps/$n".*
   touch "$B/stamps/$n.$h"
   DONE[$n]=1
 }

@@ -44,5 +44,26 @@ case_module_input() {
   rm -rf "$h"
 }
 
+# a failed rebuild must not leave the previous stamp: build.sh has already removed the recipe's package
+# (pkg/<recipe>) at that point, so reverting the recipe would otherwise reuse a stamp whose output is gone
+case_failed_rebuild() {
+  local h sha; h=$(new_tree)
+  sha=$(tarball "$h" altlib)
+  recipe "$h" altlib file:///src/fx/altlib-1.tar.gz "$sha" 'mkdir -p "$PKGDIR/lib"; echo lib > "$PKGDIR/lib/libalt.a"'
+  cp "$h/src/ndk/recipes/altlib.sh" "$h/altlib.sh.good"
+  build "$h" altlib > "$h/run1.txt" 2>&1 || { bad "failed rebuild: first build failed"; return; }
+  echo 'build() { false; }' >> "$h/src/ndk/recipes/altlib.sh"
+  if build "$h" altlib > "$h/run2.txt" 2>&1; then bad "failed rebuild: the broken recipe built"; return; fi
+  cp "$h/altlib.sh.good" "$h/src/ndk/recipes/altlib.sh"
+  build "$h" altlib > "$h/run3.txt" 2>&1 || { bad "failed rebuild: build after the revert failed"; return; }
+  if [ -f "$h/work/build/pkg/altlib/lib/libalt.a" ]; then
+    ok "failed rebuild: the reverted recipe is built again, its package is present"
+  else
+    bad "failed rebuild: reverted recipe reused its old stamp, pkg/altlib is missing ($(grep -c ' build altlib' "$h/run3.txt") build lines in run 3)"
+  fi
+  rm -rf "$h"
+}
+
 case_module_input
+case_failed_rebuild
 [ "$FAILS" -eq 0 ]
