@@ -8,7 +8,7 @@ commit, creates the GitHub release on that tag (or completes a partial one),
 uploads every Forgejo asset and byte-verifies each upload by downloading it.
 
 Usage: github-release.py --forgejo-api URL --repo OWNER/NAME --github-repo OWNER/NAME
-                         --tag TAG [--wait-tag SECONDS] [--dry-run]
+                         --tag TAG [--wait-tag SECONDS] [--wait-release SECONDS] [--dry-run]
 Token: GH_RELEASE_TOKEN in the environment (GitHub token with public_repo).
 """
 import argparse
