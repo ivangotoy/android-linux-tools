@@ -24,8 +24,10 @@ find "$st" -exec touch -h -d "@$SOURCE_DATE_EPOCH" {} +
 log "zip -> $(basename "$zipf")"
 unzip -tq "$zipf" >/dev/null
 zip -T "$zipf" >/dev/null
-if grep -a -q ${ALT_HOST_HOME:+-e "$ALT_HOST_HOME"} -e /work/build -e /work/out -e /.work/ -e /opt/ndk "$zipf"; then
-  echo "host path found in $zipf" >&2
+# build-host paths in any file of the module: scan the staged tree the ZIP was made from (in the ZIP itself
+# almost every entry is deflated, so a grep over it sees little more than the file names)
+if grep -r -a -l ${ALT_HOST_HOME:+-e "$ALT_HOST_HOME"} -e /work/build -e /work/out -e /.work/ -e /opt/ndk "$st" >&2; then
+  echo "host path found in the files above (module $zipf)" >&2
   exit 1
 fi
 if unzip -l "$zipf" | grep -q -e '\.work' -e '__pycache__'; then
