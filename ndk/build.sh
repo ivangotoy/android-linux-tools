@@ -82,7 +82,7 @@ extract() {
   local p
   for p in $(ls "/src/ndk/patches/$PATCHES_FROM"/*.patch 2>/dev/null | sort); do
     log "patch $NAME $(basename "$p")"
-    patch -d "$B/src/$SRCDIR" -p1 --no-backup-if-mismatch -s < "$p"
+    patch -d "$B/src/$SRCDIR" -p1 --no-backup-if-mismatch -s < "$p" || { log "PATCH FAILED $NAME $(basename "$p")"; exit 1; }
   done
 }
 
@@ -95,6 +95,8 @@ build_one() {
   if [ -f "$B/stamps/$n.$h" ]; then
     DONE[$n]=1; return 0
   fi
+  # The subshell must not be part of a conditional (|| exit, if !): bash then ignores set -e for every
+  # command in it, and a failed download, extraction or patch would still yield a stamped recipe.
   (
     load_recipe "$n"
     log "build $n $VERSION ($h)"
@@ -112,7 +114,7 @@ build_one() {
       [ -f "$B/src/$SRCDIR/$f" ] && cp "$B/src/$SRCDIR/$f" "$lic/"
     done
     [ -d "/src/ndk/patches/$PATCHES_FROM" ] && cp /src/ndk/patches/"$PATCHES_FROM"/*.patch "$lic/" 2>/dev/null || true
-    patches=$(ls "/src/ndk/patches/$PATCHES_FROM"/*.patch 2>/dev/null | xargs -r -n1 basename | sort | paste -sd, -)
+    patches=$(ls "/src/ndk/patches/$PATCHES_FROM"/*.patch 2>/dev/null | xargs -r -n1 basename | sort | paste -sd, -) || true
     bins=$(cat "$B/meta/$n.bins" 2>/dev/null | sort -u | paste -sd, - || true)
     python3 -I - "$OUT/meta/$n.json" <<PY
 import json, sys
@@ -121,7 +123,7 @@ json.dump({"recipe": "$n", "version": "$VERSION", "url": "$URL", "sha256": "$SHA
            "patches": [p for p in "$patches".split(",") if p], "bins": [b for b in "$bins".split(",") if b],
            "recipe_hash": "$h", "linkage": "${LINKAGE:-static}"}, open(sys.argv[1], "w"), indent=1, sort_keys=True)
 PY
-  ) || exit 1
+  )
   rm -f "$B/stamps/$n".*
   touch "$B/stamps/$n.$h"
   DONE[$n]=1
@@ -135,7 +137,12 @@ fi
 
 FAILED=()
 for t in $(grep -v '^#' /src/ndk/recipes.list); do
-  if ! ( build_one "$t" ); then FAILED+=("$t"); fi
+  # outside any conditional, so set -e stays in force inside build_one (see there)
+  set +e
+  ( set -e; build_one "$t" )
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || FAILED+=("$t")
 done
 printf '%s\n' "${FAILED[@]}" > "$OUT/failed.txt"
 if [ ${#FAILED[@]} -ne 0 ]; then
