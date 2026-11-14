@@ -50,7 +50,8 @@ def gh(method, url, token, payload=None, raw=None, ctype='application/json'):
     req.add_header('Accept', 'application/vnd.github+json')
     req.add_header('X-GitHub-Api-Version', '2022-11-28')
     if token:
-        req.add_header('Authorization', 'Bearer ' + token)
+        # unredirected: urllib copies ordinary headers to the target of a redirect, whatever its host
+        req.add_unredirected_header('Authorization', 'Bearer ' + token)
     if data is not None:
         req.add_header('Content-Type', ctype)
     try:
