@@ -143,5 +143,48 @@ class TruncatedResponse(unittest.TestCase):
         self.assertEqual(cm.exception.code, 1)
 
 
+class NonJsonBody(unittest.TestCase):
+    """A 200 response that is not JSON must end in die() naming the request, without echoing the body."""
+    BODY = b'<html>example-secret-page</html>'
+
+    class Html(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.send_header('Content-Length', str(len(NonJsonBody.BODY)))
+            self.end_headers()
+            self.wfile.write(NonJsonBody.BODY)
+
+        def log_message(self, *a):
+            pass
+
+    def test_forgejo_release_lookup(self):
+        srv = server('127.0.0.1', self.Html)
+        try:
+            r = subprocess.run([sys.executable, '-I', '-B', os.path.join(TREE, 'ci', 'github-release.py'),
+                                '--forgejo-api', 'http://127.0.0.1:%d/api/v1' % srv.server_address[1],
+                                '--repo', 'o/r', '--github-repo', 'o/r', '--tag', 'v1.0-r1'],
+                               capture_output=True, text=True, timeout=60,
+                               env={'PATH': os.environ.get('PATH', ''), 'GH_RELEASE_TOKEN': 'example-token'})
+        finally:
+            srv.shutdown()
+            srv.server_close()
+        self.assertEqual(r.returncode, 1, r.stderr)
+        self.assertNotIn('Traceback', r.stderr)
+        self.assertIn('github-release: Forgejo release lookup did not return valid JSON', r.stderr)
+        self.assertNotIn('example-secret-page', r.stderr + r.stdout)
+        self.assertNotIn('example-token', r.stderr + r.stdout)
+
+    def test_github_request(self):
+        srv = server('127.0.0.1', self.Html)
+        try:
+            with self.assertRaises(SystemExit) as cm:
+                load().gh_json('GET', 'http://127.0.0.1:%d/repos/x/y' % srv.server_address[1], 'example-token',
+                               what='GitHub release list')
+        finally:
+            srv.shutdown()
+            srv.server_close()
+        self.assertEqual(cm.exception.code, 1)
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

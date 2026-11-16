@@ -69,11 +69,19 @@ def gh(method, url, token, payload=None, raw=None, ctype='application/json'):
         die('%s %s failed: %r' % (method, url.split('?', 1)[0], e))
 
 
+def parse_json(body, what):
+    """JSON of a response body; die() names the request only (the body is not echoed)."""
+    try:
+        return json.loads(body)
+    except ValueError:
+        die('%s did not return valid JSON' % what)
+
+
 def gh_json(method, url, token, want=(200,), what='GitHub request', **kw):
     st, body = gh(method, url, token, **kw)
     if st not in want:
         die('%s returned HTTP %d' % (what, st))
-    return json.loads(body)
+    return parse_json(body, what)
 
 
 def gh_peeled(base, tag, token):
@@ -83,7 +91,7 @@ def gh_peeled(base, tag, token):
         return None
     if st != 200:
         die('GitHub tag lookup returned HTTP %d' % st)
-    ref = json.loads(body)
+    ref = parse_json(body, 'GitHub tag lookup')
     if not isinstance(ref, dict) or ref.get('ref') != 'refs/tags/' + tag:
         die('GitHub tag lookup did not return exactly refs/tags/%s' % tag)
     obj = ref['object']
@@ -133,14 +141,14 @@ def main():
     rdeadline = time.monotonic() + a.wait_release
     while True:
         st, body = fetch('%s/releases/tags/%s' % (fbase, urllib.parse.quote(tag)))
-        if st == 200 and not json.loads(body).get('draft'):
+        if st == 200 and not parse_json(body, 'Forgejo release lookup').get('draft'):
             break
         if st not in (200, 404):
             die('Forgejo release lookup returned HTTP %d' % st)
         if time.monotonic() >= rdeadline:
             die('no published Forgejo release for %s within %d s' % (tag, a.wait_release))
         time.sleep(30)
-    frel = json.loads(body)
+    frel = parse_json(body, 'Forgejo release lookup')
     if frel.get('draft') or frel.get('tag_name') != tag:
         die('Forgejo release for %s is not a published release of that tag' % tag)
     assets = {x['name']: x for x in frel.get('assets', [])}
@@ -165,12 +173,12 @@ def main():
         elif name + '.sha256' not in files:
             die('%s has no .sha256 asset' % name)
     st, body = fetch('%s/releases/latest' % fbase)
-    latest = st == 200 and json.loads(body).get('tag_name') == tag
+    latest = st == 200 and parse_json(body, 'Forgejo latest release lookup').get('tag_name') == tag
 
     st, body = fetch('%s/tags/%s' % (fbase, urllib.parse.quote(tag)))
     if st != 200:
         die('Forgejo tag lookup returned HTTP %d' % st)
-    commit = json.loads(body)['commit']['sha']
+    commit = parse_json(body, 'Forgejo tag lookup')['commit']['sha']
     if not re.fullmatch(r'[0-9a-f]{40}', commit):
         die('Forgejo tag %s has no commit' % tag)
     deadline = time.monotonic() + a.wait_tag
