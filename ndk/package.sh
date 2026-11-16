@@ -19,6 +19,8 @@ python3 -I /src/ndk/scripts/check.py
 st="$STAGE/module/$MODID"
 version=$(sed -n 's/^version=//p' "$st/module.prop")
 zipf="$DIST/$MODID-$version.zip"
+# a ZIP that failed a check below must not stay in dist/ under its release name
+trap 'rm -f "$zipf" "$zipf.sha256" "$DIST/MANIFEST-v2.json"' EXIT
 find "$st" -exec touch -h -d "@$SOURCE_DATE_EPOCH" {} +
 (cd "$st" && find . -mindepth 1 \( -type f -o -type l \) | sed 's|^\./||' | LC_ALL=C sort | TZ=UTC zip -q -r -y -X -D "$zipf" -@)
 log "zip -> $(basename "$zipf")"
@@ -43,4 +45,5 @@ rm -rf "$B/tmp/layout"
 cp /src/phone-test.sh "$DIST/phone-test.sh"
 chmod 0755 "$DIST/phone-test.sh"
 python3 -I /src/ndk/scripts/manifest.py
+trap - EXIT
 log "package done"

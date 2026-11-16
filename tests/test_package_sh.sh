@@ -1,5 +1,6 @@
 # ndk/package.sh (real script, in bwrap) with stub stage/check/layout/manifest scripts: the checks it runs on
-# the module must fail the build when the module contains a build-host path or unwanted entries.
+# the module must fail the build when the module contains a build-host path or unwanted entries, and a rejected
+# module must leave no ZIP in dist/.
 . "$ALT_TESTS/lib.sh"
 
 # run_case NAME: stage a module as the stub stage.py does for ALT_CASE=NAME, run package.sh; prints rc and stderr
@@ -36,13 +37,20 @@ PY
   alt_bwrap "$h/root" "$h/src" "$h/work" --setenv ALT_CASE "$1" bash /src/ndk/package.sh > "$h/out.txt" 2>&1
   echo "rc=$?"
   grep -E 'host path|unexpected entries' "$h/out.txt"
+  echo "dist:$(ls "$h/work/dist" | grep '\.zip' | tr '\n' ' ')"
   rm -rf "$h"
 }
 
 r=$(run_case clean)
-case "$r" in rc=0) ok "clean module packages (rc=0)" ;; *) bad "clean module: $r" ;; esac
+case "$r" in rc=0$'\n'*) ok "clean module packages (rc=0)" ;; *) bad "clean module: $r" ;; esac
 r=$(run_case hostpath)
 case "$r" in rc=0*) bad "build-host path in a deflated file not detected: $r" ;; *"host path"*) ok "host path detected" ;; *) bad "hostpath: $r" ;; esac
 r=$(run_case pycache)
 case "$r" in rc=0*) bad "__pycache__ entry early in a long listing not detected: $r" ;; *"unexpected entries"*) ok "__pycache__ entry detected" ;; *) bad "pycache: $r" ;; esac
+# a module that failed a check must not leave its ZIP in dist/ (where release assets are taken from)
+case "$(run_case clean)" in *"dist:android-linux-tools-v0.0-r1.zip "*) ok "clean module: ZIP in dist/" ;; *) bad "clean module: no ZIP in dist/" ;; esac
+for c in hostpath pycache; do
+  r=$(run_case "$c")
+  case "$r" in rc=0*) bad "$c: packaged" ;; *"dist:") ok "$c: no ZIP left in dist/" ;; *) bad "$c: rejected ZIP left in dist/: $(echo "$r" | grep dist:)" ;; esac
+done
 [ "$FAILS" -eq 0 ]
