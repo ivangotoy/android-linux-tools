@@ -1,4 +1,4 @@
-# ci/github-release.py: the GitHub token must not follow a redirect to another host.
+# ci/github-release.py: the GitHub token must not follow a redirect to another host; failed requests end in die().
 import http.server
 import importlib.util
 import json
@@ -101,6 +101,46 @@ class EmptyChecksumAsset(unittest.TestCase):
         self.assertEqual(r.returncode, 1, r.stderr)
         self.assertNotIn('Traceback', r.stderr)
         self.assertIn('github-release: m.zip.sha256', r.stderr)
+
+
+class TruncatedResponse(unittest.TestCase):
+    """A response cut off mid-body must end in die(), not a traceback."""
+
+    class Short(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.send_header('Content-Length', '100')
+            self.end_headers()
+            self.wfile.write(b'{"ta')
+            self.wfile.flush()
+            self.close_connection = True
+
+        def log_message(self, *a):
+            pass
+
+    def test_forgejo_release_lookup(self):
+        srv = server('127.0.0.1', self.Short)
+        try:
+            r = subprocess.run([sys.executable, '-I', '-B', os.path.join(TREE, 'ci', 'github-release.py'),
+                                '--forgejo-api', 'http://127.0.0.1:%d/api/v1' % srv.server_address[1],
+                                '--repo', 'o/r', '--github-repo', 'o/r', '--tag', 'v1.0-r1', '--dry-run'],
+                               capture_output=True, text=True, timeout=60, env={'PATH': os.environ.get('PATH', '')})
+        finally:
+            srv.shutdown()
+            srv.server_close()
+        self.assertEqual(r.returncode, 1, r.stderr)
+        self.assertNotIn('Traceback', r.stderr)
+        self.assertIn('github-release: GET http://127.0.0.1', r.stderr)
+
+    def test_github_request(self):
+        srv = server('127.0.0.1', self.Short)
+        try:
+            with self.assertRaises(SystemExit) as cm:
+                load().gh('GET', 'http://127.0.0.1:%d/repos/x/y' % srv.server_address[1], 'example-token')
+        finally:
+            srv.shutdown()
+            srv.server_close()
+        self.assertEqual(cm.exception.code, 1)
 
 
 if __name__ == '__main__':

@@ -13,6 +13,7 @@ Token: GH_RELEASE_TOKEN in the environment (GitHub token with public_repo).
 """
 import argparse
 import hashlib
+import http.client
 import json
 import os
 import re
@@ -41,6 +42,9 @@ def fetch(url):
         return e.code, e.read()
     except urllib.error.URLError as e:
         die('GET %s failed: %s' % (url.split('?', 1)[0], e.reason))
+    except (OSError, http.client.HTTPException) as e:
+        # read timeout, reset or truncated body while reading the response
+        die('GET %s failed: %r' % (url.split('?', 1)[0], e))
 
 
 def gh(method, url, token, payload=None, raw=None, ctype='application/json'):
@@ -61,6 +65,8 @@ def gh(method, url, token, payload=None, raw=None, ctype='application/json'):
         return e.code, e.read()
     except urllib.error.URLError as e:
         die('%s %s failed: %s' % (method, url.split('?', 1)[0], e.reason))
+    except (OSError, http.client.HTTPException) as e:
+        die('%s %s failed: %r' % (method, url.split('?', 1)[0], e))
 
 
 def gh_json(method, url, token, want=(200,), what='GitHub request', **kw):
