@@ -60,7 +60,9 @@ cleanup() {
   [ -n "$T_TMUX" ] && "$T_TMUX" -L alttoolstest kill-server >/dev/null 2>&1
   [ -n "$W" ] && rm -rf "$W"
   [ -n "$NW" ] && rm -rf "$NW"
-  if [ -n "$TMUXDIR" ]; then
+  # only a real directory of the running uid: TMUXDIR may sit in a directory other users can write, where
+  # tmux-0 could be a planted symlink or another user's directory
+  if [ -n "$TMUXDIR" ] && [ -d "$TMUXDIR" ] && [ ! -L "$TMUXDIR" ] && [ -O "$TMUXDIR" ]; then
     rm -f "$TMUXDIR/alttoolstest"
     [ "$TMUXDIR_EXISTED" = 0 ] && rmdir "$TMUXDIR" 2>/dev/null
   fi

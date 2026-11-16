@@ -6,6 +6,14 @@
 command -v docker >/dev/null || { echo "tests: missing host tool docker" >&2; exit 2; }
 docker image inspect alpine:3.22 >/dev/null 2>&1 || { echo "tests: docker image alpine:3.22 missing" >&2; exit 2; }
 h=$(alt_scratch)
+# drun NAME ARGS...: docker run bounded by timeout; the named container is removed whatever happens
+drun() {
+  local name=alt-test-$$-$1; shift
+  timeout 120 docker run --rm --name "$name" "$@"
+  local rc=$?
+  docker rm -f "$name" >/dev/null 2>&1
+  return $rc
+}
 mkdir -p "$h/bin"
 cp "$ALT_TREE/phone-test.sh" "$h/"
 # tmux wrapper: the environment lines stage.py writes into every wrapper and the tmux ones (EXTRA_ENV)
@@ -25,8 +33,10 @@ cat > "$h/bin/tmux.stub" <<'SH'
 [ "$1" = -V ] && { echo "tmux 3.8"; exit 0; }
 [ "$1" = -L ] || exit 1
 d="$TMUX_TMPDIR/tmux-$(id -u)"; s="$d/$2"
+# like tmux (tmux.c make_label): create the socket directory, refuse a symlink or a directory of another uid
+mkdir -p -m 700 "$d"; { [ -d "$d" ] && [ ! -L "$d" ] && [ -O "$d" ]; } || { echo "directory $d has unsafe permissions" >&2; exit 1; }
 case "$3" in
-  new-session) mkdir -p -m 700 "$d" && : > "$s" ;;
+  new-session) : > "$s" ;;
   ls) [ -e "$s" ] && echo "alttoolstest: 1 windows" ;;
   kill-server) rm -f "$s" ;;
 esac
@@ -42,7 +52,7 @@ grep -E '^(PASS|FAIL) tmux-session' /phone-test.out
 for d in /data/local/tmp/apptmp/tmux-0 /data/local/tmp/tmux-0; do [ -e "$d" ] && echo "LEFT $d"; done
 echo end
 SH
-out=$(docker run --rm --network none -v "$h:/w:ro" alpine:3.22 sh /w/inside.sh 2>&1)
+out=$(drun inside --network none -v "$h:/w:ro" alpine:3.22 sh /w/inside.sh 2>&1)
 case "$out" in
   *"PASS tmux-session"*) ok "phone-test tmux-session ran with the stub" ;;
   *) bad "phone-test tmux-session did not run: $out" ;;
@@ -73,7 +83,7 @@ echo "victim:$(ls -A /victim | tr '\n' ' ')"
 SH
 for mode in root --nonroot; do
   arg=; [ "$mode" = root ] || arg=$mode
-  out=$(docker run --rm --network none -v "$h:/w:ro" alpine:3.22 sh /w/plant.sh $arg 2>&1)
+  out=$(drun "plant${arg}" --network none -v "$h:/w:ro" alpine:3.22 sh /w/plant.sh $arg 2>&1)
   case "$out" in
     *" pass="*"left:"$'\n'"victim:") ok "phone-test ($mode) wrote nothing through links planted in /data/local/tmp" ;;
     *"victim:"?*) bad "phone-test ($mode) wrote through planted links: $(echo "$out" | grep victim)" ;;
@@ -92,8 +102,10 @@ cat > "$h/sig/tmux.stub" <<'SH'
 [ "$1" = -V ] && { echo "tmux 3.8"; exit 0; }
 [ "$1" = -L ] || exit 1
 d="$TMUX_TMPDIR/tmux-$(id -u)"; s="$d/$2"
+# like tmux (tmux.c make_label): create the socket directory, refuse a symlink or a directory of another uid
+mkdir -p -m 700 "$d"; { [ -d "$d" ] && [ ! -L "$d" ] && [ -O "$d" ]; } || { echo "directory $d has unsafe permissions" >&2; exit 1; }
 case "$3" in
-  new-session) mkdir -p -m 700 "$d" && : > "$s" ;;
+  new-session) : > "$s" ;;
   ls) echo ready > /ready; read -r x < /block; [ -e "$s" ] && echo "alttoolstest: 1 windows" ;;
   kill-server) rm -f "$s" ;;
 esac
@@ -123,6 +135,32 @@ for c in term:143 term-closed:143 closed:141; do
   case "$out" in
     *"rc=${c#*:}"$'\n'"left:") ok "phone-test ${c%:*}: exit ${c#*:}, work directory and tmux socket removed" ;;
     *) bad "phone-test ${c%:*}: $(echo "$out" | tr '\n' ' ')" ;;
+  esac
+done
+
+# the tmux cleanup of the root run must not act through a tmux-0 it does not own: a symlink to a root-owned victim
+# directory (caught by ! -L) and a real directory of another uid (caught by -O), each holding a file named
+# alttoolstest, keep that file
+cat > "$h/tmuxdir.sh" <<'SH'
+mkdir -p /data/adb/modules/android-linux-tools /data/local/tmp /system/bin /victim
+echo version=v0.0-r1 > /data/adb/modules/android-linux-tools/module.prop
+ln -s /bin/sh /system/bin/sh
+cp /w/bin/* /usr/local/bin/ && chmod 755 /usr/local/bin/*
+echo keep > /victim/alttoolstest
+case "$1" in
+  symlink) ln -s /victim /data/local/tmp/tmux-0; f=/victim/alttoolstest ;;
+  foreign) mkdir -m 700 /data/local/tmp/tmux-0; echo keep > /data/local/tmp/tmux-0/alttoolstest
+           chown -R 2000:2000 /data/local/tmp/tmux-0; f=/data/local/tmp/tmux-0/alttoolstest ;;
+esac
+sh /w/phone-test.sh > /phone-test.out 2>&1
+grep -q '^TOTAL ' /phone-test.out && echo "ran"
+[ -f "$f" ] && echo "kept $f" || echo "removed $f"
+SH
+for c in symlink foreign; do
+  out=$(drun "tmuxdir-$c" --network none -v "$h:/w:ro" alpine:3.22 sh /w/tmuxdir.sh "$c" 2>&1)
+  case "$out" in
+    "ran"$'\n'"kept "*) ok "phone-test tmux cleanup leaves a $c tmux-0 alone" ;;
+    *) bad "phone-test tmux cleanup ($c tmux-0): $(echo "$out" | tr '\n' ' ')" ;;
   esac
 done
 rm -rf "$h"
