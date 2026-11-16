@@ -1,5 +1,8 @@
 # ci/github-release.py: the GitHub token must not follow a redirect to another host; failed requests end in die().
+import contextlib
+import hashlib
 import http.server
+import io
 import importlib.util
 import json
 import os
@@ -184,6 +187,90 @@ class NonJsonBody(unittest.TestCase):
             srv.shutdown()
             srv.server_close()
         self.assertEqual(cm.exception.code, 1)
+
+
+class WrongShape(unittest.TestCase):
+    """Valid JSON of the wrong shape (list for object, wrong field type, missing field) must end in die() naming
+    the request that returned it, never a traceback."""
+
+    def run_script(self, routes):
+        class Srv(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                if self.path not in routes:
+                    self.send_response(404)
+                    self.end_headers()
+                    return
+                body = routes[self.path](self.server.server_address[1])
+                self.send_response(200)
+                self.send_header('Content-Length', str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *a):
+                pass
+
+        srv = server('127.0.0.1', Srv)
+        try:
+            return subprocess.run([sys.executable, '-I', '-B', os.path.join(TREE, 'ci', 'github-release.py'),
+                                   '--forgejo-api', 'http://127.0.0.1:%d/api/v1' % srv.server_address[1],
+                                   '--repo', 'o/r', '--github-repo', 'o/r', '--tag', 'v1.0-r1', '--dry-run'],
+                                  capture_output=True, text=True, timeout=60, env={'PATH': os.environ.get('PATH', '')})
+        finally:
+            srv.shutdown()
+            srv.server_close()
+
+    def check(self, r, what):
+        self.assertEqual(r.returncode, 1, r.stderr)
+        self.assertNotIn('Traceback', r.stderr)
+        self.assertIn('github-release: %s returned JSON of an unexpected shape' % what, r.stderr)
+
+    REL = '/api/v1/repos/o/r/releases/tags/v1.0-r1'
+
+    def test_release_lookup_list(self):
+        self.check(self.run_script({self.REL: lambda port: b'[]'}), 'Forgejo release lookup')
+
+    def test_release_lookup_assets_wrong_type(self):
+        rel = json.dumps({'tag_name': 'v1.0-r1', 'name': 'v1.0-r1', 'html_url': 'http://example.org/r',
+                          'draft': False, 'assets': 'm.zip'}).encode()
+        self.check(self.run_script({self.REL: lambda port: rel}), 'Forgejo release lookup')
+
+    def test_tag_lookup_commit_wrong_type(self):
+        data = b'zip bytes'
+        sha = hashlib.sha256(data).hexdigest().encode()
+
+        def rel(port):
+            assets = [{'name': n, 'size': len(d), 'browser_download_url': 'http://127.0.0.1:%d/dl/%s' % (port, n)}
+                      for n, d in (('m.zip', data), ('m.zip.sha256', sha + b'  m.zip\n'))]
+            return json.dumps({'tag_name': 'v1.0-r1', 'name': 'v1.0-r1', 'html_url': 'http://example.org/r',
+                               'draft': False, 'assets': assets}).encode()
+        r = self.run_script({self.REL: rel, '/dl/m.zip': lambda port: data,
+                             '/dl/m.zip.sha256': lambda port: sha + b'  m.zip\n',
+                             '/api/v1/repos/o/r/tags/v1.0-r1': lambda port: b'{"commit": []}'})
+        self.check(r, 'Forgejo tag lookup')
+
+    def test_github_tag_lookup_object_wrong_type(self):
+        body = b'{"ref": "refs/tags/v1.0-r1", "object": "abc"}'
+
+        class Gh(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(200)
+                self.send_header('Content-Length', str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *a):
+                pass
+
+        srv = server('127.0.0.1', Gh)
+        err = io.StringIO()
+        try:
+            with self.assertRaises(SystemExit) as cm, contextlib.redirect_stderr(err):
+                load().gh_peeled('http://127.0.0.1:%d/repos/o/r' % srv.server_address[1], 'v1.0-r1', 'example-token')
+        finally:
+            srv.shutdown()
+            srv.server_close()
+        self.assertEqual(cm.exception.code, 1)
+        self.assertIn('GitHub tag lookup returned JSON of an unexpected shape', err.getvalue())
 
 
 if __name__ == '__main__':

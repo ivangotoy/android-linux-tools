@@ -77,6 +77,25 @@ def parse_json(body, what):
         die('%s did not return valid JSON' % what)
 
 
+def shape(obj, what, typ=dict, **fields):
+    """obj, if it is a typ and (for a dict) each named field has the named type; else die() naming the request.
+    Checked right after each parse, so the named request is the one that returned the JSON."""
+    if not isinstance(obj, typ) or any(not isinstance(obj.get(k), t) for k, t in fields.items()):
+        die('%s returned JSON of an unexpected shape' % what)
+    return obj
+
+
+def shape_list(objs, what, **fields):
+    """objs, if it is a list of dicts with the named fields; else die() naming the request."""
+    for x in shape(objs, what, list):
+        shape(x, what, **fields)
+    return objs
+
+
+ASSET = {'name': str, 'size': int, 'browser_download_url': str}
+GH_REL = {'id': int, 'assets': list, 'upload_url': str}
+
+
 def gh_json(method, url, token, want=(200,), what='GitHub request', **kw):
     st, body = gh(method, url, token, **kw)
     if st not in want:
@@ -94,22 +113,23 @@ def gh_peeled(base, tag, token):
     ref = parse_json(body, 'GitHub tag lookup')
     if not isinstance(ref, dict) or ref.get('ref') != 'refs/tags/' + tag:
         die('GitHub tag lookup did not return exactly refs/tags/%s' % tag)
-    obj = ref['object']
+    obj = shape(ref.get('object'), 'GitHub tag lookup', type=str, sha=str)
     for _ in range(8):
         if obj['type'] == 'commit':
             return obj['sha']
         if obj['type'] != 'tag':
             die('GitHub tag %s points to a %s' % (tag, obj['type']))
-        obj = gh_json('GET', '%s/git/tags/%s' % (base, obj['sha']), token,
-                      what='GitHub tag object lookup')['object']
+        what = 'GitHub tag object lookup'
+        obj = shape(shape(gh_json('GET', '%s/git/tags/%s' % (base, obj['sha']), token, what=what), what).get('object'),
+                    what, type=str, sha=str)
     die('GitHub tag %s: tag chain too deep' % tag)
 
 
 def gh_releases_for(base, tag, token):
     found, page = [], 1
     while True:
-        rows = gh_json('GET', '%s/releases?per_page=100&page=%d' % (base, page), token,
-                       what='GitHub release list')
+        rows = shape_list(gh_json('GET', '%s/releases?per_page=100&page=%d' % (base, page), token,
+                                  what='GitHub release list'), 'GitHub release list')
         found += [r for r in rows if r.get('tag_name') == tag]
         if len(rows) < 100:
             return found
@@ -141,14 +161,17 @@ def main():
     rdeadline = time.monotonic() + a.wait_release
     while True:
         st, body = fetch('%s/releases/tags/%s' % (fbase, urllib.parse.quote(tag)))
-        if st == 200 and not parse_json(body, 'Forgejo release lookup').get('draft'):
+        if st == 200 and not shape(parse_json(body, 'Forgejo release lookup'), 'Forgejo release lookup').get('draft'):
             break
         if st not in (200, 404):
             die('Forgejo release lookup returned HTTP %d' % st)
         if time.monotonic() >= rdeadline:
             die('no published Forgejo release for %s within %d s' % (tag, a.wait_release))
         time.sleep(30)
-    frel = parse_json(body, 'Forgejo release lookup')
+    frel = shape(parse_json(body, 'Forgejo release lookup'), 'Forgejo release lookup', tag_name=str, assets=list)
+    shape_list(frel['assets'], 'Forgejo release lookup', **ASSET)
+    if not isinstance(frel.get('body') or '', str):
+        die('Forgejo release lookup returned JSON of an unexpected shape')
     if frel.get('draft') or frel.get('tag_name') != tag:
         die('Forgejo release for %s is not a published release of that tag' % tag)
     assets = {x['name']: x for x in frel.get('assets', [])}
@@ -173,12 +196,14 @@ def main():
         elif name + '.sha256' not in files:
             die('%s has no .sha256 asset' % name)
     st, body = fetch('%s/releases/latest' % fbase)
-    latest = st == 200 and parse_json(body, 'Forgejo latest release lookup').get('tag_name') == tag
+    latest = st == 200 and shape(parse_json(body, 'Forgejo latest release lookup'),
+                                 'Forgejo latest release lookup').get('tag_name') == tag
 
     st, body = fetch('%s/tags/%s' % (fbase, urllib.parse.quote(tag)))
     if st != 200:
         die('Forgejo tag lookup returned HTTP %d' % st)
-    commit = parse_json(body, 'Forgejo tag lookup')['commit']['sha']
+    tagj = shape(parse_json(body, 'Forgejo tag lookup'), 'Forgejo tag lookup', commit=dict)
+    commit = shape(tagj['commit'], 'Forgejo tag lookup', sha=str)['sha']
     if not re.fullmatch(r'[0-9a-f]{40}', commit):
         die('Forgejo tag %s has no commit' % tag)
     deadline = time.monotonic() + a.wait_tag
@@ -206,8 +231,8 @@ def main():
         url = rel['upload_url'].split('{', 1)[0] + '?name=' + urllib.parse.quote(name)
         if not url.startswith('https://uploads.github.com/'):
             die('unexpected GitHub upload host')
-        x = gh_json('POST', url, token, want=(201,), what='asset upload ' + name,
-                    raw=files[name], ctype='application/octet-stream')
+        x = shape(gh_json('POST', url, token, want=(201,), what='asset upload ' + name,
+                          raw=files[name], ctype='application/octet-stream'), 'asset upload ' + name)
         if x.get('name') != name or x.get('size') != len(files[name]) or x.get('state') != 'uploaded':
             die('GitHub asset %s: stored name/size/state differs' % name)
 
@@ -215,7 +240,8 @@ def main():
     if len(existing) > 1:
         die('GitHub has %d releases for %s' % (len(existing), tag))
     if existing:
-        rel = existing[0]
+        rel = shape(existing[0], 'GitHub release list', **GH_REL)
+        shape_list(rel['assets'], 'GitHub release list', **ASSET)
         if rel.get('draft'):
             die('GitHub has an unpublished draft for %s; inspect it by hand' % tag)
         have = {x['name']: x for x in rel['assets']}
@@ -233,12 +259,15 @@ def main():
             return
         for name in missing:
             upload(rel, name)
-        rel = gh_json('GET', '%s/releases/%d' % (gbase, rel['id']), token, what='GitHub release read')
+        rel = shape(gh_json('GET', '%s/releases/%d' % (gbase, rel['id']), token, what='GitHub release read'),
+                    'GitHub release read', **GH_REL)
+        shape_list(rel['assets'], 'GitHub release read', **ASSET)
         check_published(rel, files)
         print('GitHub release %s (id %d) verified, %d assets byte-equal to Forgejo, uploaded: %s'
               % (tag, rel['id'], len(files), ', '.join(missing) or 'none'))
         return
 
+    shape(frel, 'Forgejo release lookup', name=str, html_url=str)
     body = (frel.get('body') or '').rstrip() + '\n\n---\nCopied from the original release: %s\n' % (
         frel['html_url'])
     if a.dry_run:
@@ -246,13 +275,16 @@ def main():
               % (tag, frel['name'], bool(frel.get('prerelease')), latest, ', '.join(sorted(files))))
         return
     # Draft first, upload, verify sizes, then publish and byte-verify the public downloads.
-    rel = gh_json('POST', '%s/releases' % gbase, token, want=(201,), what='GitHub release create',
-                  payload={'tag_name': tag, 'name': frel['name'], 'body': body, 'draft': True,
-                           'prerelease': bool(frel.get('prerelease')), 'make_latest': 'false'})
+    rel = shape(gh_json('POST', '%s/releases' % gbase, token, want=(201,), what='GitHub release create',
+                        payload={'tag_name': tag, 'name': frel['name'], 'body': body, 'draft': True,
+                                 'prerelease': bool(frel.get('prerelease')), 'make_latest': 'false'}),
+                'GitHub release create', **GH_REL)
     for name in sorted(files):
         upload(rel, name)
-    rel = gh_json('PATCH', '%s/releases/%d' % (gbase, rel['id']), token, what='GitHub release publish',
-                  payload={'draft': False, 'make_latest': 'true' if latest else 'false'})
+    rel = shape(gh_json('PATCH', '%s/releases/%d' % (gbase, rel['id']), token, what='GitHub release publish',
+                        payload={'draft': False, 'make_latest': 'true' if latest else 'false'}),
+                'GitHub release publish', **GH_REL)
+    shape_list(rel['assets'], 'GitHub release publish', **ASSET)
     if rel.get('tag_name') != tag or rel.get('draft'):
         die('GitHub release %s did not publish on its tag' % tag)
     if gh_peeled(gbase, tag, token) != commit:
