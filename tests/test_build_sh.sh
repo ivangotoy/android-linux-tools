@@ -198,10 +198,12 @@ while True:
     c.sendall(b'HTTP/1.0 200 OK\r\nContent-Length: 1000\r\n\r\n' + b'0123456789')
     c.close()
 PY2
-  # the port arrives through a fifo: reading it blocks until the server is listening (no polling)
+  # the port arrives through a fifo: reading it blocks until the server is listening (no polling); bounded, so a
+  # server that dies before opening the fifo fails the case instead of hanging it
   mkfifo "$h/port"
   python3 -I "$h/short.py" "$h/port" & spid=$!
-  port=$(cat "$h/port")
+  port=$(timeout 60 cat "$h/port")
+  [ -n "$port" ] || { bad "fetch verify: test server did not start"; kill "$spid" 2>/dev/null; rm -rf "$h"; return; }
   recipe "$h" altpart "http://127.0.0.1:$port/altpart-1.tar.gz" "$sha" 'cat hello.txt'
   if build "$h" altpart > "$h/run1.txt" 2>&1; then
     bad "fetch verify: a failed download built"
