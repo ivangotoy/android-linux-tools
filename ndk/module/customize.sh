@@ -2,8 +2,19 @@
 # Uses only ui_print/abort/set_perm/set_perm_recursive from the manager, with fallbacks.
 
 command -v ui_print >/dev/null 2>&1 || ui_print() { echo "$1"; }
-# the managers' abort prints the message, removes $MODPATH and exits 1
-command -v abort >/dev/null 2>&1 || abort() { ui_print "$1"; exit 1; }
+# the managers' abort prints the message, removes $MODPATH and exits 1; the fallback does the same, but removes
+# MODPATH only if it is a real directory (not /, not a symlink) holding this module's module.prop
+if ! command -v abort >/dev/null 2>&1; then
+  abort() {
+    ui_print "$1"
+    alt_m=$MODPATH
+    while [ "${alt_m%/}" != "$alt_m" ]; do alt_m=${alt_m%/}; done
+    if [ -n "$alt_m" ] && [ -d "$alt_m" ] && [ ! -L "$alt_m" ] && grep -qx 'id=android-linux-tools' "$alt_m/module.prop" 2>/dev/null; then
+      rm -rf "$alt_m"
+    fi
+    exit 1
+  }
+fi
 if ! command -v set_perm >/dev/null 2>&1; then
   set_perm() {
     chown "$2:$3" "$1" 2>/dev/null
