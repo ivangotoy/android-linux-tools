@@ -54,8 +54,8 @@ case "$out" in
 esac
 
 # /data/local/tmp belongs to the shell user: links planted there for the pids the root run may get must not make
-# root write through them; the same for the non-root run (--nonroot) and its TMPDIR. The planting loop has a fixed
-# length, so the pid of the run is the same in both runs of one mode.
+# root write through them; the same for the non-root run (--nonroot) and its TMPDIR. The links are planted for the
+# pid of the shell that then execs phone-test.sh, so the script's $$ is exactly the planted pid.
 cat > "$h/plant.sh" <<'SH'
 s=/system/etc/android-linux-tools/share/android-linux-tools
 mkdir -p /data/adb/modules/android-linux-tools /data/local/tmp /system/bin /victim "$s"
@@ -63,28 +63,21 @@ echo version=v0.0-r1 > /data/adb/modules/android-linux-tools/module.prop
 printf '{\n "version": "v0.0-r1"\n}\n' > "$s/MANIFEST.json"
 ln -s /bin/sh /system/bin/sh
 cp /w/bin/* /usr/local/bin/ && chmod 755 /usr/local/bin/*
-i=$1
-while [ "$i" -lt $(($1 + 400)) ]; do
-  ln -s /victim "/data/local/tmp/alttoolstest.$i"
-  ln -s /victim/kconfig "/data/local/tmp/.alt-phone-test-kconfig.$i"
-  ln -s /victim "/data/local/tmp/alttoolstest-nr.$i"
-  i=$((i + 1))
-done
-sh /w/phone-test.sh $2 > /phone-test.out 2>&1 &
-echo "pid $!"
-wait
+sh -c 'ln -s /victim "/data/local/tmp/alttoolstest.$$"
+ln -s /victim/kconfig "/data/local/tmp/.alt-phone-test-kconfig.$$"
+ln -s /victim "/data/local/tmp/alttoolstest-nr.$$"
+exec sh /w/phone-test.sh "$@" > /phone-test.out 2>&1' sh "$@"
 grep -E '^(TOTAL|NONROOT) ' /phone-test.out
 echo "left:$(find /data/local/tmp -maxdepth 1 -name 'alttoolstest*' -type d | tr '\n' ' ')"
 echo "victim:$(ls -A /victim | tr '\n' ' ')"
 SH
 for mode in root --nonroot; do
   arg=; [ "$mode" = root ] || arg=$mode
-  pid=$(docker run --rm --network none -v "$h:/w:ro" alpine:3.22 sh /w/plant.sh 1 $arg 2>&1 | sed -n 's/^pid //p')
-  out=$(docker run --rm --network none -v "$h:/w:ro" alpine:3.22 sh /w/plant.sh "$((${pid:-200} - 200))" $arg 2>&1)
+  out=$(docker run --rm --network none -v "$h:/w:ro" alpine:3.22 sh /w/plant.sh $arg 2>&1)
   case "$out" in
-    *"pid $pid"*" pass="*"left:"$'\n'"victim:") ok "phone-test ($mode) wrote nothing through links planted in /data/local/tmp" ;;
-    *"pid $pid"*"victim:"?*) bad "phone-test ($mode) wrote through planted links: $(echo "$out" | grep victim)" ;;
-    *) bad "planted-link run ($mode) gave no result or left a work dir (pid ${pid:-none}): $out" ;;
+    *" pass="*"left:"$'\n'"victim:") ok "phone-test ($mode) wrote nothing through links planted in /data/local/tmp" ;;
+    *"victim:"?*) bad "phone-test ($mode) wrote through planted links: $(echo "$out" | grep victim)" ;;
+    *) bad "planted-link run ($mode) gave no result or left a work dir: $out" ;;
   esac
 done
 rm -rf "$h"
