@@ -1953,8 +1953,13 @@ Chosen approach (as upstream's Android release: CO-RE and non-CO-RE objects in o
   `prepare` with the NDK's clang/lld/llvm tools.
 - `make ANDROID=1 TARGET_ARCH=arm64 KERN_HEADERS=... KERNEL_HEADER_GEN=true KERN_RELEASE=6.18.62
   CMD_CLANG=ecap-clang CMD_LLC=<shim> CMD_STRIP=llvm-strip CMD_BPFTOOL=true CMD_CC=$CC CMD_AR=llvm-ar CLANG_VERSION=21
-  SNAPSHOT_VERSION=v2.10.0 assets`: 26 CO-RE objects (`-target bpfel` with `kern/bpf/arm64/vmlinux.h` from the
-  source) and 26 non-CO-RE objects (against the kernel headers), both in one go-bindata asset.
+  SNAPSHOT_VERSION=v2.10.0 IGNORE_LESS52="-ignore '.*_less52\.o' -modtime $SOURCE_DATE_EPOCH" assets`: 26 CO-RE
+  objects (`-target bpfel` with `kern/bpf/arm64/vmlinux.h` from the source) and 26 non-CO-RE objects (against the
+  kernel headers), both in one go-bindata asset. go-bindata (shuLhan v4.0.0) stores each object's mtime in the asset
+  (`release.go:257`), compiled into the program as constants; `-modtime` (`release.go:267-268`), passed through the
+  `IGNORE_LESS52` variable that `Makefile:225` hands to go-bindata (upstream's arm64 value `-ignore '.*_less52\.o'`,
+  `variables.mk:105`, kept), sets them all to `SOURCE_DATE_EPOCH`, and the recipe fails if any asset has another
+  time. Without it every build embedded its own build times.
   `ecap-clang` is the NDK clang with `-ffile-prefix-map` (the objects' BTF line info contains source paths); the NDK
   has no `llc`, so the shim compiles the LLVM IR from stdin with `clang --target=bpf -O2 -c -x ir -` (llc's default
   is -O2). `CLANG_VERSION`: variables.mk cannot parse the NDK clang banner. `KERNEL_HEADER_GEN=true`: the headers

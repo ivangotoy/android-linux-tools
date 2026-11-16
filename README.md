@@ -526,8 +526,8 @@ JOBS=8 MEM=12G ./build-ndk.sh  # make -j and memory limit (defaults)
 - Patches are applied in order; each starts with a header saying why and citing its source (termux-packages,
   buildroot, or written for this module).
 - Reproducible: two `./build-ndk.sh --clean` runs give byte-identical binaries, ZIP and MANIFEST
-  (`SOURCE_DATE_EPOCH`, `-ffile-prefix-map`, sorted ZIP entries, fixed mtimes, `zip -X -D` in TZ=UTC), except
-  `ecapture`: upstream's go-bindata step records the build-time mtimes of the BPF objects in the embedded asset.
+  (`SOURCE_DATE_EPOCH`, `-ffile-prefix-map`, sorted ZIP entries, fixed mtimes, `zip -X -D` in TZ=UTC; for `ecapture`,
+  go-bindata's `-modtime` records `SOURCE_DATE_EPOCH` instead of the build-time mtimes of the embedded BPF objects).
 
 ## Releases
 

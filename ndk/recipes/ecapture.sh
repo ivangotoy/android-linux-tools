@@ -47,10 +47,18 @@ build() {
   cp "$DEPROOT/lib/libpcap.a" .build/ecap_android-arm64/libpcap/libpcap.a
   # CO-RE and non-CO-RE BPF objects for the Android target set and their go-bindata asset (upstream's `assets`). CLANG_VERSION: the NDK clang
   # banner does not parse in variables.mk; KERNEL_HEADER_GEN: the headers are prepared above; bpftool is not used
-  # for arm64 (kern/bpf/arm64/vmlinux.h is in the source)
+  # for arm64 (kern/bpf/arm64/vmlinux.h is in the source).
+  # IGNORE_LESS52: upstream's arm64 value (variables.mk:105) plus -modtime. go-bindata (shuLhan v4.0.0, go.mod:12)
+  # records each object's mtime in the generated asset (release.go:257 fi.ModTime(); -modtime overrides it at
+  # :267-268), and Makefile:225 passes $(IGNORE_LESS52) to it; without -modtime every build embeds its own times.
   make ANDROID=1 TARGET_ARCH=arm64 KERN_HEADERS="$top/alt-linux" KERNEL_HEADER_GEN=true KERN_RELEASE="$LINUX_VERSION" \
     CMD_CLANG=ecap-clang CMD_LLC="$top/alt-bin/llc" CMD_STRIP=llvm-strip CMD_BPFTOOL=true CMD_CC="$CC" CMD_AR="$AR" \
-    CLANG_VERSION=21 SNAPSHOT_VERSION="v$VERSION" assets
+    CLANG_VERSION=21 SNAPSHOT_VERSION="v$VERSION" IGNORE_LESS52="-ignore '.*_less52\.o' -modtime $SOURCE_DATE_EPOCH" assets
+  # every asset must carry SOURCE_DATE_EPOCH (fails the build if go-bindata ignored -modtime)
+  local nt ns
+  nt=$(grep -c 'modTime: time\.Unix(' assets/ebpf_probe_ecap_android_arm64_bindata.go || true)
+  ns=$(grep -c "modTime: time\.Unix($SOURCE_DATE_EPOCH, 0)" assets/ebpf_probe_ecap_android_arm64_bindata.go || true)
+  [ "$nt" -gt 0 ] && [ "$nt" = "$ns" ] || { echo "go-bindata: $ns of $nt assets carry SOURCE_DATE_EPOCH" >&2; exit 1; }
 
   # the program: upstream's gobuild (functions.mk) for the `build` target (ByteCodeFiles=all; the version suffix is
   # the kernel release of the headers instead of the build host's uname -r), static non-PIE against bionic.
