@@ -81,9 +81,10 @@ for mode in root --nonroot; do
   esac
 done
 
-# TERM in the middle of the root run: the self-check must clean up (work directory, tmux test socket) and exit
-# non-zero. The tmux stub signals "ready" through a fifo from inside `tmux ls` (after the socket exists) and then
-# blocks on a second fifo; the harness sends TERM to the run, then releases the stub. No sleeps, no polling;
+# TERM in the middle of the root run, also after the reader of its output has gone, and a closed output alone
+# (SIGPIPE on the next line): the self-check must clean up (work directory, tmux test socket) and exit 128+signal.
+# The tmux stub signals "ready" through a fifo from inside `tmux ls` (after the socket exists) and then blocks on a
+# second fifo; the harness closes the output and/or sends TERM, then releases the stub. No sleeps, no polling;
 # every docker run of this case is bounded by timeout and its container removed by name.
 mkdir -p "$h/sig"
 cat > "$h/sig/tmux.stub" <<'SH'
@@ -102,23 +103,27 @@ mkdir -p /data/adb/modules/android-linux-tools /data/local/tmp /system/bin
 echo version=v0.0-r1 > /data/adb/modules/android-linux-tools/module.prop
 ln -s /bin/sh /system/bin/sh
 cp /w/bin/* /usr/local/bin/ && cp /w/sig/tmux.stub /usr/local/bin/tmux.stub && chmod 755 /usr/local/bin/*
-mkfifo /ready /block
-sh /w/phone-test.sh > /phone-test.out 2>&1 &
+mkfifo /ready /block /out
+cat /out > /phone-test.out &
+reader=$!
+sh /w/phone-test.sh > /out 2>&1 &
 pid=$!
 read -r x < /ready
-kill -TERM "$pid"
+case "$1" in term-closed|closed) kill "$reader"; wait "$reader" ;; esac
+case "$1" in term|term-closed) kill -TERM "$pid" ;; esac
 echo go > /block
 wait "$pid"
 echo "rc=$?"
-grep -E '^interrupted' /phone-test.out
 echo "left:$(find /data/local/tmp -mindepth 1 -maxdepth 1 | tr '\n' ' ')"
 SH
-name=alt-test-sig-$$
-out=$(timeout 120 docker run --rm --name "$name" --init --network none -v "$h:/w:ro" alpine:3.22 sh /w/sig/run.sh 2>&1)
-docker rm -f "$name" >/dev/null 2>&1
-case "$out" in
-  *"rc=143"*"left:") ok "phone-test on TERM: exit 143, work directory and tmux socket removed" ;;
-  *) bad "phone-test on TERM: $(echo "$out" | tr '\n' ' ')" ;;
-esac
+for c in term:143 term-closed:143 closed:141; do
+  name=alt-test-sig-$$-${c%:*}
+  out=$(timeout 120 docker run --rm --name "$name" --init --network none -v "$h:/w:ro" alpine:3.22 sh /w/sig/run.sh "${c%:*}" 2>&1)
+  docker rm -f "$name" >/dev/null 2>&1
+  case "$out" in
+    *"rc=${c#*:}"$'\n'"left:") ok "phone-test ${c%:*}: exit ${c#*:}, work directory and tmux socket removed" ;;
+    *) bad "phone-test ${c%:*}: $(echo "$out" | tr '\n' ' ')" ;;
+  esac
+done
 rm -rf "$h"
 [ "$FAILS" -eq 0 ]

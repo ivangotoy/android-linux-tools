@@ -43,7 +43,8 @@ result() {
 }
 
 # cleanup: undo what the checks created (test table/set/link, tmux test server and socket, work directories); every
-# step is guarded, so it is safe at any point of the run. Also run on INT/TERM/HUP, then the script exits 128+signal.
+# step is guarded, so it is safe at any point of the run. Also run on INT/TERM/HUP and on PIPE (output closed, e.g.
+# the adb session ended), then the script exits 128+signal.
 W=""
 NW=""
 NFT=""
@@ -66,14 +67,17 @@ cleanup() {
   return 0
 }
 on_signal() {
-  trap - INT TERM HUP
-  echo "interrupted: cleaning up"
+  trap - INT TERM HUP PIPE
+  # the output may be a pipe whose reader is gone (closed adb session): ignore SIGPIPE and clean up before printing
+  trap '' PIPE
   cleanup
+  echo "interrupted: cleaned up" 2>/dev/null
   exit "$1"
 }
 trap 'on_signal 129' HUP
 trap 'on_signal 130' INT
 trap 'on_signal 143' TERM
+trap 'on_signal 141' PIPE
 
 MAP=$(alt-list -m 2>/dev/null)
 if [ -z "$MAP" ]; then
