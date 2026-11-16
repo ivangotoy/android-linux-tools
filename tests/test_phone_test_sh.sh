@@ -19,12 +19,17 @@ cp "$ALT_TREE/phone-test.sh" "$h/"
 # tmux wrapper: the environment lines stage.py writes into every wrapper and the tmux ones (EXTRA_ENV)
 python3 -I - "$ALT_TREE/ndk/scripts/stage.py" > "$h/bin/tmux" <<'PY' || { bad "cannot read wrapper lines from stage.py"; exit 1; }
 import ast, sys
+# the wrapper-line definitions of stage.py (module-level assignments and helper functions before the staging code),
+# run on their own; TMPDIR_LINES (the TMPDIR lines of a wrapper) did not exist before the root-only TMPDIR guard
 tree = ast.parse(open(sys.argv[1]).read())
-extra = next(ast.literal_eval(n.value) for n in ast.walk(tree)
-             if isinstance(n, ast.Assign) and getattr(n.targets[0], 'id', '') == 'EXTRA_ENV')
-tmpdir = next(n.value for n in ast.walk(tree) if isinstance(n, ast.Constant) and isinstance(n.value, str)
-              and n.value.startswith('[ -n "$TMPDIR" ] ||'))
-print('\n'.join(['#!/bin/sh', 'ALTDIR=/system/etc/android-linux-tools', tmpdir] + extra['tmux'] +
+names = {'ROOTDIR', 'ROOTTMP', 'TMPDIR_GUARD', 'TMPDIR_LINES', 'EXTRA_ENV'}
+body = [n for n in tree.body if (isinstance(n, ast.Assign) and getattr(n.targets[0], 'id', '') in names)
+        or (isinstance(n, ast.FunctionDef) and n.name == 'rootdir_ok')]
+ns = {'MODID': 'android-linux-tools', 'ALTDIR': '/system/etc/android-linux-tools'}
+exec(compile(ast.Module(body=body, type_ignores=[]), sys.argv[1], 'exec'), ns)
+tmpdir = ns.get('TMPDIR_LINES') or [next(n.value for n in ast.walk(tree) if isinstance(n, ast.Constant)
+                                         and isinstance(n.value, str) and n.value.startswith('[ -n "$TMPDIR" ] ||'))]
+print('\n'.join(['#!/bin/sh', 'ALTDIR=/system/etc/android-linux-tools'] + tmpdir + ns['EXTRA_ENV']['tmux'] +
                 ['exec /usr/local/bin/tmux.stub "$@"']))
 PY
 cat > "$h/bin/tmux.stub" <<'SH'

@@ -169,6 +169,22 @@ the rename loop of `customize.sh`. `/system/etc` is where Android keeps non-`PAT
 `etc/`, `share/` and `libexec/` names inside keep the v2.1 relative layout. The only `/data/adb` path left is
 `$MODDIR` in `phone-test.sh`.
 
+Temporary files and root: AOSP `rootdir/init.rc` (platform/system/core a3b721a3) creates
+`mkdir /data/local 0751 root root` (line 783) and `mkdir /data/local/tmp 0771 shell shell` (line 831), so the shell
+user can create, rename and replace entries in `/data/local/tmp` but not in `/data/local`. The module's root-only
+directory is `/data/local/android-linux-tools` (each level made with `mkdir -m 700`, used only if it is a directory,
+not a symlink, owned by the running uid and writable): the adb key pair of root (`HOME`), and `tmp/` for root's
+`TMPDIR` in an opt-in set of three wrappers with TMPDIR unset: `mkfs.erofs` (erofs-utils `lib/diskbuf.c:69-79`),
+`iperf3` (`src/iperf_api.c:4973-5011`) and `eu-readelf` (elfutils `src/readelf.c:928-934`), which make temporary
+files under `$TMPDIR` and start no other program that could run as another uid with that `TMPDIR`. Every other
+wrapper keeps `/data/local/tmp` for an unset `TMPDIR`. Every wrapper replaces an inherited `TMPDIR` of
+`/data/local/android-linux-tools/tmp` that the caller cannot write with `/data/local/tmp`; the tmux wrapper drops
+such an inherited `TMUX_TMPDIR` and takes its `TMPDIR` instead.
+adbd sets `TMPDIR=/data/local/tmp` for every shell it starts (packages/modules/adb 1cf2f017
+`daemon/shell_service.cpp:277`); AOSP `mkshrc` (external/mksh 15480768) sets no `TMPDIR`. So the root default
+applies only where `TMPDIR` is unset (for example a process started by init or an app without it); a root shell
+that inherited the adb value keeps `/data/local/tmp` unless `TMPDIR` is unset.
+
 Checks: `ndk/scripts/check.py` fails on `$MODDIR` or `/data/adb` in a wrapper, `/data/adb` in an NDK ELF, an ELF
 outside `$ALTDIR/libexec`, or a v2.1 runtime path in the module root.
 
@@ -799,7 +815,8 @@ CHECKSUM_SOURCE: `.sha256` published by ESnet for the downloads.es.net tarball.
 
 Why:
 - Upstream already handles Android: `iperf_pthread.c` emulates `pthread_cancel`, flowlabel is guarded, and the
-  temp dir is `/data/local/tmp`, which suits root.
+  temp dir is `$TMPDIR` (then `$TEMP`, `$TMP`), else `/data/local/tmp` (`src/iperf_api.c:4973-4984`). The iperf3 wrapper is one of the
+  three that give root with `TMPDIR` unset the root-only `/data/local/android-linux-tools/tmp` ("Runtime layout").
 - Termux's patches only cover its prefix and examples.
 - The survey suggested `CFLAGS=-D_GNU_SOURCE` and `make -C src iperf3`. The recipe uses a plain `make`.
 
@@ -1047,7 +1064,7 @@ Why:
 - Termux's `glob_h`/`pwd_h=no` are for its API-24 baseline (glob is API 28, getpwent API 26), so they are not
   needed at 29.
 - The optional path patch was not taken. nano uses `$TMPDIR` before `P_tmpdir` (`"/tmp/"` in NDK stdio.h), and
-  every wrapper exports `TMPDIR=/data/local/tmp` when it is unset.
+  its wrapper exports `TMPDIR=/data/local/tmp` when it is unset.
 - When `$SHELL` is unset, nano's fallback shell is still `/bin/sh` [survey, from the Termux patch].
 
 ### less 710
@@ -1118,7 +1135,7 @@ Why:
 - DBSTAT is enabled as in AOSP. The survey also suggested `--enable-session`, which is not enabled.
 - Termux's ftruncate patch is not applied. The `__ANDROID__` guard in `robust_ftruncate()` stays, and per the
   survey it ignores truncation beyond 2 GiB (it matters for VACUUM/truncate of databases > 2 GiB).
-- Temp files use `$TMPDIR`, which the wrapper sets to `/data/local/tmp`.
+- Temp files use `$TMPDIR`, which the wrapper sets to `/data/local/tmp` when it is unset.
 
 ### zstd 1.5.7
 Sources checked:
@@ -1273,7 +1290,7 @@ Why:
 - config-top.h uses `#ifndef` for the two path macros, so CPPFLAGS sets Android paths without a patch.
 - Termux's prefix patches are not needed. Its readline getpwent patch is optional (getpwent only returns Android
   AIDs), and its loadables patches cover code that is not built.
-- Temp files use `$TMPDIR`, which the wrapper sets.
+- Temp files use `$TMPDIR`, which the wrapper sets to `/data/local/tmp` when it is unset.
 
 ### nmap 7.993 (nmap, nping, ncat; dynamic)
 Sources checked (nmap, nping and NSE surveyed on 2026-11-09):

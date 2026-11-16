@@ -24,20 +24,58 @@ API = int(os.environ.get('API', '29'))
 NDK_RELEASE = os.environ.get('NDK_RELEASE', '')
 REPO_URL = 'https://git.digtvbg.com/ivangotoy/android-linux-tools'
 
+# Root-only directory of the module under /data/local (root root 0751 in AOSP rootdir/init.rc, so no other uid can
+# create, rename or replace entries in it), unlike /data/local/tmp (shell shell 0771). Each level is made with
+# mkdir -m 700 (mkdir -p would set the mode on the last level only) and is used only if it is a directory, not a
+# symlink, owned by the running uid and writable; the checks are shell tests, no extra process (wrappers run often).
+ROOTDIR = '/data/local/' + MODID
+ROOTTMP = ROOTDIR + '/tmp'
+
+
+def rootdir_ok(*dirs):
+    """shell condition: every dir exists or is made 0700, and is a real directory of the running uid, writable"""
+    made = ' && '.join('{ [ -d %s ] || mkdir -m 700 %s 2>/dev/null; }' % (d, d) for d in dirs)
+    checks = ' && '.join('[ ! -L %s ] && [ -O %s ]' % (d, d) for d in dirs)
+    return '%s && %s && [ -w %s ]' % (made, checks, dirs[-1])
+
+
+# TMPDIR in every wrapper: a TMPDIR the caller set is kept, except the module's root-only ROOTTMP when the caller
+# cannot write it (a non-root process that inherited it from a root session): that caller gets /data/local/tmp.
+# Unset TMPDIR: /data/local/tmp, except for the tools in ROOT_TMPDIR_TOOLS run as root.
+TMPDIR_GUARD = ('if [ "$TMPDIR" = %s ] && [ ! -w "$TMPDIR" ]; then export TMPDIR=/data/local/tmp; fi' % ROOTTMP)
+TMPDIR_LINES = [TMPDIR_GUARD, '[ -n "$TMPDIR" ] || export TMPDIR=/data/local/tmp']
+# Opt-in: with TMPDIR unset, root gets ROOTTMP (only root can write /data/local; if ROOTTMP cannot be made or fails
+# the checks, /data/local/tmp as before, silently). Only leaf tools: they create temporary files under $TMPDIR
+# (source, pinned tarball) and start no other program that could run as another uid with the inherited TMPDIR.
+#   mkfs.erofs  erofs-utils 1.9.4 lib/diskbuf.c:69-79 erofs_tmpfile(): getenv("TMPDIR") + mkstemp (mkfs/main.c:1878);
+#               exec/fork only in mount/main.c (mount.erofs, not shipped)
+#   iperf3      iperf 3.22 src/iperf_api.c:4973-5011 getenv("TMPDIR") + mkstemp; fork only in daemon(3) for -D
+#               (src/iperf_util.c:502-545)
+#   eu-readelf  elfutils 0.197 src/readelf.c:928-934 getenv("TMPDIR") + mkstemp; built without debuginfod
+ROOT_TMPDIR_TOOLS = {'mkfs.erofs', 'iperf3', 'eu-readelf'}
+ROOT_TMPDIR_LINES = [TMPDIR_GUARD,
+                     'if [ -z "$TMPDIR" ]; then',
+                     '  if [ -w /data/local ] && %s; then' % rootdir_ok(ROOTDIR, ROOTTMP),
+                     '    export TMPDIR=%s' % ROOTTMP,
+                     '  else',
+                     '    export TMPDIR=/data/local/tmp',
+                     '  fi',
+                     'fi']
+
 EXTRA_ENV = {
     'mtr': ['export MTR_PACKET="$ALTDIR/libexec/mtr-packet"'],
     # socket directory: the caller's TMPDIR (apps such as Termux cannot write /data/local/tmp)
-    'tmux': ['[ -n "$TMUX_TMPDIR" ] || export TMUX_TMPDIR="${TMPDIR:-/data/local/tmp}"',
+    'tmux': ['if [ "$TMUX_TMPDIR" = %s ] && [ ! -w "$TMUX_TMPDIR" ]; then unset TMUX_TMPDIR; fi' % ROOTTMP,
+             '[ -n "$TMUX_TMPDIR" ] || export TMUX_TMPDIR="${TMPDIR:-/data/local/tmp}"',
              '[ -n "$SHELL" ] || export SHELL=/system/bin/sh'],
     # adb keeps its key pair in $HOME/.android; root's home directory on Android is / (read-only). Root gets
-    # /data/local/android-linux-tools (0700): /data/local is root:root 0751, so the shell user cannot create,
-    # replace or rename anything there, unlike in /data/local/tmp (shell:shell 0771). Other uids keep
-    # /data/local/tmp. If the directory cannot be made, root falls back to /data/local/tmp with a warning.
+    # ROOTDIR (see above). Other uids keep /data/local/tmp. If ROOTDIR cannot be made or fails the checks, root
+    # falls back to /data/local/tmp with a warning.
     'adb': ['if [ ! -w "${HOME:-/}" ]; then',
             '  if [ "$(id -u)" != 0 ]; then',
             '    export HOME=/data/local/tmp',
-            '  elif mkdir -p -m 700 /data/local/android-linux-tools 2>/dev/null && [ -w /data/local/android-linux-tools ]; then',
-            '    export HOME=/data/local/android-linux-tools',
+            '  elif %s; then' % rootdir_ok(ROOTDIR),
+            '    export HOME=%s' % ROOTDIR,
             '  else',
             '    echo "adb: cannot use /data/local/android-linux-tools for the key pair, using HOME=/data/local/tmp" >&2',
             '    export HOME=/data/local/tmp',
@@ -143,7 +181,7 @@ for e in entries:
         continue
     # every path is under ALTDIR (/system/etc/<MODID>, mounted by the root manager), never /data/adb (root-only)
     lines = ['#!/system/bin/sh', 'ALTDIR=' + ALTDIR, 'export TERMINFO="$ALTDIR/share/terminfo"']
-    lines.append('[ -n "$TMPDIR" ] || export TMPDIR=/data/local/tmp')
+    lines += ROOT_TMPDIR_LINES if e['name'] in ROOT_TMPDIR_TOOLS else TMPDIR_LINES
     lines += EXTRA_ENV.get(e['name'], [])
     exe = '"$ALTDIR/libexec/%s" %s' % (e['target'], e['args'] + ' ' if e['args'] else '')
     if e['name'] == 'curl':

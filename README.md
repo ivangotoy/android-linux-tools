@@ -58,7 +58,11 @@ runtime file is in the module's `system/` tree, which the root manager mounts ov
 
 `ALTDIR=/system/etc/android-linux-tools`, `ALTSHARE=$ALTDIR/share/android-linux-tools`. A wrapper is a small
 `#!/system/bin/sh` script that sets `ALTDIR`, `TERMINFO` and (if unset) `TMPDIR=/data/local/tmp` and execs
-`$ALTDIR/libexec/<program>`; it contains no `$MODDIR` or `/data/adb` path. `customize.sh` sets everything
+`$ALTDIR/libexec/<program>`; it contains no `$MODDIR` or `/data/adb` path. A `TMPDIR` the caller set is kept,
+except the module's root-only `/data/local/android-linux-tools/tmp` when the caller cannot write it (then
+`/data/local/tmp`). With `TMPDIR` unset, `mkfs.erofs`, `iperf3` and `eu-readelf` run as root use
+`/data/local/android-linux-tools/tmp` (created 0700; `/data/local/tmp` if that fails). An adb shell already sets
+`TMPDIR=/data/local/tmp`; a root shell that keeps that value also keeps it for these tools. `customize.sh` sets everything
 root:root with SELinux context `u:object_r:system_file:s0`: `0755` for directories, programs and scripts, `0644`
 for data. `/system/etc` exists on every device, so no new top-level `/system` directory is needed; sources in
 `ndk/REFERENCES.md`, "Runtime layout".
@@ -459,8 +463,8 @@ URL and sha256, how the checksum was verified, licence, patches, dependencies, l
   the nmeum/android-tools CMake packaging, with its bundled libusb (usbfs, no udev), fmt and BoringSSL, and
   protobuf 3.21.12, brotli, PCRE2, lz4 and zstd from this tree. `adb` keeps its key pair in `$HOME/.android`. When
   `HOME` is unset or not writable, the wrapper sets `HOME=/data/local/android-linux-tools` (created 0700) for root
-  and `HOME=/data/local/tmp` for other users; if root cannot create or write that directory, it warns and uses
-  `/data/local/tmp`. No mDNS discovery.
+  and `HOME=/data/local/tmp` for other users; if root cannot create or use that directory (it must be a directory
+  owned by root, not a symlink), it warns and uses `/data/local/tmp`. No mDNS discovery.
 - git 2.56.1: with the https/http transport (libcurl with mbedTLS, CA file `$ALTDIR/etc/ssl/cert.pem`); ssh
   remotes use the `ssh` command in `PATH` (the module's dbclient). No Perl, Python or Tcl/Tk parts (`git add -p`
   is built in; no `git svn`, `git send-email`, gitk) and no WebDAV push. `git submodule`, `git mergetool`,
