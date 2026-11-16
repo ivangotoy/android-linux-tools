@@ -37,5 +37,40 @@ rows = [r for r in json.load(open(sys.argv[1]))['licenses'] if r['name'] == 'and
 assert len(rows) == 1 and rows[0]['license_files'] == ['share/licenses/ndk/android-ndk-sysroot/NOTICE'], rows
 assert rows[0]['version'] == 'r30' and len(rows[0]['sha256']) == 64, rows
 PY
+
+# the adb wrapper stage.py wrote, under busybox ash (alpine:3.22) in front of a stub adb that prints its HOME:
+# with a HOME it cannot write, root gets the root-only /data/local/android-linux-tools (never /data/local/tmp,
+# which the shell user controls), other uids get /data/local/tmp, and root falls back to /data/local/tmp with a
+# warning when /data/local is read-only
+if command -v docker >/dev/null && docker image inspect alpine:3.22 >/dev/null 2>&1; then
+  mkdir -p "$h/adb/local"
+  cp "$st/system/bin/adb" "$h/adb/adb"
+  if grep -q -e MODDIR -e /data/adb "$h/adb/adb"; then bad "adb wrapper references \$MODDIR or /data/adb"; fi
+  cat > "$h/adb/run.sh" <<'SH'
+mkdir -p /system/bin /system/etc/android-linux-tools/libexec /data/local/tmp && ln -s /bin/sh /system/bin/sh
+printf '#!/bin/sh\necho "HOME=$HOME"\n' > /system/etc/android-linux-tools/libexec/adb
+chmod 755 /system/etc/android-linux-tools/libexec/adb
+cp /w/adb /system/bin/adb && chmod 755 /system/bin/adb && chmod 1777 /data/local/tmp
+HOME=/nonexistent /system/bin/adb 2>&1
+HOME=/nonexistent su -s /bin/sh nobody -c /system/bin/adb 2>&1
+echo "mode $(stat -c %a /data/local/android-linux-tools 2>/dev/null)"
+SH
+  out=$(timeout 120 docker run --rm --network none -v "$h/adb:/w:ro" alpine:3.22 sh /w/run.sh 2>&1)
+  case "$out" in
+    "HOME=/data/local/android-linux-tools"$'\n'"HOME=/data/local/tmp"$'\n'"mode 700") ok "adb wrapper: root HOME /data/local/android-linux-tools (0700), other uids /data/local/tmp" ;;
+    *) bad "adb wrapper HOME: $(echo "$out" | tr '\n' ' ')" ;;
+  esac
+  out=$(timeout 120 docker run --rm --network none -v "$h/adb:/w:ro" -v "$h/adb/local:/data/local:ro" alpine:3.22 \
+    sh -c 'mkdir -p /system/bin /system/etc/android-linux-tools/libexec && ln -s /bin/sh /system/bin/sh
+printf "#!/bin/sh\necho HOME=\$HOME\n" > /system/etc/android-linux-tools/libexec/adb
+chmod 755 /system/etc/android-linux-tools/libexec/adb
+HOME=/nonexistent sh /w/adb 2>&1' 2>&1)
+  case "$out" in
+    *"adb: cannot use /data/local/android-linux-tools"*"HOME=/data/local/tmp") ok "adb wrapper: root falls back to /data/local/tmp with a warning when /data/local is read-only" ;;
+    *) bad "adb wrapper fallback: $(echo "$out" | tr '\n' ' ')" ;;
+  esac
+else
+  bad "adb wrapper: docker or the alpine:3.22 image missing"
+fi
 rm -rf "$h"
 [ "$FAILS" -eq 0 ]

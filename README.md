@@ -457,8 +457,10 @@ URL and sha256, how the checksum was verified, licence, patches, dependencies, l
   and `rz-ar` are commands that start it as that program. Data files are in `$ALTDIR/share/rizin`.
 - android-tools 37.0.0p1: `adb`, `fastboot`, `simg2img`, `img2simg`, `lpunpack`, `lpmake` from the AOSP sources in
   the nmeum/android-tools CMake packaging, with its bundled libusb (usbfs, no udev), fmt and BoringSSL, and
-  protobuf 3.21.12, brotli, PCRE2, lz4 and zstd from this tree. `adb` keeps its key pair in `$HOME/.android`; the
-  wrapper sets `HOME=/data/local/tmp` when `HOME` is unset or not writable. No mDNS discovery.
+  protobuf 3.21.12, brotli, PCRE2, lz4 and zstd from this tree. `adb` keeps its key pair in `$HOME/.android`. When
+  `HOME` is unset or not writable, the wrapper sets `HOME=/data/local/android-linux-tools` (created 0700) for root
+  and `HOME=/data/local/tmp` for other users; if root cannot create or write that directory, it warns and uses
+  `/data/local/tmp`. No mDNS discovery.
 - git 2.56.1: with the https/http transport (libcurl with mbedTLS, CA file `$ALTDIR/etc/ssl/cert.pem`); ssh
   remotes use the `ssh` command in `PATH` (the module's dbclient). No Perl, Python or Tcl/Tk parts (`git add -p`
   is built in; no `git svn`, `git send-email`, gitk) and no WebDAV push. `git submodule`, `git mergetool`,

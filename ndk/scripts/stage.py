@@ -29,8 +29,20 @@ EXTRA_ENV = {
     # socket directory: the caller's TMPDIR (apps such as Termux cannot write /data/local/tmp)
     'tmux': ['[ -n "$TMUX_TMPDIR" ] || export TMUX_TMPDIR="${TMPDIR:-/data/local/tmp}"',
              '[ -n "$SHELL" ] || export SHELL=/system/bin/sh'],
-    # adb keeps its key pair in $HOME/.android; root's home directory on Android is / (read-only)
-    'adb': ['[ -w "${HOME:-/}" ] || export HOME=/data/local/tmp'],
+    # adb keeps its key pair in $HOME/.android; root's home directory on Android is / (read-only). Root gets
+    # /data/local/android-linux-tools (0700): /data/local is root:root 0751, so the shell user cannot create,
+    # replace or rename anything there, unlike in /data/local/tmp (shell:shell 0771). Other uids keep
+    # /data/local/tmp. If the directory cannot be made, root falls back to /data/local/tmp with a warning.
+    'adb': ['if [ ! -w "${HOME:-/}" ]; then',
+            '  if [ "$(id -u)" != 0 ]; then',
+            '    export HOME=/data/local/tmp',
+            '  elif mkdir -p -m 700 /data/local/android-linux-tools 2>/dev/null && [ -w /data/local/android-linux-tools ]; then',
+            '    export HOME=/data/local/android-linux-tools',
+            '  else',
+            '    echo "adb: cannot use /data/local/android-linux-tools for the key pair, using HOME=/data/local/tmp" >&2',
+            '    export HOME=/data/local/tmp',
+            '  fi',
+            'fi'],
 }
 TERMS = ['xterm', 'xterm-256color', 'xterm-color', 'screen', 'screen-256color', 'tmux', 'tmux-256color',
          'linux', 'vt100', 'vt220', 'dumb', 'ansi', 'rxvt', 'rxvt-unicode', 'rxvt-unicode-256color']

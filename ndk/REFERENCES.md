@@ -2109,8 +2109,11 @@ Chosen approach: the release tarball, the six programs as ninja targets, bundled
   The Termux USB patches (for termux-usb) are not used: libusb opens the usbfs nodes directly.
 - No `liblog.so`: the programs need `libc.so`, `libm.so`, `libdl.so` and `libz.so`. Dynamic because adb resolves
   host names (`adb connect`).
-- The wrapper sets `HOME=/data/local/tmp` when `HOME` is unset or not writable (adb's key pair is in
-  `$HOME/.android`; root's home directory is `/`).
+- adb's key pair is in `$HOME/.android`; root's home directory is `/`. When `HOME` is unset or not writable the
+  wrapper sets `HOME=/data/local/android-linux-tools` (created 0700) for root and `HOME=/data/local/tmp` for other
+  users. `/data/local` is `root root 0751` (AOSP `rootdir/init.rc`), so only root can create or replace entries
+  there; `/data/local/tmp` is `shell shell 0771`. If root cannot create or write the directory, the wrapper
+  prints a warning and uses `/data/local/tmp`.
 
 ### git 2.56.1 (git, git-remote-http/https; dynamic)
 | Source | Observed |
