@@ -83,7 +83,7 @@ ln -s /victim/kconfig "/data/local/tmp/.alt-phone-test-kconfig.$$"
 ln -s /victim "/data/local/tmp/alttoolstest-nr.$$"
 exec sh /w/phone-test.sh "$@" > /phone-test.out 2>&1' sh "$@"
 grep -E '^(TOTAL|NONROOT) ' /phone-test.out
-echo "left:$(find /data/local/tmp -maxdepth 1 -name 'alttoolstest*' -type d | tr '\n' ' ')"
+echo "left:$(find /data/local/tmp /data/local/android-linux-tools/tmp -maxdepth 1 -name 'alttoolstest*' -type d 2>/dev/null | tr '\n' ' ')"
 echo "victim:$(ls -A /victim | tr '\n' ' ')"
 SH
 for mode in root --nonroot; do
@@ -131,7 +131,7 @@ case "$1" in term|term-closed) kill -TERM "$pid" ;; esac
 echo go > /block
 wait "$pid"
 echo "rc=$?"
-echo "left:$(find /data/local/tmp -mindepth 1 -maxdepth 1 | tr '\n' ' ')"
+echo "left:$(find /data/local/tmp /data/local/android-linux-tools/tmp -mindepth 1 -maxdepth 1 2>/dev/null | tr '\n' ' ')"
 SH
 for c in term:143 term-closed:143 closed:141; do
   name=alt-test-sig-$$-${c%:*}
@@ -168,5 +168,62 @@ for c in symlink foreign; do
     *) bad "phone-test tmux cleanup ($c tmux-0): $(echo "$out" | tr '\n' ' ')" ;;
   esac
 done
+
+# the root run's work directory is under the root-only /data/local/android-linux-tools/tmp, not in /data/local/tmp
+# (where the shell user could rename it). Inspected mid-run while the stub tmux blocks in `tmux ls` (fifos, no
+# sleeps): the work directory, nothing named alttoolstest* in /data/local/tmp, both levels 0700 under umask 000
+# (phone-test.sh makes them first), and uid 2000 can neither list nor rename in there. A planted symlink for the
+# tmp level makes the run fall back to /data/local/tmp with a note. The non-root run that inherited the root-only
+# TMPDIR (not writable for it) works in /data/local/tmp.
+cat > "$h/sig/where.sh" <<'SH'
+umask 000
+mkdir -p /data/adb/modules/android-linux-tools /data/local/tmp /system/bin && chmod 751 /data/local && chmod 1771 /data/local/tmp
+echo version=v0.0-r1 > /data/adb/modules/android-linux-tools/module.prop
+ln -s /bin/sh /system/bin/sh
+cp /w/bin/* /usr/local/bin/ && cp /w/sig/tmux.stub /usr/local/bin/tmux.stub && chmod 755 /usr/local/bin/*
+R=/data/local/android-linux-tools/tmp
+[ "$1" = planted ] && mkdir -m 700 /data/local/android-linux-tools && ln -s /data/local/tmp $R
+mkfifo /ready /block
+env -u TMPDIR sh /w/phone-test.sh > /phone-test.out 2>&1 &
+pid=$!
+read -r x < /ready
+for d in $R/alttoolstest.* /data/local/tmp/alttoolstest.*; do [ -d "$d" ] && echo "work $(readlink -f "$d" | sed 's/\.[^.]*$//')"; done | sort -u
+echo "modes $(stat -c %a /data/local/android-linux-tools) $(stat -c %a $R)"
+su -s /bin/sh nobody -c "ls $R >/dev/null 2>&1 && echo 'nobody can list'; mv $R/alttoolstest.* /data/local/tmp/x 2>/dev/null && echo 'nobody renamed'"
+echo go > /block
+wait "$pid"
+grep '^note: cannot use' /phone-test.out
+echo "left:$(find /data/local/tmp $R/ -mindepth 1 -maxdepth 1 -name 'alttoolstest*' 2>/dev/null | tr '\n' ' ')"
+SH
+for c in normal planted; do
+  out=$(drun "where-$c" --init --network none -v "$h:/w:ro" alpine:3.22 sh /w/sig/where.sh "$c" 2>&1)
+  case "$c" in
+    normal) want="work /data/local/android-linux-tools/tmp/alttoolstest
+modes 700 700
+left:" ;;
+    planted) want="work /data/local/tmp/alttoolstest
+modes 700 777
+note: cannot use /data/local/android-linux-tools/tmp for the work directory, using /data/local/tmp
+left:" ;;
+  esac
+  if [ "$out" = "$want" ]; then ok "phone-test root work directory ($c)"; else bad "phone-test root work directory ($c): $(echo "$out" | tr '\n' '|')"; fi
+done
+cat > "$h/nrinh.sh" <<'SH'
+s=/system/etc/android-linux-tools/share/android-linux-tools
+mkdir -p /data/adb/modules/android-linux-tools /data/local/android-linux-tools/tmp /data/local/tmp /system/bin "$s"
+chmod 751 /data/local && chmod 700 /data/local/android-linux-tools /data/local/android-linux-tools/tmp && chmod 1777 /data/local/tmp
+printf '{\n "version": "v0.0-r1"\n}\n' > "$s/MANIFEST.json"
+ln -s /bin/sh /system/bin/sh
+cp /w/bin/* /usr/local/bin/ && chmod 755 /usr/local/bin/*
+cp /w/phone-test.sh /pt.sh && chmod 644 /pt.sh
+su -s /bin/sh nobody -c 'TMPDIR=/data/local/android-linux-tools/tmp sh /pt.sh --nonroot' > /nr.out 2>&1
+grep -E 'wrappers.*cannot write|^NONROOT ' /nr.out | sed 's/pass=.*//'
+grep -q '^NONROOT ' /nr.out || tail -n 5 /nr.out
+SH
+out=$(drun nrinh --network none -v "$h:/w:ro" alpine:3.22 sh /w/nrinh.sh 2>&1)
+case "$out" in
+  "NONROOT ") ok "phone-test --nonroot with an inherited root-only TMPDIR works in /data/local/tmp" ;;
+  *) bad "phone-test --nonroot inherited TMPDIR: $(echo "$out" | tr '\n' '|')" ;;
+esac
 rm -rf "$h"
 [ "$FAILS" -eq 0 ]

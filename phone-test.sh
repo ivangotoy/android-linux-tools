@@ -9,6 +9,15 @@ MODDIR=/data/adb/modules/android-linux-tools
 ALTDIR=/system/etc/android-linux-tools
 ALTSHARE=$ALTDIR/share/android-linux-tools
 SELF=$ALTSHARE/phone-test.sh
+# root-only directory of the module (/data/local is root root 0751, so no other uid can create, rename or replace
+# entries in it, unlike in /data/local/tmp, which belongs to the shell user); the wrappers use it too
+ALTROOT=/data/local/android-linux-tools
+# a TMPDIR inherited from a root session that points at the root-only tmp but is not writable here (the non-root
+# run started through su/setpriv): use /data/local/tmp like the wrappers do
+if [ "$TMPDIR" = "$ALTROOT/tmp" ] && [ ! -w "$TMPDIR" ]; then
+  TMPDIR=/data/local/tmp
+  export TMPDIR
+fi
 PASS=0
 FAIL=0
 SKIP=0
@@ -283,9 +292,17 @@ for f in "setpriv" "su 2000 -c" "su shell -c" "su -s /system/bin/sh 2000 -c"; do
   fi
 done
 
-# work directory of the root run: a new directory with a random name (/data/local/tmp is writable by the shell
-# user, who could plant a symlink at a fixed or pid-based name for root to write through)
-W=$(mktemp -d /data/local/tmp/alttoolstest.XXXXXX) || { echo "cannot create a work directory in /data/local/tmp"; exit 2; }
+# work directory of the root run: a new directory with a random name under the root-only $ALTROOT/tmp (each level
+# made with mkdir -m 700, used only if it is a directory, not a symlink, owned by root and writable). In
+# /data/local/tmp the shell user could rename the work directory mid-run and put a symlink in its place.
+if { [ -d "$ALTROOT" ] || mkdir -m 700 "$ALTROOT" 2>/dev/null; } && { [ -d "$ALTROOT/tmp" ] || mkdir -m 700 "$ALTROOT/tmp" 2>/dev/null; } &&
+   [ ! -L "$ALTROOT" ] && [ -O "$ALTROOT" ] && [ ! -L "$ALTROOT/tmp" ] && [ -O "$ALTROOT/tmp" ] && [ -w "$ALTROOT/tmp" ]; then
+  W=$(mktemp -d "$ALTROOT/tmp/alttoolstest.XXXXXX" 2>/dev/null)
+fi
+if [ -z "$W" ]; then
+  echo "note: cannot use $ALTROOT/tmp for the work directory, using /data/local/tmp"
+  W=$(mktemp -d /data/local/tmp/alttoolstest.XXXXXX) || { echo "cannot create a work directory"; exit 2; }
+fi
 # The kernel config is ~190 KB: too big for one argument (MAX_ARG_STRLEN is
 # 128 KB and mksh runs printf as an external command), so keep it in a file.
 KCONF=""
