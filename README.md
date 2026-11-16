@@ -570,8 +570,8 @@ JOBS=8 MEM=12G ./build-ndk.sh  # make -j and memory limit (defaults)
 - v2.6-r3: same programs as v2.6-r2; ships the licence texts of the NDK sysroot (bionic) and of the Mozilla CA
   bundle (MPL-2.0), and the self-check removes the tmux socket directory from the caller's `TMPDIR`.
 - v2.6-r4: same programs as v2.6-r3; the installer stops when an `-ng` rename fails and its fallback `abort`
-  removes the module directory, root's adb key pair moves from `/data/local/tmp` to
-  `/data/local/android-linux-tools`, `mkfs.erofs`, `iperf3` and `eu-readelf` run by root without a `TMPDIR` use
+  removes the module directory, adb run by root keeps its key pair in `/data/local/android-linux-tools`
+  instead of `/data/local/tmp` (the old pair is not copied), `mkfs.erofs`, `iperf3` and `eu-readelf` run by root without a `TMPDIR` use
   the root-only `/data/local/android-linux-tools/tmp`, and the self-check makes root's work directory there,
   cleans up when it is interrupted or its output is gone, and removes the tmux socket only from a directory of
   its own; the build checks each download before it gets its name in `dl/` and removes the ZIP when a check
