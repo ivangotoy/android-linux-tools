@@ -22,7 +22,7 @@ mounts from its `system/` tree.
 ## Install
 
 - In the root manager app: Modules, Install from storage, pick the ZIP. Then reboot.
-- Command line, as root: `ksud module install /sdcard/Download/android-linux-tools-v2.6-r4.zip` (KernelSU).
+- Command line, as root: `ksud module install /sdcard/Download/android-linux-tools-v2.6-r5.zip` (KernelSU).
   Magisk (`magisk --install-module ZIP`) and APatch (`apd module install ZIP`) have the same module interface.
 - Upgrading: install the new ZIP over the old one and reboot. The installer recognises wrappers of this
   module (also of v1/v2.0/v2.1) and never renames them as device binaries. No other module is touched.
@@ -103,18 +103,18 @@ the same programs and differed only in metadata (up to v2.0 the full flavour add
 libLLVM, about 172 MB). The module id is unchanged, so the ZIP installs over either flavour like any upgrade;
 `module.prop` and `MANIFEST.json` no longer have a `flavour` field.
 
-## Contents (v2.6-r4)
+## Contents (v2.6-r5)
 
 246 commands plus `alt-list`, 230 ELF programs; there is no `lib/` directory. Sizes are of the stripped
 `$ALTDIR/libexec/` programs. Linkage `dynamic` = PIE against the system `libc.so`/`libm.so`/`libdl.so`
 (`libz.so` for curl, nmap, dropbear, ltrace, fio, git and the android-tools programs) only, every third-party library
 linked in statically. Four more programs are in `libexec` without a command of their own: `mtr-packet`, `sadc`
 (started by `sar`) and `git-remote-http`/`git-remote-https` (started by `git`). Generated from
-`dist/MANIFEST-v2.json` of the v2.6-r4 build.
+`dist/MANIFEST-v2.json` of the v2.6-r5 build.
 
 | ZIP | Bytes | Unpacked |
 |---|---|---|
-| `android-linux-tools-v2.6-r4.zip` | 173545005 | 422.1 MB |
+| `android-linux-tools-v2.6-r5.zip` | 173548412 | 422.1 MB |
 
 | Command | Recipe | Version | Linkage | libexec (KB) | Licence (SPDX) |
 |---|---|---|---|---|---|
@@ -579,6 +579,11 @@ JOBS=8 MEM=12G ./build-ndk.sh  # make -j and memory limit (defaults)
   cleans up when it is interrupted or its output is gone, and removes the tmux socket only from a directory of
   its own; the build checks each download before it gets its name in `dl/` and removes the ZIP when a check
   after zipping fails.
+- v2.6-r5: same versions as v2.6-r4; `uninstall.sh` removes `/data/local/android-linux-tools` when the module is
+  removed (not on upgrade), the `nstat` and `ifstat` wrappers set a history file when none is set (root: in the
+  root-only directory), `pv -c` uses its shared lock file only if it is a private regular file, `ncat -U --udp`
+  without `--source` autobinds an abstract source socket instead of a name in `TMPDIR`, and `ecapture` embeds its
+  BPF objects with a fixed modification time.
 
 ## Licences
 
