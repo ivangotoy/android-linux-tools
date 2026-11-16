@@ -167,10 +167,9 @@ nonroot_checks() {
   if [ "$(id -u)" != 0 ] && [ -r "$MODDIR/module.prop" ]; then
     echo "note: $MODDIR is readable by uid $(id -u)"
   fi
-  NW="${TMPDIR:-/data/local/tmp}/alttoolstest-nr.$$"
-  mkdir -p "$NW" && printf '%s\n' "$MAP" > "$NW/map"
-  if [ ! -s "$NW/map" ]; then
-    result bad "$NRP:wrappers" 1 "cannot write $NW/map"
+  NW=$(mktemp -d "${TMPDIR:-/data/local/tmp}/alttoolstest-nr.XXXXXX" 2>/dev/null) && printf '%s\n' "$MAP" > "$NW/map"
+  if [ -z "$NW" ] || [ ! -s "$NW/map" ]; then
+    result bad "$NRP:wrappers" 1 "cannot write a work directory in ${TMPDIR:-/data/local/tmp}"
   fi
   while read -r o n d; do
     [ -n "$o" ] || continue
@@ -197,7 +196,7 @@ nonroot_checks() {
       result bad "$NRP:wrapper:$n" 126 "$ALTDIR/libexec/$t not readable/executable"
     fi
   done < "$NW/map"
-  rm -rf "$NW"
+  [ -n "$NW" ] && rm -rf "$NW"
   chk "$NRP:alt-list" '^alt-list ' alt-list -m
   chk "$NRP:dig-version" 'DiG [0-9]' dig -v
   chk "$NRP:drill-version" 'drill version [0-9]' drill -v
@@ -244,10 +243,13 @@ for f in "setpriv" "su 2000 -c" "su shell -c" "su -s /system/bin/sh 2000 -c"; do
   fi
 done
 
+# work directory of the root run: a new directory with a random name (/data/local/tmp is writable by the shell
+# user, who could plant a symlink at a fixed or pid-based name for root to write through)
+W=$(mktemp -d /data/local/tmp/alttoolstest.XXXXXX) || { echo "cannot create a work directory in /data/local/tmp"; exit 2; }
 # The kernel config is ~190 KB: too big for one argument (MAX_ARG_STRLEN is
 # 128 KB and mksh runs printf as an external command), so keep it in a file.
 KCONF=""
-KCONF_FILE=/data/local/tmp/.alt-phone-test-kconfig.$$
+KCONF_FILE=$W/kconfig
 if [ -r /proc/config.gz ]; then
   if { gzip -dc /proc/config.gz || zcat /proc/config.gz; } > "$KCONF_FILE" 2>/dev/null && [ -s "$KCONF_FILE" ]; then
     KCONF=$KCONF_FILE
@@ -331,8 +333,6 @@ rchk layout:altdir-libexec "$ALTDIR/libexec" -d -x
 rchk layout:altdir-cert "$ALTDIR/etc/ssl/cert.pem" -f -r
 
 echo "== installed tools (alt-list)"
-W=/data/local/tmp/alttoolstest.$$
-mkdir -p "$W"
 printf '%s\n' "$MAP" > "$W/map"
 while read -r o n d; do
   [ -n "$o" ] || continue
@@ -560,6 +560,5 @@ rm -f "$TMUXDIR/alttoolstest"
 [ "$TMUXDIR_EXISTED" = 0 ] && rmdir "$TMUXDIR" 2>/dev/null
 echo "renamed on this device: $(alt-list -r 2>/dev/null | tr '\n' ';')"
 echo "SKIPPED $SKIP"
-[ -n "$KCONF" ] && rm -f "$KCONF"
 echo "TOTAL pass=$PASS fail=$FAIL"
 [ "$FAIL" -eq 0 ]

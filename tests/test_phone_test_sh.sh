@@ -1,6 +1,7 @@
 # phone-test.sh (real script) as root under busybox ash (alpine:3.22, no network), with simulated device
 # directories, a stub alt-list and a tmux wrapper made of stage.py's own wrapper lines in front of a stub tmux:
-# the self-check must remove the tmux socket directory it created, also when TMPDIR points elsewhere.
+# the self-check must remove the tmux socket directory it created, also when TMPDIR points elsewhere, and must not
+# write through links a shell user planted in /data/local/tmp.
 . "$ALT_TESTS/lib.sh"
 command -v docker >/dev/null || { echo "tests: missing host tool docker" >&2; exit 2; }
 docker image inspect alpine:3.22 >/dev/null 2>&1 || { echo "tests: docker image alpine:3.22 missing" >&2; exit 2; }
@@ -50,6 +51,33 @@ case "$out" in
   *LEFT*) bad "tmux socket directory left behind: $(echo "$out" | grep LEFT | tr '\n' ' ')" ;;
   *end*) ok "phone-test removed the tmux socket directory in TMPDIR" ;;
   *) bad "no result: $out" ;;
+esac
+
+# /data/local/tmp belongs to the shell user: links planted there for the pids the root run may get must not make
+# root write through them. The planting loop has a fixed length, so the pid of the run is the same in both runs.
+cat > "$h/plant.sh" <<'SH'
+mkdir -p /data/adb/modules/android-linux-tools /data/local/tmp /system/bin /victim
+echo version=v0.0-r1 > /data/adb/modules/android-linux-tools/module.prop
+ln -s /bin/sh /system/bin/sh
+cp /w/bin/* /usr/local/bin/ && chmod 755 /usr/local/bin/*
+i=$1
+while [ "$i" -lt $(($1 + 400)) ]; do
+  ln -s /victim "/data/local/tmp/alttoolstest.$i"
+  ln -s /victim/kconfig "/data/local/tmp/.alt-phone-test-kconfig.$i"
+  i=$((i + 1))
+done
+sh /w/phone-test.sh > /phone-test.out 2>&1 &
+echo "pid $!"
+wait
+grep '^TOTAL ' /phone-test.out
+echo "victim:$(ls -A /victim | tr '\n' ' ')"
+SH
+pid=$(docker run --rm --network none -v "$h:/w:ro" alpine:3.22 sh /w/plant.sh 1 2>&1 | sed -n 's/^pid //p')
+out=$(docker run --rm --network none -v "$h:/w:ro" alpine:3.22 sh /w/plant.sh "$((${pid:-200} - 200))" 2>&1)
+case "$out" in
+  *"pid $pid"*"TOTAL "*"victim:") ok "phone-test wrote nothing through links planted in /data/local/tmp" ;;
+  *"pid $pid"*"victim:"?*) bad "phone-test wrote through planted links: $(echo "$out" | grep victim)" ;;
+  *) bad "planted-link run gave no result (pid ${pid:-none}): $out" ;;
 esac
 rm -rf "$h"
 [ "$FAILS" -eq 0 ]
