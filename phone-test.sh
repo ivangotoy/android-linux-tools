@@ -42,6 +42,39 @@ result() {
   esac
 }
 
+# cleanup: undo what the checks created (test table/set/link, tmux test server and socket, work directories); every
+# step is guarded, so it is safe at any point of the run. Also run on INT/TERM/HUP, then the script exits 128+signal.
+W=""
+NW=""
+NFT=""
+IPNG=""
+IPSET=""
+T_TMUX=""
+TMUXDIR=""
+TMUXDIR_EXISTED=1
+cleanup() {
+  [ -n "$NFT" ] && "$NFT" delete table inet alttoolstest >/dev/null 2>&1
+  [ -n "$IPNG" ] && "$IPNG" link del awgt0 >/dev/null 2>&1
+  [ -n "$IPSET" ] && "$IPSET" destroy alttoolstest >/dev/null 2>&1
+  [ -n "$T_TMUX" ] && "$T_TMUX" -L alttoolstest kill-server >/dev/null 2>&1
+  [ -n "$W" ] && rm -rf "$W"
+  [ -n "$NW" ] && rm -rf "$NW"
+  if [ -n "$TMUXDIR" ]; then
+    rm -f "$TMUXDIR/alttoolstest"
+    [ "$TMUXDIR_EXISTED" = 0 ] && rmdir "$TMUXDIR" 2>/dev/null
+  fi
+  return 0
+}
+on_signal() {
+  trap - INT TERM HUP
+  echo "interrupted: cleaning up"
+  cleanup
+  exit "$1"
+}
+trap 'on_signal 129' HUP
+trap 'on_signal 130' INT
+trap 'on_signal 143' TERM
+
 MAP=$(alt-list -m 2>/dev/null)
 if [ -z "$MAP" ]; then
   result bad alt-list 1 "alt-list -m gave no output"
@@ -197,6 +230,7 @@ nonroot_checks() {
     fi
   done < "$NW/map"
   [ -n "$NW" ] && rm -rf "$NW"
+  NW=""
   chk "$NRP:alt-list" '^alt-list ' alt-list -m
   chk "$NRP:dig-version" 'DiG [0-9]' dig -v
   chk "$NRP:drill-version" 'drill version [0-9]' drill -v
@@ -551,13 +585,7 @@ else
 fi
 
 echo "== cleanup"
-[ -n "$NFT" ] && "$NFT" delete table inet alttoolstest >/dev/null 2>&1
-[ -n "$IPNG" ] && "$IPNG" link del awgt0 >/dev/null 2>&1
-[ -n "$IPSET" ] && "$IPSET" destroy alttoolstest >/dev/null 2>&1
-[ -n "$T_TMUX" ] && "$T_TMUX" -L alttoolstest kill-server >/dev/null 2>&1
-rm -rf "$W"
-rm -f "$TMUXDIR/alttoolstest"
-[ "$TMUXDIR_EXISTED" = 0 ] && rmdir "$TMUXDIR" 2>/dev/null
+cleanup
 echo "renamed on this device: $(alt-list -r 2>/dev/null | tr '\n' ';')"
 echo "SKIPPED $SKIP"
 echo "TOTAL pass=$PASS fail=$FAIL"
