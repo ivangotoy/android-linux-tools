@@ -179,10 +179,91 @@ case_dl_collision() {
   rm -rf "$h"
 }
 
+# a download is checked before it gets its name in dl/: a failed download leaves no .part, a file with the wrong
+# sha256 (main source or EXTRA_SRCS) never appears under the download name, and the recipe fails
+ZERO64=0000000000000000000000000000000000000000000000000000000000000000
+case_fetch_verify() {
+  local h sha port spid; h=$(new_tree)
+  sha=$(tarball "$h" altpart)
+  cat > "$h/short.py" <<'PY2'
+import socket, sys
+# every connection: headers for 1000 bytes, then 10 bytes and close (curl: partial file, exit 18)
+s = socket.socket()
+s.bind(('127.0.0.1', 0))
+s.listen(8)
+open(sys.argv[1], 'w').write(str(s.getsockname()[1]))
+while True:
+    c, _ = s.accept()
+    c.recv(65536)
+    c.sendall(b'HTTP/1.0 200 OK\r\nContent-Length: 1000\r\n\r\n' + b'0123456789')
+    c.close()
+PY2
+  # the port arrives through a fifo: reading it blocks until the server is listening (no polling)
+  mkfifo "$h/port"
+  python3 -I "$h/short.py" "$h/port" & spid=$!
+  port=$(cat "$h/port")
+  recipe "$h" altpart "http://127.0.0.1:$port/altpart-1.tar.gz" "$sha" 'cat hello.txt'
+  if build "$h" altpart > "$h/run1.txt" 2>&1; then
+    bad "fetch verify: a failed download built"
+  elif [ -e "$h/work/dl/altpart-1.tar.gz" ] || [ -e "$h/work/dl/altpart-1.tar.gz.part" ]; then
+    bad "fetch verify: failed download left $(ls "$h/work/dl" | tr '\n' ' ')"
+  else
+    ok "fetch verify: a failed download leaves nothing in dl/"
+  fi
+  kill "$spid" 2>/dev/null; wait "$spid" 2>/dev/null
+  recipe "$h" altbad file:///src/fx/altpart-1.tar.gz "$ZERO64" 'cat hello.txt'
+  printf 'TARBALL=altbad-1.tar.gz\nSRCDIR=altpart-1\n' >> "$h/src/ndk/recipes/altbad.sh"
+  if build "$h" altbad > "$h/run2.txt" 2>&1; then
+    bad "fetch verify: a source with the wrong sha256 built"
+  elif [ -e "$h/work/dl/altbad-1.tar.gz" ] || [ -e "$h/work/dl/altbad-1.tar.gz.part" ]; then
+    bad "fetch verify: wrong sha256 left $(ls "$h/work/dl" | tr '\n' ' ')"
+  else
+    ok "fetch verify: a source with the wrong sha256 never gets its name in dl/"
+  fi
+  echo extra > "$h/src/fx/extra.txt"
+  recipe "$h" altextra file:///src/fx/altpart-1.tar.gz "$sha" 'cat hello.txt'
+  printf 'TARBALL=altextra-1.tar.gz\nSRCDIR=altpart-1\nEXTRA_SRCS=("file:///src/fx/extra.txt %s")\n' "$ZERO64" >> "$h/src/ndk/recipes/altextra.sh"
+  if build "$h" altextra > "$h/run3.txt" 2>&1; then
+    bad "fetch verify: an EXTRA_SRCS file with the wrong sha256 built"
+  elif [ -e "$h/work/dl/extra.txt" ] || [ -e "$h/work/dl/extra.txt.part" ]; then
+    bad "fetch verify: EXTRA_SRCS wrong sha256 left $(ls "$h/work/dl" | tr '\n' ' ')"
+  else
+    ok "fetch verify: an EXTRA_SRCS file with the wrong sha256 never gets its name in dl/"
+  fi
+  rm -rf "$h"
+}
+
+# a source already in dl/ with the right sha256 is used without any download (URL unreachable); a cached file
+# with the wrong sha256 is not used: the recipe downloads again and fails when that download fails
+case_fetch_cached() {
+  local h sha; h=$(new_tree)
+  sha=$(tarball "$h" altcache)
+  mkdir -p "$h/work/dl"
+  cp "$h/src/fx/altcache-1.tar.gz" "$h/work/dl/"
+  recipe "$h" altcache file:///src/fx/missing/altcache-1.tar.gz "$sha" 'cat hello.txt'
+  if build "$h" altcache > "$h/run1.txt" 2>&1 && ! grep -q ' fetch ' "$h/run1.txt"; then
+    ok "fetch cached: a verified file in dl/ is used without a download"
+  else
+    bad "fetch cached: $(tail -n 3 "$h/run1.txt" | tr '\n' ' ')"
+  fi
+  rm -rf "$h/work/build/stamps"
+  echo corrupt > "$h/work/dl/altcache-1.tar.gz"
+  if build "$h" altcache > "$h/run2.txt" 2>&1; then
+    bad "fetch cached: a corrupt cached file built"
+  elif [ "$(cat "$h/work/dl/altcache-1.tar.gz")" = corrupt ] && [ ! -e "$h/work/dl/altcache-1.tar.gz.part" ] && grep -q ' fetch ' "$h/run2.txt"; then
+    ok "fetch cached: a corrupt cached file is not used, the failed re-download fails the recipe"
+  else
+    bad "fetch cached: corrupt cached file: $(tail -n 3 "$h/run2.txt" | tr '\n' ' ')"
+  fi
+  rm -rf "$h"
+}
+
 case_module_input
 case_failed_rebuild
 case_source_date_epoch
 case_fetch_stall
 case_cacert_licence
 case_dl_collision
+case_fetch_verify
+case_fetch_cached
 [ "$FAILS" -eq 0 ]

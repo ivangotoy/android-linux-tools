@@ -58,24 +58,34 @@ mk_sysroot() {
 # curl has no transfer timeout of its own: a server that stops sending would hang the build. Less than 1 byte/s
 # for 60 s (or no connection in 30 s) fails the attempt, and --retry starts the next one.
 CURL_FETCH=(curl -fsSL --retry 5 --connect-timeout 30 --speed-limit 1 --speed-time 60)
-fetch() {
-  local f="$DL/$TARBALL"
-  if [ ! -f "$f" ] || ! echo "$SHA256  $f" | sha256sum -c --quiet - 2>/dev/null; then
-    log "fetch $NAME $URL"
-    "${CURL_FETCH[@]}" -o "$f.part" "$URL"
-    mv "$f.part" "$f"
+# fetch_one URL SHA256 FILE: FILE (under $DL) with that SHA256. A cached FILE that matches is used without any
+# download; otherwise the download goes to FILE.part, is checked, and only a matching file is renamed to FILE.
+# A failed download or a mismatch removes FILE.part and fails the recipe.
+fetch_one() {
+  local u=$1 h=$2 f=$3
+  if [ -f "$f" ] && echo "$h  $f" | sha256sum -c --quiet - 2>/dev/null; then
+    return 0
   fi
-  echo "$SHA256  $f" | sha256sum -c --quiet - || { log "SHA256 MISMATCH $NAME $f"; exit 1; }
+  log "fetch $NAME $u"
+  rm -f "$f.part"
+  if ! "${CURL_FETCH[@]}" -o "$f.part" "$u"; then
+    rm -f "$f.part"
+    log "FETCH FAILED $NAME $u"
+    exit 1
+  fi
+  if ! echo "$h  $f.part" | sha256sum -c --quiet -; then
+    rm -f "$f.part"
+    log "SHA256 MISMATCH $NAME $u"
+    exit 1
+  fi
+  mv "$f.part" "$f"
+}
+fetch() {
+  fetch_one "$URL" "$SHA256" "$DL/$TARBALL"
   # EXTRA_SRCS: additional upstream files ("URL SHA256" per entry), e.g. official patch series
-  local x u h
+  local x
   for x in "${EXTRA_SRCS[@]}"; do
-    u=${x% *}; h=${x##* }; f="$DL/$(basename "$u")"
-    if [ ! -f "$f" ] || ! echo "$h  $f" | sha256sum -c --quiet - 2>/dev/null; then
-      log "fetch $NAME $u"
-      "${CURL_FETCH[@]}" -o "$f.part" "$u"
-      mv "$f.part" "$f"
-    fi
-    echo "$h  $f" | sha256sum -c --quiet - || { log "SHA256 MISMATCH $NAME $f"; exit 1; }
+    fetch_one "${x% *}" "${x##* }" "$DL/$(basename "${x% *}")"
   done
 }
 
