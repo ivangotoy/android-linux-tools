@@ -26,6 +26,8 @@ mounts from its `system/` tree.
   Magisk (`magisk --install-module ZIP`) and APatch (`apd module install ZIP`) have the same module interface.
 - Upgrading: install the new ZIP over the old one and reboot. The installer recognises wrappers of this
   module (also of v1/v2.0/v2.1) and never renames them as device binaries. No other module is touched.
+- Removing: remove the module in the root manager and reboot; its `uninstall.sh` then deletes
+  `/data/local/android-linux-tools` (root's adb key pair and temporary files), which an upgrade keeps.
 - The ZIP has the standard Magisk `META-INF/com/google/android/update-binary`; KernelSU and APatch use their own
   installer and run the same `customize.sh`. It uses only `ui_print`, `abort`, `set_perm` and `set_perm_recursive`
   (with fallbacks if they are missing) and no manager-specific command (`ndk/scripts/check.py` enforces that).
@@ -54,7 +56,7 @@ runtime file is in the module's `system/` tree, which the root manager mounts ov
 | `system/etc/android-linux-tools/etc/netconfig` | `$ALTDIR/etc/netconfig` | libtirpc's transport database for `mount.nfs` |
 | `system/etc/android-linux-tools/etc/alt-tools.map` | `$ALTDIR/etc/alt-tools.map` | rename map written by `customize.sh`, read by `alt-list` |
 | `system/etc/android-linux-tools/share/android-linux-tools/` | `$ALTSHARE` | `dns-servers`, `origins.txt`, `MANIFEST.json`, `phone-test.sh` |
-| `module.prop`, `customize.sh`, `META-INF/`, `share/licenses/` | `/data/adb/modules/android-linux-tools` | module metadata and licences only |
+| `module.prop`, `customize.sh`, `uninstall.sh`, `META-INF/`, `share/licenses/` | `/data/adb/modules/android-linux-tools` | module metadata, install/removal scripts and licences only |
 
 `ALTDIR=/system/etc/android-linux-tools`, `ALTSHARE=$ALTDIR/share/android-linux-tools`. A wrapper is a small
 `#!/system/bin/sh` script that sets `ALTDIR`, `TERMINFO` and (if unset) `TMPDIR=/data/local/tmp` and execs
@@ -509,7 +511,7 @@ JOBS=8 MEM=12G ./build-ndk.sh  # make -j and memory limit (defaults)
   `ndk/lib/env.sh` (cross environment), `ndk/build.conf` (`V2_VERSION`, `MODULE_RELEASE`, `SOURCE_DATE_EPOCH`),
   `ndk/recipes.list` (build order), `ndk/recipes/<name>.sh`, `ndk/patches/<name>/*.patch`, `ndk/tools.tsv`
   (wrapper name, recipe, program, fixed arguments, DNS flag; in module order), `ndk/module/` (`customize.sh`,
-  `alt-list`, `dns-servers`, `openssl.cnf`, `git/gitconfig`, `META-INF/`), `ndk/package.sh` and `ndk/scripts/` (`stage.py`, `check.py`,
+  `uninstall.sh`, `alt-list`, `dns-servers`, `openssl.cnf`, `git/gitconfig`, `META-INF/`), `ndk/package.sh` and `ndk/scripts/` (`stage.py`, `check.py`,
   `manifest.py`, `layout_test.py`, `common.py`), `phone-test.sh` (self-check script).
 - Recipes: `VERSION`, `URL`, `SHA256`, `CHECKSUM_SOURCE` (signature key fingerprint or the published checksum
   the sha256 was verified against when pinning), `LICENSE`, `DEPS`, optional `LINKAGE=dynamic`, `EXTRA_SRCS`
@@ -580,7 +582,7 @@ JOBS=8 MEM=12G ./build-ndk.sh  # make -j and memory limit (defaults)
 ## Licences
 
 The repository's own code (build scripts, recipes, staging and check scripts, and the module's own scripts:
-the wrappers, `alt-list`, `customize.sh`, `dns-servers`, `openssl.cnf` and `phone-test.sh`) is MIT licensed, see `LICENSE`
+the wrappers, `alt-list`, `customize.sh`, `uninstall.sh`, `dns-servers`, `openssl.cnf` and `phone-test.sh`) is MIT licensed, see `LICENSE`
 (Copyright (c) 2026 Ivan Angelov). The ZIP ships it as `share/licenses/android-linux-tools/LICENSE`.
 
 The bundled third-party tools keep their upstream licences. Their SPDX identifiers are listed in

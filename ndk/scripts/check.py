@@ -161,7 +161,7 @@ for w in sorted(os.listdir(os.path.join(ST, 'system', 'bin'))):
         err('wrapper not executable: ' + w)
 
 RTREL = os.path.relpath(SHARE, ST)
-scripts = ['customize.sh', 'META-INF/com/google/android/update-binary', RTREL + '/phone-test.sh']
+scripts = ['customize.sh', 'uninstall.sh', 'META-INF/com/google/android/update-binary', RTREL + '/phone-test.sh']
 if os.path.exists(os.path.join(SHARE, 'dns-servers')):
     scripts.append(RTREL + '/dns-servers')
 for s in scripts:

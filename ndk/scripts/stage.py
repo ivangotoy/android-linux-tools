@@ -240,6 +240,8 @@ if need_dnsservers:
     copyfile(os.path.join(MOD, 'dns-servers'), os.path.join(SHARE, 'dns-servers'), 0o755)
 copyfile(os.path.join(SRC, 'phone-test.sh'), os.path.join(SHARE, 'phone-test.sh'), 0o755)
 copyfile(os.path.join(MOD, 'customize.sh'), os.path.join(ST, 'customize.sh'), 0o644)
+# run by the root manager on module removal only: removes the root-only /data/local/android-linux-tools
+copyfile(os.path.join(MOD, 'uninstall.sh'), os.path.join(ST, 'uninstall.sh'), 0o644)
 for f in ('update-binary', 'updater-script'):
     copyfile(os.path.join(MOD, 'META-INF', 'com', 'google', 'android', f),
              os.path.join(ST, 'META-INF', 'com', 'google', 'android', f), 0o644)
@@ -300,7 +302,7 @@ lic_rows.append({'source': 'ndk', 'name': 'android-ndk-sysroot', 'version': NDK_
                  'sha256': ndk_sha.group(1), 'patches': [],
                  'license_files': ['share/licenses/ndk/android-ndk-sysroot/NOTICE']})
 notice = ['Android Linux tools %s - third-party licences' % VERSION, '',
-          'The module\'s own files (wrappers, alt-list, customize.sh, dns-servers, openssl.cnf, phone-test.sh) and the build',
+          'The module\'s own files (wrappers, alt-list, customize.sh, uninstall.sh, dns-servers, openssl.cnf, phone-test.sh) and the build',
           'scripts in %s are MIT licensed:' % REPO_URL,
           'share/licenses/%s/LICENSE. Each bundled package below keeps its own upstream licence; the' % MODID,
           'patches in share/licenses/ndk/<package>/ keep the terms of their upstream authors.', '',

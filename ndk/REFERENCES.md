@@ -148,7 +148,7 @@ which is `ALTDIR=/system/etc/android-linux-tools` on the device: `libexec/` (eve
 `etc/ssl/cert.pem`, `etc/alt-tools.map`, and `share/android-linux-tools/` (dns-servers, origins.txt,
 MANIFEST.json, phone-test.sh). Wrappers set `ALTDIR`, not `MODDIR`. The compiled-in paths move as well: ncurses
 `--with-default-terminfo-dir`/`--with-terminfo-dirs`, curl `--with-ca-bundle`, OpenSSL `--openssldir`. Only the
-module metadata (`module.prop`, `customize.sh`, `META-INF`) and `share/licenses/` stay in the module root.
+module metadata (`module.prop`, `customize.sh`, `uninstall.sh`, `META-INF`) and `share/licenses/` stay in the module root.
 `customize.sh` sets everything root:root with `u:object_r:system_file:s0` (the label of stock `/system/bin`
 programs), `0755` for directories, programs and scripts and `0644` for data.
 

@@ -38,6 +38,13 @@ assert len(rows) == 1 and rows[0]['license_files'] == ['share/licenses/ndk/andro
 assert rows[0]['version'] == 'r30' and len(rows[0]['sha256']) == 64, rows
 PY
 
+# uninstall.sh is staged in the module root next to customize.sh, mode 0644 like it
+if cmp -s "$ALT_TREE/ndk/module/uninstall.sh" "$st/uninstall.sh" && [ "$(stat -c %a "$st/uninstall.sh")" = 644 ]; then
+  ok "uninstall.sh staged in the module root (0644)"
+else
+  bad "uninstall.sh not staged in the module root with mode 0644"
+fi
+
 # every staged wrapper: sh -n and bash --posix -n, ALTDIR on line 2 (within the first 400 bytes, the marker
 # customize.sh and phone-test.sh look for), no $MODDIR and no /data/adb
 wbad=
