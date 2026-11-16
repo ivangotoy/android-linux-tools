@@ -220,12 +220,13 @@ def main():
           flush=True)
 
     def check_published(rel, names):
+        # names first: an asset the Forgejo release does not have has no checksum to compare with
+        if sorted(x['name'] for x in rel['assets']) != sorted(names):
+            die('GitHub release %s asset list differs from Forgejo' % tag)
         for x in rel['assets']:
             st, data = fetch(x['browser_download_url'])
             if st != 200 or hashlib.sha256(data).hexdigest() != sums[x['name']]:
                 die('GitHub asset %s does not match the Forgejo file (HTTP %d)' % (x['name'], st))
-        if sorted(x['name'] for x in rel['assets']) != sorted(names):
-            die('GitHub release asset list differs from Forgejo')
 
     def upload(rel, name):
         url = rel['upload_url'].split('{', 1)[0] + '?name=' + urllib.parse.quote(name)

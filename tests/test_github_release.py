@@ -273,5 +273,81 @@ class WrongShape(unittest.TestCase):
         self.assertIn('GitHub tag lookup returned JSON of an unexpected shape', err.getvalue())
 
 
+class PublishedAssetList(unittest.TestCase):
+    """An existing GitHub release whose re-read lists an asset the Forgejo release does not have must end in die()
+    naming the release, not a KeyError."""
+
+    def test_extra_asset_after_reread(self):
+        data = b'zip bytes'
+        sha = hashlib.sha256(data).hexdigest().encode() + b'  m.zip\n'
+        files = {'m.zip': data, 'm.zip.sha256': sha, 'x.bin': b'other'}
+        commit = '0' * 40
+        reads = []
+
+        class Srv(http.server.BaseHTTPRequestHandler):
+            def reply(self, body):
+                self.send_response(200)
+                self.send_header('Content-Length', str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def asset(self, n):
+                port = self.server.server_address[1]
+                return {'name': n, 'size': len(files[n]), 'state': 'uploaded',
+                        'browser_download_url': 'http://127.0.0.1:%d/dl/%s' % (port, n)}
+
+            def do_GET(self):
+                port = self.server.server_address[1]
+                if self.path == '/api/v1/repos/o/r/releases/tags/v1.0-r1':
+                    self.reply(json.dumps({'tag_name': 'v1.0-r1', 'name': 'v1.0-r1', 'html_url': 'http://example.org/r',
+                                           'draft': False, 'assets': [self.asset('m.zip'), self.asset('m.zip.sha256')]}).encode())
+                elif self.path == '/api/v1/repos/o/r/tags/v1.0-r1':
+                    self.reply(json.dumps({'commit': {'sha': commit}}).encode())
+                elif self.path.startswith('/dl/'):
+                    self.reply(files[self.path[4:]])
+                elif self.path == '/repos/o/r/git/ref/tags/v1.0-r1':
+                    self.reply(json.dumps({'ref': 'refs/tags/v1.0-r1', 'object': {'type': 'commit', 'sha': commit}}).encode())
+                elif self.path.startswith('/repos/o/r/releases?'):
+                    self.reply(json.dumps([{'id': 7, 'tag_name': 'v1.0-r1', 'draft': False,
+                                            'upload_url': 'https://uploads.github.com/x{?name}',
+                                            'assets': [self.asset('m.zip'), self.asset('m.zip.sha256')]}]).encode())
+                elif self.path == '/repos/o/r/releases/7':
+                    reads.append(1)
+                    self.reply(json.dumps({'id': 7, 'tag_name': 'v1.0-r1', 'upload_url': 'https://uploads.github.com/x{?name}',
+                                           'assets': [self.asset('m.zip'), self.asset('m.zip.sha256'),
+                                                      self.asset('x.bin')]}).encode())
+                else:
+                    self.send_response(404)
+                    self.end_headers()
+
+            def log_message(self, *a):
+                pass
+
+        srv = server('127.0.0.1', Srv)
+        mod = load()
+        mod.GH_API = 'http://127.0.0.1:%d' % srv.server_address[1]
+        err = io.StringIO()
+        argv = sys.argv
+        env = os.environ.get('GH_RELEASE_TOKEN')
+        sys.argv = ['github-release.py', '--forgejo-api', 'http://127.0.0.1:%d/api/v1' % srv.server_address[1],
+                    '--repo', 'o/r', '--github-repo', 'o/r', '--tag', 'v1.0-r1']
+        os.environ['GH_RELEASE_TOKEN'] = 'example-token'
+        try:
+            with self.assertRaises(SystemExit) as cm, contextlib.redirect_stderr(err), \
+                    contextlib.redirect_stdout(io.StringIO()):
+                mod.main()
+        finally:
+            sys.argv = argv
+            if env is None:
+                os.environ.pop('GH_RELEASE_TOKEN', None)
+            else:
+                os.environ['GH_RELEASE_TOKEN'] = env
+            srv.shutdown()
+            srv.server_close()
+        self.assertEqual(reads, [1])
+        self.assertEqual(cm.exception.code, 1)
+        self.assertIn('github-release: GitHub release v1.0-r1 asset list differs from Forgejo', err.getvalue())
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)
