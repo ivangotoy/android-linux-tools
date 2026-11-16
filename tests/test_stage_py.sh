@@ -98,7 +98,7 @@ printf '#!/bin/sh\necho "TMUX_TMPDIR=$TMUX_TMPDIR"\n' > /system/etc/android-linu
 chmod 755 /system/etc/android-linux-tools/libexec/*
 for w in mkfs.erofs jq tmux adb; do cp /w/$w /system/bin/$w && chmod 755 /system/bin/$w; done
 R=/data/local/android-linux-tools/tmp
-m() { echo "modes $(stat -c %a /data/local/android-linux-tools 2>/dev/null) $(stat -c %a $R 2>/dev/null)"; }
+m() { echo "modes $(stat -c %a /data/local/android-linux-tools 2>/dev/null || echo none) $(stat -c %a $R 2>/dev/null || echo none)"; }
 case "$1" in
   adb-first) env -u TMPDIR HOME=/nonexistent /system/bin/adb; m; env -u TMPDIR /system/bin/mkfs.erofs; m ;;
   listed-first) env -u TMPDIR /system/bin/mkfs.erofs; m; env -u TMPDIR HOME=/nonexistent /system/bin/adb; m ;;
@@ -115,7 +115,7 @@ SH
     out=$(timeout 120 docker run --rm --network none -v "$h/tw:/w:ro" alpine:3.22 sh /w/run.sh "$c" 2>&1)
     case "$c" in
       adb-first) want="TMPDIR=/data/local/tmp HOME=/data/local/android-linux-tools
-modes 700 
+modes 700 none
 TMPDIR=/data/local/android-linux-tools/tmp HOME=/root
 modes 700 700" ;;
       listed-first) want="TMPDIR=/data/local/android-linux-tools/tmp HOME=/root
