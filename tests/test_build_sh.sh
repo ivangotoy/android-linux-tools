@@ -258,6 +258,33 @@ case_fetch_cached() {
   rm -rf "$h"
 }
 
+# recipe values reach the meta record byte for byte: quotes, a backslash, $(...) and a line break in
+# CHECKSUM_SOURCE and LICENSE are data, never code
+case_meta_values() {
+  local h sha; h=$(new_tree)
+  sha=$(tarball "$h" altmeta)
+  recipe "$h" altmeta file:///src/fx/altmeta-1.tar.gz "$sha" 'cat hello.txt'
+  cat >> "$h/src/ndk/recipes/altmeta.sh" <<'R'
+CHECKSUM_SOURCE='key "A" \d $(touch /work/pwned) """ x'"'"'y
+second line'
+LICENSE='MIT AND "X" \ $(id)'
+R
+  build "$h" altmeta > "$h/run.txt" 2>&1 || { bad "meta values: build failed: $(tail -n 3 "$h/run.txt" | tr '\n' ' ')"; rm -rf "$h"; return; }
+  if python3 -I - "$h/work/out/meta/altmeta.json" <<'PY2'
+import json, sys
+m = json.load(open(sys.argv[1]))
+assert m['checksum_source'] == 'key "A" \\d $(touch /work/pwned) """ x\'y\nsecond line', repr(m['checksum_source'])
+assert m['license'] == 'MIT AND "X" \\ $(id)', repr(m['license'])
+assert m['recipe'] == 'altmeta' and m['version'] == '1' and m['linkage'] == 'static', m
+PY2
+  then
+    if [ -e "$h/work/pwned" ]; then bad "meta values: \$(...) in a recipe value was executed"; else ok "meta values: quotes, backslash, \$(...) and a line break arrive unchanged in the meta JSON"; fi
+  else
+    bad "meta values: meta JSON differs from the recipe values"
+  fi
+  rm -rf "$h"
+}
+
 case_module_input
 case_failed_rebuild
 case_source_date_epoch
@@ -266,4 +293,5 @@ case_cacert_licence
 case_dl_collision
 case_fetch_verify
 case_fetch_cached
+case_meta_values
 [ "$FAILS" -eq 0 ]

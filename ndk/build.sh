@@ -137,12 +137,15 @@ build_one() {
     [ -d "/src/ndk/patches/$PATCHES_FROM" ] && cp /src/ndk/patches/"$PATCHES_FROM"/*.patch "$lic/" 2>/dev/null || true
     patches=$(ls "/src/ndk/patches/$PATCHES_FROM"/*.patch 2>/dev/null | xargs -r -n1 basename | sort | paste -sd, -) || true
     bins=$(cat "$B/meta/$n.bins" 2>/dev/null | sort -u | paste -sd, - || true)
-    python3 -I - "$OUT/meta/$n.json" <<PY
+    # recipe values go to python as arguments, never into its source (quotes or backslashes in them stay as they are)
+    python3 -I - "$OUT/meta/$n.json" "$n" "$VERSION" "$URL" "$SHA256" "$CHECKSUM_SOURCE" "$LICENSE" "$DEPS" \
+      "$patches" "$bins" "$h" "${LINKAGE:-static}" <<'PY'
 import json, sys
-json.dump({"recipe": "$n", "version": "$VERSION", "url": "$URL", "sha256": "$SHA256",
-           "checksum_source": """$CHECKSUM_SOURCE""", "license": "$LICENSE", "deps": "$DEPS".split(),
-           "patches": [p for p in "$patches".split(",") if p], "bins": [b for b in "$bins".split(",") if b],
-           "recipe_hash": "$h", "linkage": "${LINKAGE:-static}"}, open(sys.argv[1], "w"), indent=1, sort_keys=True)
+out, n, version, url, sha256, checksum_source, lic, deps, patches, bins, h, linkage = sys.argv[1:13]
+json.dump({"recipe": n, "version": version, "url": url, "sha256": sha256,
+           "checksum_source": checksum_source, "license": lic, "deps": deps.split(),
+           "patches": [p for p in patches.split(",") if p], "bins": [b for b in bins.split(",") if b],
+           "recipe_hash": h, "linkage": linkage}, open(out, "w"), indent=1, sort_keys=True)
 PY
   )
   touch "$B/stamps/$n.$h"
