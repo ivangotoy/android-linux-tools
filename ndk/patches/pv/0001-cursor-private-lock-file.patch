@@ -7,14 +7,14 @@ that tty, so O_EXCL is not possible. On Android the wrapper's TMPDIR is /data/lo
 (shell shell 0771), where the shell user can create that name first: root's pv then locks the
 shell user's file, which the shell user can hold locked to block it, and removes the name at
 exit (:767-768). After the open, fstat the descriptor and use it only if it is a regular file
-owned by the effective uid with one link (the same check nstat/ifstat of iproute2 make on their
+owned by the effective uid with at most one link (the same check nstat/ifstat of iproute2 make on their
 history files, misc/nstat.c:685-687); otherwise close it and turn cursor positioning off, as
 pv already does when the open fails.
 Source: written for this module (see ndk/REFERENCES.md, pv).
 
 --- a/src/pv/cursor.c
 +++ b/src/pv/cursor.c
-@@ -136,6 +136,27 @@
+@@ -136,6 +136,28 @@
  		cursor->disable = true;
  		return;
  	}
@@ -25,13 +25,14 @@ Source: written for this module (see ndk/REFERENCES.md, pv).
 +	 * other users can write, such as Android's /data/local/tmp, another
 +	 * user could create it first and hold the lock, or link it to a file
 +	 * of this euid. Use it only if it is a regular file of this euid with
-+	 * one link, as nstat/ifstat check their history files; otherwise
++	 * at most one link (another pv may already have removed the name at
++	 * exit), as nstat/ifstat check their history files; otherwise
 +	 * turn cursor positioning off.
 +	 */
 +	{
 +		struct stat sb;
 +		if (fstat(cursor->lock_fd, &sb) != 0 || !S_ISREG(sb.st_mode) || sb.st_uid != geteuid()
-+		    || sb.st_nlink != 1) {
++		    || sb.st_nlink > 1) {
 +			pv_error("%s: %s", cursor->lock_file, _("lock file is not a private regular file"));
 +			(void) close(cursor->lock_fd);
 +			cursor->lock_fd = -1;

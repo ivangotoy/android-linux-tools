@@ -1253,7 +1253,7 @@ Sources checked:
 
 Chosen approach: `configure_std --disable-ipc --disable-copy-file-range`, then `make`. Static. Patch 0001
 (written for this module): the shared cursor lock file `$TMPDIR/pv-<tty>-<euid>.lock` (`src/pv/cursor.c:101-125`)
-is used only if it is a regular file of the effective uid with one link; otherwise `-c` turns cursor
+is used only if it is a regular file of the effective uid with at most one link; otherwise `-c` turns cursor
 positioning off. It is shared by every pv of that euid on that tty, so `O_EXCL` is not possible; in
 `/data/local/tmp` the shell user could otherwise create it first for root's pv and hold the lock.
 CHECKSUM_SOURCE: a detached signature `.txt` exists, but its key could not be obtained at pin time, so the
