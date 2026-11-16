@@ -27,8 +27,8 @@ mounts from its `system/` tree.
 - Upgrading: install the new ZIP over the old one and reboot. The installer recognises wrappers of this
   module (also of v1/v2.0/v2.1) and never renames them as device binaries. No other module is touched.
 - The ZIP has the standard Magisk `META-INF/com/google/android/update-binary`; KernelSU and APatch use their own
-  installer and run the same `customize.sh`. It uses only `ui_print`, `set_perm` and `set_perm_recursive` (with
-  fallbacks if they are missing) and no manager-specific command (`ndk/scripts/check.py` enforces that).
+  installer and run the same `customize.sh`. It uses only `ui_print`, `abort`, `set_perm` and `set_perm_recursive`
+  (with fallbacks if they are missing) and no manager-specific command (`ndk/scripts/check.py` enforces that).
 
 Root managers: KernelSU (with a metamodule such as NoMount or meta-overlayfs), Magisk and APatch; how each
 mounts the module's files is in `ndk/REFERENCES.md`, "Runtime layout".
