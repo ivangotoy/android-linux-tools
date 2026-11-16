@@ -37,7 +37,7 @@ PY
   alt_bwrap "$h/root" "$h/src" "$h/work" --setenv ALT_CASE "$1" bash /src/ndk/package.sh > "$h/out.txt" 2>&1
   echo "rc=$?"
   grep -E 'host path|unexpected entries' "$h/out.txt"
-  echo "dist:$(ls "$h/work/dist" | grep '\.zip' | tr '\n' ' ')"
+  echo "dist:$(for f in "$h"/work/dist/*.zip; do [ -e "$f" ] && printf '%s ' "${f##*/}"; done)"
   rm -rf "$h"
 }
 
