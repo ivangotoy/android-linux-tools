@@ -1325,6 +1325,10 @@ Chosen approach:
 - Patch `nmap/0004-mass-dns-alt-dns-servers.patch` (written for this module): when `/etc/resolv.conf` cannot be
   opened, mass_dns uses the servers in `ALT_DNS_SERVERS`; the nmap wrapper exports it (tools.tsv flag `dnsenv`),
   as for dig/host.
+- Patch `nmap/0005-ncat-unix-dgram-autobind-source.patch` (written for this module): for `ncat -U --udp` without
+  `--source`, the source socket is autobound to a unique abstract name (Linux, unix(7)) instead of a name made
+  with mkstemp in `$TMPDIR` (`ncat/ncat_connect.c:1046-1063`), which another user of a shared `TMPDIR` such as
+  `/data/local/tmp` could take before the bind or replace afterwards.
 - CHECKSUM_SOURCE: `sigs/nmap-7.993.tar.bz2.asc`, Nmap Project key `436D66AB9A798425FDA0E3F801AF9F036B9355D0`,
   and the SHA256 in `sigs/nmap-7.993.tar.bz2.digest.txt`.
 

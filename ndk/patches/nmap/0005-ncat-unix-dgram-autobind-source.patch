@@ -1,0 +1,56 @@
+Subject: ncat: autobind the source of a Unix datagram connection instead of a name in TMPDIR
+
+Why: `ncat -U --udp PATH` without `--source` needs a bound source socket for the replies. Upstream
+makes a name with mkstemp in $TMPDIR (patch 0001: /data/local/tmp when unset), unlinks the file
+and binds the socket to that name later (ncat/ncat_connect.c:1046-1063, bind in nsock
+nsock_connect.c:77 through new_iod), and unlinks the name at exit (:1146-1150). On Android the
+wrappers' TMPDIR for root is /data/local/tmp (shell shell 0771, no sticky bit): between the unlink
+and the bind the shell user can take the name, so root's ncat fails to bind (denial), and once it
+is bound the shell user can rename root's socket and put its own in its place before the peer
+first sends to it, so the peer's replies can reach the shell user's socket; at exit root unlinks
+whatever has that name. On Linux, bind() with only the address family autobinds the socket to a
+unique abstract name (unix(7), "Autobind feature"), with no file anyone could create, rename or
+replace: the source address is left empty (SUN_LEN 2 at ncat_connect.c:979-980), and the verbose
+messages and the unlink at exit skip the empty name. Other systems keep the upstream code.
+Source: written for this module (see ndk/REFERENCES.md, nmap); applies after 0001.
+
+--- a/ncat/ncat_connect.c
++++ b/ncat/ncat_connect.c
+@@ -1043,6 +1043,13 @@
+         if (o.af == AF_UNIX && o.proto == IPPROTO_UDP)
+         {
+             if (srcaddr.storage.ss_family != AF_UNIX) {
++#ifdef __linux__
++                /* No file name: bind() with only the address family (SUN_LEN of an empty path) makes
++                 * Linux autobind the socket to a unique name in the abstract namespace, which no other
++                 * user can create first, rename or replace, unlike a name in a shared directory. */
++                memset(&srcaddr, 0, sizeof(srcaddr));
++                srcaddr.un.sun_family = AF_UNIX;
++#else
+                 char *tmp_name = NULL;
+ #if HAVE_MKSTEMP
+               char *tmpdir = getenv("TMPDIR");
+@@ -1061,10 +1068,13 @@
+ 
+                 NCAT_INIT_SUN(&srcaddr, tmp_name);
+                 free (tmp_name);
++#endif
+             }
+ 
+-            if (o.verbose)
++            if (o.verbose && srcaddr.un.sun_path[0] != '\0')
+                 loguser("[%s] used as source DGRAM Unix domain socket.\n", srcaddr.un.sun_path);
++            else if (o.verbose)
++                loguser("Autobound abstract source DGRAM Unix domain socket used.\n");
+         }
+ #endif
+         /* A non-proxy connection. Create an iod for a new socket. */
+@@ -1143,7 +1153,7 @@
+     }
+ 
+ #if HAVE_SYS_UN_H
+-    if (o.af == AF_UNIX && o.proto == IPPROTO_UDP) {
++    if (o.af == AF_UNIX && o.proto == IPPROTO_UDP && srcaddr.un.sun_path[0] != '\0') {
+         if (o.verbose)
+             loguser("Deleting source DGRAM Unix domain socket. [%s]\n", srcaddr.un.sun_path);
+         unlink(srcaddr.un.sun_path);
