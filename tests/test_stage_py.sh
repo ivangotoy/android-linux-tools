@@ -118,6 +118,46 @@ case "$1" in
     env -u TMPDIR /system/bin/mkfs.erofs 2>&1 ;;
 esac
 SH
+  # nstat/ifstat history: root gets the root-only tmp whatever TMPDIR says, never /data/local/tmp; with that
+  # directory unusable (planted symlink) the variable stays unset; other uids get the upstream name under TMPDIR;
+  # a value the caller set is kept; ifstat -x/--extended leaves IFSTAT_HISTORY unset
+  for w in nstat ifstat; do cp "$st/system/bin/$w" "$h/tw/$w"; done
+  cat > "$h/tw/hist.sh" <<'SH'
+mkdir -p /system/bin /system/etc/android-linux-tools/libexec /data/local/tmp && ln -s /bin/sh /system/bin/sh
+chmod 751 /data/local && chmod 1777 /data/local/tmp
+for t in nstat ifstat; do printf '#!/bin/sh\necho "%s NSTAT=$NSTAT_HISTORY IFSTAT=$IFSTAT_HISTORY"\n' $t > /system/etc/android-linux-tools/libexec/$t; done
+chmod 755 /system/etc/android-linux-tools/libexec/*
+for w in nstat ifstat; do cp /w/$w /system/bin/$w && chmod 755 /system/bin/$w; done
+[ "$1" = planted ] && mkdir -m 700 /data/local/android-linux-tools && ln -s /data/local/tmp /data/local/android-linux-tools/tmp
+env -u TMPDIR /system/bin/nstat
+TMPDIR=/data/local/tmp /system/bin/nstat
+TMPDIR=/data/local/tmp /system/bin/ifstat
+[ "$1" = planted ] && exit 0
+NSTAT_HISTORY=/data/local/tmp/mine /system/bin/nstat
+/system/bin/ifstat -x cpu_hits
+/system/bin/ifstat --extended=cpu_hits
+/system/bin/ifstat -a wlan0
+su -s /bin/sh nobody -c "unset TMPDIR; /system/bin/nstat; /system/bin/ifstat"
+SH
+  for c in normal planted; do
+    out=$(timeout 120 docker run --rm --network none -v "$h/tw:/w:ro" alpine:3.22 sh /w/hist.sh "$c" 2>&1)
+    R=/data/local/android-linux-tools/tmp
+    case "$c" in
+      normal) want="nstat NSTAT=$R/.nstat.u0 IFSTAT=
+nstat NSTAT=$R/.nstat.u0 IFSTAT=
+ifstat NSTAT= IFSTAT=$R/.ifstat.u0
+nstat NSTAT=/data/local/tmp/mine IFSTAT=
+ifstat NSTAT= IFSTAT=
+ifstat NSTAT= IFSTAT=
+ifstat NSTAT= IFSTAT=$R/.ifstat.u0
+nstat NSTAT=/data/local/tmp/.nstat.u65534 IFSTAT=
+ifstat NSTAT= IFSTAT=/data/local/tmp/.ifstat.u65534" ;;
+      planted) want="nstat NSTAT= IFSTAT=
+nstat NSTAT= IFSTAT=
+ifstat NSTAT= IFSTAT=" ;;
+    esac
+    if [ "$out" = "$want" ]; then ok "nstat/ifstat history: $c"; else bad "nstat/ifstat history $c: $(echo "$out" | tr '\n' '|')"; fi
+  done
   for c in adb-first listed-first cases planted; do
     out=$(timeout 120 docker run --rm --network none -v "$h/tw:/w:ro" alpine:3.22 sh /w/run.sh "$c" 2>&1)
     case "$c" in

@@ -64,6 +64,33 @@ ROOT_TMPDIR_LINES = [TMPDIR_GUARD,
 
 EXTRA_ENV = {
     'mtr': ['export MTR_PACKET="$ALTDIR/libexec/mtr-packet"'],
+    # history files: upstream's default is /tmp/.nstat.u<uid> (iproute2 7.3.0 misc/nstat.c:656-660) and
+    # P_tmpdir/.ifstat.u<uid> (misc/ifstat.c:948-958; "/tmp/" in the NDK stdio.h); Android has no /tmp, so without
+    # NSTAT_HISTORY/IFSTAT_HISTORY both stop with "open history file" unless run with -s -n (no history read or
+    # written; nstat.c:665-671, ifstat.c:965-971). When unset: root gets the file in the
+    # root-only ROOTTMP, never in /data/local/tmp (if ROOTTMP cannot be made or fails the checks, the variable stays
+    # unset, as before); other uids get the upstream name under $TMPDIR. ifstat -x/--extended keeps one history
+    # file per stats type upstream, which a single IFSTAT_HISTORY would merge: then the variable is not set.
+    'nstat': ['if [ -z "$NSTAT_HISTORY" ]; then',
+              '  if [ "$(id -u)" = 0 ]; then',
+              '    if %s; then export NSTAT_HISTORY=%s/.nstat.u0; fi' % (rootdir_ok(ROOTDIR, ROOTTMP), ROOTTMP),
+              '  else',
+              '    export NSTAT_HISTORY="$TMPDIR/.nstat.u$(id -u)"',
+              '  fi',
+              'fi'],
+    'ifstat': ['if [ -z "$IFSTAT_HISTORY" ]; then',
+               '  alt_x=0',
+               '  for alt_a in "$@"; do',
+               '    case "$alt_a" in --) break ;; --ex*|-x*|-[!-]*x*) alt_x=1 ;; esac',
+               '  done',
+               '  if [ "$alt_x" = 1 ]; then',
+               '    :',
+               '  elif [ "$(id -u)" = 0 ]; then',
+               '    if %s; then export IFSTAT_HISTORY=%s/.ifstat.u0; fi' % (rootdir_ok(ROOTDIR, ROOTTMP), ROOTTMP),
+               '  else',
+               '    export IFSTAT_HISTORY="$TMPDIR/.ifstat.u$(id -u)"',
+               '  fi',
+               'fi'],
     # socket directory: the caller's TMPDIR (apps such as Termux cannot write /data/local/tmp)
     'tmux': ['if [ "$TMUX_TMPDIR" = %s ] && [ ! -w "$TMUX_TMPDIR" ]; then unset TMUX_TMPDIR; fi' % ROOTTMP,
              '[ -n "$TMUX_TMPDIR" ] || export TMUX_TMPDIR="${TMPDIR:-/data/local/tmp}"',

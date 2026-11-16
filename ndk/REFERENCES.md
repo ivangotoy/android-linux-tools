@@ -2014,7 +2014,12 @@ and `ndk/tools.tsv` rows are new, except where noted.
   is chosen by `argv[0]`, so the program is copied as for `dump.f2fs`). Built `--without-selinux`: sload.f2fs sets no
   labels.
 - iproute2 7.3.0: `nstat`, `ifstat`, `lnstat` (misc), `genl`, `devlink` (two more `SUBDIRS`), `rtmon` (ip). Dynamic
-  like `ip`.
+  like `ip`. History files: upstream's default is `/tmp/.nstat.u<uid>` (`misc/nstat.c:656-660`) and
+  `P_tmpdir/.ifstat.u<uid>` (`misc/ifstat.c:948-958`, `/tmp/` in the NDK headers), and Android has no `/tmp`. When
+  `NSTAT_HISTORY`/`IFSTAT_HISTORY` is unset, the wrappers set it: for root to a file in the root-only
+  `/data/local/android-linux-tools/tmp` (left unset if that directory cannot be made or used, never
+  `/data/local/tmp`), for other users to the upstream file name under `$TMPDIR`. `ifstat -x`/`--extended` keeps one
+  history file per statistics type upstream, so its wrapper leaves `IFSTAT_HISTORY` unset then.
 - BIND 9.20.30: `nslookup`, `delv`, `nsupdate`. `delv` needs the generated `bind.keys.h` (`make bind.keys.h` in the
   top directory). nslookup shares dighost.c with dig and uses `ALT_DNS_SERVERS` through patch 0002. delv and nsupdate
   read resolv.conf through `irs_resconf_load()` (lib/dns/resconf.c), which falls back to `::1`/`127.0.0.1`; patch

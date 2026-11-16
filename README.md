@@ -445,7 +445,8 @@ URL and sha256, how the checksum was verified, licence, patches, dependencies, l
 - util-linux 2.42.4 also provides `nsenter-ng`, `unshare-ng`, `lsns`, `losetup`, `dmesg`, `wipefs`, `fallocate`,
   `zramctl`, `taskset`, `chrt`, `ionice`, `prlimit`, `rfkill`, `hexdump` and `script`; libcap `getcap`/`setcap`;
   libcap-ng `pscap`, `netcap`, `filecap`; e2fsprogs `debugfs`, `dumpe2fs`, `e2image`, `filefrag`; f2fs-tools
-  `mkfs.f2fs`, `resize.f2fs`, `sload.f2fs` (no SELinux labelling), `f2fs_io`; iproute2 `nstat`, `ifstat`, `lnstat`,
+  `mkfs.f2fs`, `resize.f2fs`, `sload.f2fs` (no SELinux labelling), `f2fs_io`; iproute2 `nstat`, `ifstat`
+  (history files: `NSTAT_HISTORY`/`IFSTAT_HISTORY`, set by the wrappers when unset, see `ndk/REFERENCES.md`), `lnstat`,
   `genl`, `devlink`, `rtmon`; binutils `objcopy`, `strip`, `size`, `ar`, `c++filt`, `elfedit`; elfutils `eu-strip`,
   `eu-elflint`, `eu-elfcmp`, `eu-size`, `eu-elfclassify`; sqlite `sqldiff` and `sqlite3_rsync`; sysstat `sar` (its
   collector `sadc` is in `$ALTDIR/libexec`; daily files default to `/data/local/var/log/sa`); squashfs-tools
