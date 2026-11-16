@@ -1,7 +1,9 @@
 # android-linux-tools v2 installer hook (Magisk, KernelSU, APatch), for builds without Alpine/musl binaries.
-# Uses only ui_print/set_perm/set_perm_recursive from the manager, with fallbacks.
+# Uses only ui_print/abort/set_perm/set_perm_recursive from the manager, with fallbacks.
 
 command -v ui_print >/dev/null 2>&1 || ui_print() { echo "$1"; }
+# the managers' abort prints the message, removes $MODPATH and exits 1
+command -v abort >/dev/null 2>&1 || abort() { ui_print "$1"; exit 1; }
 if ! command -v set_perm >/dev/null 2>&1; then
   set_perm() {
     chown "$2:$3" "$1" 2>/dev/null
@@ -59,7 +61,8 @@ for alt_w in $(ls "$ALT_BIN" | sort); do
     while alt_device_path "$alt_new" >/dev/null || [ -e "$ALT_BIN/$alt_new" ]; do
       alt_new="$alt_new-ng"
     done
-    mv "$ALT_BIN/$alt_w" "$ALT_BIN/$alt_new"
+    # a wrapper that keeps the device's name would shadow the device binary: stop the install instead
+    mv "$ALT_BIN/$alt_w" "$ALT_BIN/$alt_new" || abort "! cannot rename $alt_w to $alt_new (device has $alt_dev); not installing"
     ui_print "  renamed $alt_w -> $alt_new (device has $alt_dev)"
     alt_renamed=$((alt_renamed + 1))
   fi

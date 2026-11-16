@@ -78,7 +78,8 @@ also run without root (`adb shell`, Termux, apps), with the permissions of the c
 2. Every other wrapper is checked at install time. `customize.sh` looks for each name in `/system/bin
    /system/xbin /system_ext/bin /product/bin /vendor/bin /vendor/xbin /odm/bin /apex/*/bin`. If the device
    already has that name, the wrapper is renamed to `<name>-ng` (or `<name>-ng-ng` if that is also taken) and
-   the installer prints the rename. Files of this module are recognised by the `ALTDIR=` (v2.2+) or `MODDIR=`
+   the installer prints the rename; if a rename fails, the installer stops (`abort`) instead of installing a
+   wrapper under the device's name. Files of this module are recognised by the `ALTDIR=` (v2.2+) or `MODDIR=`
    (older versions) line in their first 400 bytes, so an upgrade never renames a wrapper because
    of the previous version's copy (`check.py` requires that marker in every wrapper).
 3. `alt-list` prints the installed command names and marks the renamed ones; `alt-list -r` prints only the
