@@ -311,7 +311,7 @@ VERSION_PATTERNS = {
     'fsck.vfat': r'fsck\.fat [0-9]', 'fatlabel': 'fatlabel [0-9]',
     'zip': r'Copyright \(c\) 1990-2008 Info-ZIP', 'zipcloak': '^ZipCloak ', 'zipnote': '^ZipNote ',
     'zipsplit': '^ZipSplit ', 'unzip': '^UnZip .* by Info-ZIP', 'funzip': r'fUnZip \(filter UnZip\)',
-    'zipinfo': '^ZipInfo .* Info-ZIP',
+    'zipinfo': '^ZipInfo .* Info-ZIP', '7zz': r'^7-Zip \(z\) [0-9]',
 }
 checks = []
 for line in pt.splitlines():

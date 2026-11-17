@@ -270,3 +270,4 @@ zipsplit        zip              zipsplit     -     -
 unzip           unzip            unzip        -     -
 funzip          unzip            funzip       -     -
 zipinfo         unzip            unzip        -Z    -
+7zz             7zip             7zz          -     -

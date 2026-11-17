@@ -2323,3 +2323,33 @@ Why:
   `__is_utf8_locale("")` is true), and `nl_langinfo(CODESET)` is then `"UTF-8"` (`libc/bionic/langinfo.cpp`), so
   unzip's own codeset test already selects native UTF-8.
 - No bzip2 library is in this tree; Zip and UnZip handle stored and deflated entries (the methods Zip writes).
+
+### 7-Zip 26.06 (7zz; static)
+| Source | Observed |
+|---|---|
+| AOSP | absent (external/7zip 404) |
+| upstream `DOC/readme.txt`, `CPP/7zip/cmpl_clang_arm64.mak` | Linux build with `make -C CPP/7zip/Bundles/Alone2 -f ../../cmpl_clang_arm64.mak` (7zz, arm64 assembler with `USE_ASM=1`); `DISABLE_RAR=1` / `DISABLE_RAR_COMPRESS=1` leave out the RAR code |
+| Termux packages/7zip | 26.06 source from the GitHub release, `cmpl_clang_arm64.mak` with `-D_GNU_SOURCE` added to CC/CXX, `-Werror` removed with sed; builds 7z, 7za, 7zr, 7zz and the 7z.so plugin; patches for the Termux temp path, plugin path and `timespec_get` at API 29+ |
+| aports main/7zip | 26.06, `cmpl_gcc.mak`, `DISABLE_RAR=1` ("RAR codec is non-free"), licence `LGPL-2.0-only` |
+| Arch 7zip | 26.06 with RAR, licence `LGPL-2.1-or-later AND LicenseRef-UnRAR AND BSD-3-Clause AND BSD-2-Clause` |
+| buildroot package/7zip, OpenWrt packages utils/7zip | absent (404) |
+
+Chosen approach: `7z2606-src.tar.xz`, the asset of the GitHub release (github.com/ip7z/7zip) that
+7-zip.org/download.html links; its sha256 equals the release asset digest (no signature upstream). The archive has no
+top-level directory, so the recipe stores it under the name `7z2606-src.txz` (build.sh copies files of unknown type
+into `$SRCDIR`) and unpacks it in `build()`. `make -C CPP/7zip/Bundles/Alone2 -f ../../cmpl_clang_arm64.mak` with
+the NDK clang and the flags of `env.sh` added to `CC`/`CXX` (plus `-D_GNU_SOURCE`, as Termux and aports), upstream's
+`-Werror` replaced by `CFLAGS_WARN_WALL="-Wall -Wextra"` on the make command line, link flags of `env.sh` through
+`LDFLAGS_STATIC_3` (static), `LIB2=-ldl`. Only `7zz` (all formats built in, no plugin) is shipped. No patches.
+Licences: `DOC/License.txt`, `DOC/copying.txt` (LGPL-2.1) and `DOC/unRarLicense.txt`.
+
+Why:
+- `7zz` needs no `7z.so` plugin, so no plugin path patch (Termux's `7z` loads `7z.so` from its prefix).
+- RAR extraction is kept, as upstream's default build, Termux and Arch do. The unRAR licence lets the sources be
+  used free of charge in software that handles RAR archives, but not to re-create the RAR compression algorithm,
+  and forbids charging a fee for distributing unRAR. It is recorded in the licence expression
+  (`LicenseRef-unRAR`). aports leaves it out with `DISABLE_RAR=1`.
+- The `timespec_get` patch of Termux is not needed: without it 7-Zip uses `clock_gettime(CLOCK_REALTIME)`
+  (`CPP/Windows/TimeUtils.cpp`).
+- `MyGetTempPath()` (`CPP/Windows/FileDir.cpp`) returns `/tmp/` if it exists, else `./`; it is used for `-w`
+  without a path. Termux patches it to its prefix; here it is unchanged (Android has no `/tmp`).
