@@ -271,3 +271,5 @@ unzip           unzip            unzip        -     -
 funzip          unzip            funzip       -     -
 zipinfo         unzip            unzip        -Z    -
 7zz             7zip             7zz          -     -
+mosh-server     mosh             mosh-server  -     -
+mosh-client     mosh             mosh-client  -     -

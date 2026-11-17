@@ -2353,3 +2353,31 @@ Why:
   (`CPP/Windows/TimeUtils.cpp`).
 - `MyGetTempPath()` (`CPP/Windows/FileDir.cpp`) returns `/tmp/` if it exists, else `./`; it is used for `-w`
   without a path. Termux patches it to its prefix; here it is unchanged (Android has no `/tmp`).
+
+### mosh 1.4.0 (mosh-server, mosh-client; static)
+| Source | Observed |
+|---|---|
+| AOSP | absent (external/mosh 404) |
+| Termux packages/mosh | 1.4.0 release tarball with protobuf, ncurses, OpenSSL; a patch for the motd paths under its prefix; the Perl `mosh` front end is renamed `mosh.pl` (subpackage `mosh-perl`) and replaced by `mosh.cc`, a C++ front end written for Termux |
+| aports main/mosh | 1.4.0 from the GitHub tag archive, `--enable-compile-warnings=error --enable-examples`; the front end in a subpackage that depends on Perl |
+| buildroot package/mosh | 1.4.0 with zlib, ncurses, protobuf, `--with-crypto-library=openssl` (or nettle) |
+| OpenWrt packages net/mosh | 1.4.0, `--disable-compile-warnings --disable-hardening --without-utempter` |
+
+Chosen approach: `configure_std --with-crypto-library=openssl-with-openssl-ocb --without-utempter --disable-hardening`
+with `PROTOC` = the native protoc of the protobuf recipe (`$DEPROOT/hostbin/protoc`), `protobuf_CFLAGS`/`protobuf_LIBS`
+given directly (the protobuf recipe's `protobuf.pc` has absolute `/usr` paths, which build.sh's `prefix=` rewrite does
+not cover), `-static-libstdc++`. Static. No patches.
+
+Why:
+- Static: mosh-client and mosh-server call `getaddrinfo()` only with `AI_NUMERICHOST | AI_NUMERICSERV`
+  (`src/network/network.cc`), so they never need the netd resolver.
+- AES-OCB from OpenSSL 3's EVP interface instead of mosh's internal OCB with the deprecated `AES_encrypt` API.
+- `--disable-hardening`: mosh's own hardening flags add `-fPIE -pie`, which conflicts with the static link;
+  `env.sh` already sets `-fstack-protector-strong -D_FORTIFY_SOURCE=2`.
+- Locale: mosh-server refuses to start unless `nl_langinfo(CODESET)` is UTF-8 after `setlocale(LC_ALL, "")`
+  (`src/util/locale_utils.cc`); on bionic that is always the case (see Info-ZIP above), so no wrapper variable or
+  patch is needed.
+- The `mosh` front end (`scripts/mosh.pl`) is Perl: it runs `ssh` to start `mosh-server new`, parses the
+  `MOSH CONNECT` line and starts `mosh-client` with `MOSH_KEY`. It is not shipped and not replaced: the module has
+  no Perl, and its wrappers can only start programs in `$ALTDIR/libexec` (stage.py, check.py), so a shell front end
+  would need new machinery there. Usage without it is in the README.

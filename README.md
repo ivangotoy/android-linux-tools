@@ -5,7 +5,7 @@ and debugging (strace, ltrace, fatrace, gdbserver, lldb-server, eu-stack), packe
 bpftrace with its tool scripts, the bcc libbpf-tools, eCapture), reverse engineering (rizin), ELF tools (GNU binutils,
 elfutils, patchelf), device trees (dtc), EROFS, SquashFS, ext4, F2FS, exFAT and FAT tools, Android platform tools (adb, fastboot,
 sparse and super image tools), git, ripgrep, fd, fzf, ncdu, picocom, an NFS mount helper, util-linux programs
-(nsenter, unshare, losetup, dmesg, ...), nmap, OpenSSL, an SSH client and server (dropbear), DNS and network
+(nsenter, unshare, losetup, dmesg, ...), nmap, OpenSSL, an SSH client and server (dropbear), mosh, DNS and network
 diagnostics, storage benchmarks (fio), compression and archivers (Info-ZIP zip/unzip, 7-Zip), editors, shells)
 to rooted aarch64 Android phones. Every
 program is compiled from upstream source with the Android NDK for bionic (`aarch64-linux-android`, API 35).
@@ -383,6 +383,8 @@ linked in statically. Four more programs are in `libexec` without a command of t
 | `funzip` | unzip | 6.0 | static | 259 | Info-ZIP |
 | `zipinfo` | unzip | 6.0 | static | 415 (=unzip `-Z`) | Info-ZIP |
 | `7zz` | 7zip | 26.06 | static | 2905 | LGPL-2.1-or-later AND BSD-3-Clause AND BSD-2-Clause AND LicenseRef-unRAR |
+| `mosh-server` | mosh | 1.4.0 | static | 4662 | GPL-3.0-or-later |
+| `mosh-client` | mosh | 1.4.0 | static | 4675 | GPL-3.0-or-later |
 | `alt-list` | (module script) | | | | MIT |
 
 `$ALTSHARE/MANIFEST.json` (and `dist/MANIFEST-v2.json`) records per tool the recipe, upstream version, source
@@ -474,6 +476,13 @@ URL and sha256, how the checksum was verified, licence, patches, dependencies, l
   extraction, ...), compiled with upstream's clang/arm64 makefile and its arm64 assembler code, static. The RAR
   decoder is under the unRAR licence restriction (`LicenseRef-unRAR`, `DOC/unRarLicense.txt`). `7zz -w` without
   a path would use `/tmp`, which Android lacks (7-Zip then uses the current directory).
+- mosh 1.4.0: `mosh-server` and `mosh-client` (protobuf 3.21.12, ncurses and OpenSSL's AES-OCB, static). Upstream's
+  `mosh` command is a Perl script and the module has no Perl, so it is not shipped. The usual use is the phone as the
+  server: on a computer with mosh installed, `mosh root@<phone>` logs in through the module's dropbear SSH server
+  (see dropbear above) and starts `mosh-server` there; mosh-server listens on a UDP port in 60001-60999 by default.
+  To use the phone as the client, start `mosh-server new` on the remote host (for example over `ssh`), then run
+  `MOSH_KEY=<key> mosh-client <IP> <port>` with the key and port of its `MOSH CONNECT <port> <key>` line; mosh-client
+  takes a numeric IP address. bionic's locale is UTF-8, which mosh-server requires.
 - util-linux 2.42.4 also provides `nsenter-ng`, `unshare-ng`, `lsns`, `losetup`, `dmesg`, `wipefs`, `fallocate`,
   `zramctl`, `taskset`, `chrt`, `ionice`, `prlimit`, `rfkill`, `hexdump` and `script`; libcap `getcap`/`setcap`;
   libcap-ng `pscap`, `netcap`, `filecap`; e2fsprogs `debugfs`, `dumpe2fs`, `e2image`, `filefrag`; f2fs-tools
