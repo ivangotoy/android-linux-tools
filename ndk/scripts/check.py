@@ -306,7 +306,9 @@ VERSION_PATTERNS = {
     'img2simg': 'Usage: img2simg ', 'lpunpack': 'tool for extracting partition images from super',
     'lpmake': 'tool for creating Android Logical Partition images',
     'mkfs.exfat': 'exfatprogs version', 'fsck.exfat': 'exfatprogs version', 'tune.exfat': 'exfatprogs version',
-    'exfatlabel': 'exfatprogs version', 'dump.exfat': 'exfatprogs version',
+    'exfatlabel': 'exfatprogs version', 'dump.exfat': 'exfatprogs version', 'mkfs.fat': r'mkfs\.fat [0-9]',
+    'mkfs.vfat': r'mkfs\.fat [0-9]', 'mkfs.msdos': r'mkfs\.fat [0-9]', 'fsck.fat': r'fsck\.fat [0-9]',
+    'fsck.vfat': r'fsck\.fat [0-9]', 'fatlabel': 'fatlabel [0-9]',
 }
 checks = []
 for line in pt.splitlines():

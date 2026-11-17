@@ -257,3 +257,9 @@ fsck.exfat      exfatprogs       fsck.exfat   -     -
 tune.exfat      exfatprogs       tune.exfat   -     -
 exfatlabel      exfatprogs       exfatlabel   -     -
 dump.exfat      exfatprogs       dump.exfat   -     -
+mkfs.fat        dosfstools       mkfs.fat     -     -
+mkfs.vfat       dosfstools       mkfs.fat     -     -
+mkfs.msdos      dosfstools       mkfs.fat     -     -
+fsck.fat        dosfstools       fsck.fat     -     -
+fsck.vfat       dosfstools       fsck.fat     -     -
+fatlabel        dosfstools       fatlabel     -     -

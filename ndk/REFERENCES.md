@@ -2273,3 +2273,21 @@ Why:
   already builds libblkid for `blkid-ng`; it now also installs `libblkid.a`, `blkid.h` and `blkid.pc` into its
   package, as it does for libuuid, and exfatprogs depends on util-linux. The util-linux programs are unchanged.
 - `exfat2img` and `lsdosattr`/`chdosattr` are built by upstream's Makefile but not shipped (not part of the request).
+
+### dosfstools 4.2 (mkfs.fat, fsck.fat, fatlabel; static)
+| Source | Observed |
+|---|---|
+| AOSP external/dosfstools | present (a Makefile tree with `src/`, `debian/` and NOTICE; no METADATA file); Android's own FAT tools are `fsck_msdos`/`newfs_msdos` |
+| Termux packages/dosfstools | 4.2 release tarball, `--enable-compat-symlinks`, depends on libiconv |
+| aports main/dosfstools | 4.2, `./configure`, no patches |
+| buildroot package/dosfstools | 4.2, `--enable-compat-symlinks`, `LIBS=-liconv` with libiconv when the C library has no iconv |
+| OpenWrt utils/dosfstools | 4.2 release tarball, iconv dependency |
+
+Chosen approach: `configure_std --without-iconv`, then `make`. No patches. `mkfs.vfat`, `mkfs.msdos` and
+`fsck.vfat` are wrappers for the same programs (upstream's `--enable-compat-symlinks` names), so no symlinks are
+installed. CHECKSUM_SOURCE: `.sig`, Andreas Bombe key `25714AECDBFDACEE1CE95FE77F6022516E869F64`.
+
+Why:
+- bionic's `iconv_open` knows only ASCII and the Unicode encodings, not `CP850`, so iconv conversions of FAT names
+  would fail; without iconv dosfstools uses its built-in CP850 table (`src/charconv.c`).
+- Termux and buildroot pull in GNU libiconv for the other codepages; that dependency was not added.
