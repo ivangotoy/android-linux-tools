@@ -273,3 +273,8 @@ zipinfo         unzip            unzip        -Z    -
 7zz             7zip             7zz          -     -
 mosh-server     mosh             mosh-server  -     -
 mosh-client     mosh             mosh-client  -     -
+vim             vim              vim          -     -
+vimdiff         vim              vim          -d    -
+view            vim              vim          -R    -
+rvim            vim              vim          -Z    -
+rview           vim              vim          -RZ   -

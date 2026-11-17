@@ -2381,3 +2381,34 @@ Why:
   `MOSH CONNECT` line and starts `mosh-client` with `MOSH_KEY`. It is not shipped and not replaced: the module has
   no Perl, and its wrappers can only start programs in `$ALTDIR/libexec` (stage.py, check.py), so a shell front end
   would need new machinery there. Usage without it is in the README.
+
+### Vim 9.2.1355 (vim, vimdiff, view, rvim, rview; dynamic)
+| Source | Observed |
+|---|---|
+| AOSP | absent (external/vim 404) |
+| Termux packages/vim | 9.2.1350 from the GitHub tag archive (Vim tags every patch; Termux moves every 50 patches); cross answers `vim_cv_getcwd_broken=no vim_cv_memmove_handles_overlap=yes vim_cv_stat_ignores_slash=no vim_cv_terminfo=yes vim_cv_tgetent=zero vim_cv_toupper_broken=no vim_cv_tty_group=world ac_cv_small_wchar_t=no`, `--with-features=huge --enable-gui=no --without-x --with-tlib=ncursesw`, dynamic Perl/Python/Lua/Ruby/Tcl interfaces, libsodium; patches for its prefix (`'directory'` default, paths) |
+| aports main/vim | 9.2.1352 from the GitHub tag archive, `./configure` per flavour (vim, gvim) |
+| buildroot package/vim | 9.2.0943 from the GitHub tag, cross answers like Termux's (plus `vim_cv_tty_mode=0620`) |
+| OpenWrt packages utils/vim | 9.2.1014 from git, three builds (`--with-features=tiny`, `normal`, `huge`) |
+
+Chosen approach: the GitHub tag archive `v9.2.1355`, `configure_std --datadir=/system/etc/android-linux-tools/share
+--with-features=huge --enable-gui=no --without-x --disable-netbeans --with-tlib=ncursesw --disable-libsodium
+--disable-canberra --enable-fail-if-missing --with-compiledby=android-linux-tools`, Termux's cross answers and
+`vim_cv_uname_output=Linux vim_cv_uname_m_output=aarch64`. Make variables `VIMRTDIR=` and
+`VIMRUNTIMEDIR=$ALTDIR/share/vim`, so `$VIM` and `$VIMRUNTIME` are both `$ALTDIR/share/vim`. Runtime files from
+upstream's `make installruntime` (DESTDIR), copied to `$ALTDIR/share/vim` (no symlinks). No patches.
+- `src/auto/pathdef.c` records the compile and link command lines for `:version`; they contain build paths. The
+  recipe generates it first and replaces those two strings with a short description, then builds.
+- Build date: `configure` takes `SOURCE_DATE_EPOCH` (exported by build.sh) as `BUILD_DATE`.
+- `_FORTIFY_SOURCE`: Vim's configure lowers `-D_FORTIFY_SOURCE=2` of `env.sh` to `=1` (its comment: level 2
+  "crashes Vim on strcpy(buf, "000") when buf is declared as char x[1] but actually longer"); every compile line
+  of the build log has `=1`.
+- Licence: `LICENSE` (Vim licence) and `runtime/doc/uganda.txt` as `LICENSE.uganda.txt`.
+
+Why:
+- Dynamic: `channel_open()` (`src/channel.c`, behind `ch_open()`) resolves host names with `getaddrinfo()`, which
+  needs netd (see "Static vs dynamic linkage").
+- No interpreters (the module has no Perl, Python, Lua, Ruby or Tcl), no libsodium (Blowfish2 encryption stays
+  available), no `xxd`.
+- Termux's `'directory'` patch (swap files in its prefix's tmp) was not taken: Vim's default
+  `.,~/tmp,/var/tmp,/tmp` keeps swap files next to the edited file when that directory is writable.
