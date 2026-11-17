@@ -95,6 +95,19 @@ EXTRA_ENV = {
     'tmux': ['if [ "$TMUX_TMPDIR" = %s ] && [ ! -w "$TMUX_TMPDIR" ]; then unset TMUX_TMPDIR; fi' % ROOTTMP,
              '[ -n "$TMUX_TMPDIR" ] || export TMUX_TMPDIR="${TMPDIR:-/data/local/tmp}"',
              '[ -n "$SHELL" ] || export SHELL=/system/bin/sh'],
+    # tealdeer's user cache (tldr --update) is $XDG_CACHE_HOME/tealdeer, else $HOME/.cache/tealdeer
+    # (etcetera's XDG strategy; TEALDEER_CACHE_DIR also works but makes tldr print a deprecation warning on every
+    # run). When neither variable is set and HOME is not writable (root's and the adb shell's HOME is often /):
+    # root gets ROOTDIR/cache (see above; if it cannot be made or fails the checks, the variable stays unset and
+    # only --update fails), other uids $TMPDIR/.cache. Without pages in the user cache, tldr reads the pages
+    # shipped in $ALTDIR/share/tldr (tealdeer patch 0001).
+    'tldr': ['if [ -z "$XDG_CACHE_HOME" ] && [ -z "$TEALDEER_CACHE_DIR" ] && [ ! -w "${HOME:-/}" ]; then',
+             '  if [ "$(id -u)" != 0 ]; then',
+             '    export XDG_CACHE_HOME="$TMPDIR/.cache"',
+             '  elif %s; then' % rootdir_ok(ROOTDIR, ROOTDIR + '/cache'),
+             '    export XDG_CACHE_HOME=%s/cache' % ROOTDIR,
+             '  fi',
+             'fi'],
     # adb keeps its key pair in $HOME/.android; root's home directory on Android is / (read-only). Root gets
     # ROOTDIR (see above). Other uids keep /data/local/tmp. If ROOTDIR cannot be made or fails the checks, root
     # falls back to /data/local/tmp with a warning.

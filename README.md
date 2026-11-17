@@ -1,12 +1,13 @@
 # Android Linux tools
 
-A root module that adds Linux userspace tools (netfilter, iproute2, WireGuard/AmneziaWG, Wi-Fi (iw), tracing
-and debugging (strace, ltrace, fatrace, gdbserver, lldb-server, eu-stack), packet capture, BPF tracing (bpftool,
-bpftrace with its tool scripts, the bcc libbpf-tools, eCapture), reverse engineering (rizin), ELF tools (GNU binutils,
-elfutils, patchelf), device trees (dtc), EROFS, SquashFS, ext4, F2FS, exFAT and FAT tools, Android platform tools (adb, fastboot,
-sparse and super image tools), git, ripgrep, fd, fzf, ncdu, picocom, an NFS mount helper, util-linux programs
-(nsenter, unshare, losetup, dmesg, ...), nmap, OpenSSL, an SSH client and server (dropbear), mosh, DNS and network
-diagnostics, storage benchmarks (fio), compression and archivers (Info-ZIP zip/unzip, 7-Zip), editors (nano, vim), shells (bash, zsh))
+A root module that adds Linux userspace tools (netfilter, iproute2, WireGuard/AmneziaWG, Wi-Fi (iw), tracing and
+debugging (strace, ltrace, fatrace, gdbserver, lldb-server, eu-stack), packet capture, BPF tracing (bpftool, bpftrace
+with its tool scripts, the bcc libbpf-tools, eCapture), reverse engineering (rizin), ELF tools (GNU binutils,
+elfutils, patchelf), device trees (dtc), EROFS, SquashFS, ext4, F2FS, exFAT and FAT tools, Android platform tools
+(adb, fastboot, sparse and super image tools), git, ripgrep, fd, fzf, ncdu, picocom, an NFS mount helper, util-linux
+programs (nsenter, unshare, losetup, dmesg, ...), nmap, OpenSSL, an SSH client and server (dropbear), mosh, DNS and
+network diagnostics, storage benchmarks (fio), compression and archivers (Info-ZIP zip/unzip, 7-Zip), editors (nano,
+vim), shells (bash, zsh), offline tldr pages (tealdeer))
 to rooted aarch64 Android phones. Every
 program is compiled from upstream source with the Android NDK for bionic (`aarch64-linux-android`, API 35).
 The module does not depend on any particular device. It runs nothing at boot (no `post-fs-data.sh`,
@@ -27,7 +28,7 @@ mounts from its `system/` tree.
 - Upgrading: install the new ZIP over the old one and reboot. The installer recognises wrappers of this
   module (also of v1/v2.0/v2.1) and never renames them as device binaries. No other module is touched.
 - Removing: remove the module in the root manager and reboot; its `uninstall.sh` then deletes
-  `/data/local/android-linux-tools` (root's adb key pair and temporary files), which an upgrade keeps.
+  `/data/local/android-linux-tools` (root's adb key pair, tldr cache and temporary files), which an upgrade keeps.
 - The ZIP has the standard Magisk `META-INF/com/google/android/update-binary`; KernelSU and APatch use their own
   installer and run the same `customize.sh`. It uses only `ui_print`, `abort`, `set_perm` and `set_perm_recursive`
   (with fallbacks if they are missing) and no manager-specific command (`ndk/scripts/check.py` enforces that).
@@ -55,6 +56,7 @@ runtime file is in the module's `system/` tree, which the root manager mounts ov
 | `system/etc/android-linux-tools/share/rizin/` | `$ALTDIR/share/rizin` | rizin data files (sdb databases, magic, themes, ...; compiled-in data directory) |
 | `system/etc/android-linux-tools/share/vim/` | `$ALTDIR/share/vim` | Vim runtime files (syntax, ftplugin, indent, colors, autoload, plugin, pack, doc, spell, tutor, ...; compiled-in `$VIM` and `$VIMRUNTIME`) |
 | `system/etc/android-linux-tools/share/zsh/functions/` | `$ALTDIR/share/zsh/functions` | zsh's function library (completion, prompts, VCS_Info, Zle widgets, ...; compiled-in `fpath`) |
+| `system/etc/android-linux-tools/share/tldr/` | `$ALTDIR/share/tldr` | English tldr-pages (`pages.en/<platform>/*.md`, tealdeer's cache layout) for `tldr` without a download |
 | `system/etc/android-linux-tools/etc/netconfig` | `$ALTDIR/etc/netconfig` | libtirpc's transport database for `mount.nfs` |
 | `system/etc/android-linux-tools/etc/alt-tools.map` | `$ALTDIR/etc/alt-tools.map` | rename map written by `customize.sh`, read by `alt-list` |
 | `system/etc/android-linux-tools/share/android-linux-tools/` | `$ALTSHARE` | `dns-servers`, `origins.txt`, `MANIFEST.json`, `phone-test.sh` |
@@ -393,6 +395,7 @@ linked in statically. Four more programs are in `libexec` without a command of t
 | `rvim` | vim | 9.2.1355 | dynamic | 3667 (=vim `-Z`) | Vim |
 | `rview` | vim | 9.2.1355 | dynamic | 3667 (=vim `-RZ`) | Vim |
 | `zsh` | zsh | 5.9.2 | static | 2292 | MIT-Modern-Variant AND GPL-2.0-or-later AND GPL-2.0-only |
+| `tldr` | tealdeer | 1.9.1 | dynamic | 2712 | (MIT OR Apache-2.0) AND CC-BY-4.0 |
 | `alt-list` | (module script) | | | | MIT |
 
 `$ALTSHARE/MANIFEST.json` (and `dist/MANIFEST-v2.json`) records per tool the recipe, upstream version, source
@@ -416,7 +419,7 @@ URL and sha256, how the checksum was verified, licence, patches, dependencies, l
   arping-ng, tracepath-ng, ncat, iftop, wg-quick, awg, awg-quick, nmap, nping, openssl, dropbear, dbclient/ssh, scp,
   dropbearkey, dropbearconvert, gdbserver, ltrace, fio, nstat, ifstat, lnstat, genl, devlink, rtmon, nslookup, delv,
   nsupdate, procan, filan, rg, fd, mount.nfs (and its three other names), git, adb, fastboot, simg2img, img2simg,
-  lpunpack, lpmake, vim. Everything else is static. C++ programs (nmap, nping, gdbserver, lldb-server, the android-tools
+  lpunpack, lpmake, vim, tldr. Everything else is static. C++ programs (nmap, nping, gdbserver, lldb-server, the android-tools
   programs) link the NDK libc++ statically.
 - DNS: no resolv.conf is read or written. Dynamic tools resolve names through bionic/netd. `drill` (ldns) talks
   to a DNS server directly; without `@server` its wrapper adds `@<first DNS server of the active default
@@ -500,6 +503,14 @@ URL and sha256, how the checksum was verified, licence, patches, dependencies, l
   needing gdbm, PCRE or libcap. `fpath` defaults to the function library in `$ALTDIR/share/zsh/functions`. Temporary
   files (here-documents, `=(...)`) go to `$TMPDIR` (patch; zsh's default would be `/tmp`). `/system/bin/sh` stays the
   default shell; start zsh with `zsh` (for example `ssh -t phone zsh`).
+- tealdeer 1.9.1 (`tldr`): the English pages of tldr-pages (commit `1d22cad`, pinned at build time) are shipped in
+  `$ALTDIR/share/tldr`, so `tldr tar` works offline with no first download. `tldr --update` downloads the current
+  pages (HTTPS with rustls and its bundled Mozilla roots) into the user cache, `$XDG_CACHE_HOME/tealdeer` or
+  `$HOME/.cache/tealdeer`; once that cache has pages, tldr uses it, otherwise the shipped pages (patch). When
+  neither `XDG_CACHE_HOME` nor `TEALDEER_CACHE_DIR` is set and `HOME` is not writable (root's and the adb shell's
+  `HOME` is often `/`), the wrapper sets `XDG_CACHE_HOME` to `/data/local/android-linux-tools/cache` for root
+  (created 0700; left unset if that fails) and to `$TMPDIR/.cache` for other users. No pages are downloaded
+  unless `--update` is given or auto-update is turned on in tealdeer's config file.
 - util-linux 2.42.4 also provides `nsenter-ng`, `unshare-ng`, `lsns`, `losetup`, `dmesg`, `wipefs`, `fallocate`,
   `zramctl`, `taskset`, `chrt`, `ionice`, `prlimit`, `rfkill`, `hexdump` and `script`; libcap `getcap`/`setcap`;
   libcap-ng `pscap`, `netcap`, `filecap`; e2fsprogs `debugfs`, `dumpe2fs`, `e2image`, `filefrag`; f2fs-tools

@@ -1,0 +1,56 @@
+Offline pages: the module ships the English tldr-pages (read-only) in /system/etc/android-linux-tools/share/tldr
+with the layout of tealdeer's cache (pages.en/<platform>/<page>.md). When the user cache has no pages.* directory
+(nothing downloaded yet, or an `--update` that failed after creating the directory), page lookups and --list
+use the shipped pages; --update, auto-update and --clear-cache work on the user cache only, as before. No cache
+age warning for the shipped pages (their mtime is the build's SOURCE_DATE_EPOCH).
+Source: android-linux-tools (no upstream or distribution equivalent: Termux packages/tealdeer and aports
+testing/tealdeer ship no pages and download them with `tldr --update`); cache layout from tealdeer's
+src/cache.rs (Cache::find_page, Language::directory_name).
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -65,6 +65,17 @@
+ };
+ 
+ const NAME: &str = "tealdeer";
++// android-linux-tools: tldr-pages shipped with the module (read-only; never updated or cleared by tealdeer)
++const SHIPPED_PAGES_DIR: &str = "/system/etc/android-linux-tools/share/tldr";
++
++// android-linux-tools: a pages directory with no `pages.*` language directory has no pages (none downloaded yet,
++// or an `--update` that failed after creating the directory)
++fn has_pages(dir: &Path) -> bool {
++    std::fs::read_dir(dir).is_ok_and(|mut entries| {
++        entries.any(|e| e.is_ok_and(|e| e.file_name().to_string_lossy().starts_with("pages.")))
++    })
++}
++
+ static TEALDEER_PAGE: &str =
+     include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/pages/tealdeer.md"));
+ 
+@@ -362,6 +373,17 @@
+ 
+         cache
+     } else if args.list || !command.is_empty() {
++        // android-linux-tools: without pages in the user cache, look up and list the shipped pages
++        let shipped = !has_pages(cache_config.pages_directory);
++        let cache_config = if shipped {
++            CacheConfig {
++                pages_directory: Path::new(SHIPPED_PAGES_DIR),
++                ..cache_config
++            }
++        } else {
++            cache_config
++        };
++
+         // Cache is needed for these commands to work
+         let Some(cache) = Cache::open(cache_config)? else {
+             if !args.quiet {
+@@ -384,7 +406,8 @@
+             return Ok(ExitCode::FAILURE);
+         };
+ 
+-        if let Some(max_cache_age) = config.updates.warn_cache_age {
++        // android-linux-tools: no age check of the shipped pages (their mtime is the build's SOURCE_DATE_EPOCH)
++        if let (Some(max_cache_age), false) = (config.updates.warn_cache_age, shipped) {
+             let age = cache.age()?;
+             if age > max_cache_age && !args.quiet {
+                 print_warning(

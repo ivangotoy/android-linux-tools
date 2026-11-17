@@ -2448,3 +2448,35 @@ Why:
   for setuid use, `NTTYDISC` is not defined on Linux, and nothing is loaded dynamically.
 - Licence: `LICENCE` (MIT-Modern-Variant); four completion functions are GPL (`_darcs` GPL-2.0-or-later, `_qdbus`,
   `_zypper`, `_osc` "GPLv2").
+
+### tealdeer 1.9.1 (tldr; dynamic) and the tldr-pages
+| Source | Observed |
+|---|---|
+| AOSP | absent |
+| Termux packages/tealdeer | 1.9.1 from the GitHub tag archive, `cargo build --release` with the default features, no patches; no pages shipped (`tldr --update` downloads them) |
+| aports testing/tealdeer | 1.9.0, `cargo auditable build --frozen --release --no-default-features --features native-tls` |
+| tealdeer `Cargo.toml`, `src/config.rs`, `src/cache.rs` | default features `rustls-with-webpki-roots` and `rustls-with-native-roots` (ureq 3 with rustls/ring; native roots through rustls-platform-verifier); the default TLS backend is the first one compiled in; cache dir `$XDG_CACHE_HOME/tealdeer` or `$HOME/.cache/tealdeer` (etcetera's XDG strategy), `TEALDEER_CACHE_DIR` deprecated (a warning on every run), the config file's `cache_dir`; pages in `<cache>/tldr-pages/pages.<lang>/<platform>/<page>.md`; downloads from `https://github.com/tldr-pages/tldr/releases/latest/download/tldr-pages.<lang>.zip` |
+| tldr-pages releases | the newest release is v2.3 (2025-03-07), but its assets (`tldr-pages.zip`, `tldr.sha256sums`, ...) carry an `updated_at` of the survey day: they are replaced with current pages, so their sha256 cannot be pinned |
+
+Chosen approach: the tag archive (tag `v1.9.1`, commit `993a8e0232ef42c4d9935ff5598796b6e98bf213`, GitHub-verified
+signature), Rust and cargo as for ripgrep/fd (`--locked --offline`, crate cache in `.work/ndk/dl/cargo-home`),
+`--no-default-features --features rustls-with-webpki-roots`. The pages: the GitHub archive of tldr-pages commit
+`1d22cad212727e60367d34448220134af98e82b5` (GitHub-verified signature) as `EXTRA_SRCS`, pinned by sha256; its
+`pages/` directory (all platforms, English, as in the official `tldr-pages.en.zip`) is installed as
+`$ALTDIR/share/tldr/pages.en`, its `LICENSE.md` (CC-BY-4.0) as `LICENSE.tldr-pages.md`.
+- Patch 0001: when the user cache has no `pages.*` directory, page lookups and `--list` use
+  `/system/etc/android-linux-tools/share/tldr`; no cache-age warning for those pages. `--update`, auto-update and
+  `--clear-cache` only touch the user cache.
+- Wrapper (`ndk/scripts/stage.py`): `XDG_CACHE_HOME` for a writable user cache when `HOME` is not writable (see
+  README); it does not use `TEALDEER_CACHE_DIR` because of the deprecation warning.
+- Licences: tealdeer's MIT and Apache-2.0 texts, every linked crate's licence files (`cargo tree`), Rust's
+  standard library notice, the tldr-pages licence.
+
+Why:
+- `rustls-with-native-roots` uses rustls-platform-verifier, which on Android needs a JVM context from an app;
+  a command-line program has none. WebPKI roots (the webpki-roots crate, Mozilla's list) need nothing at run time.
+- Dynamic: `--update` resolves `github.com` with `getaddrinfo()`; Rust's std for this target links `libc.so` and
+  `libdl.so` anyway.
+- A pinned commit archive instead of the release asset: the asset is replaced.
+- The pages are read-only in `/system`, so the shipped copy cannot be the user cache (`--update` deletes and
+  re-creates the cache directory); the patch makes the read path fall back to it instead.

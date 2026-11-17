@@ -315,6 +315,7 @@ VERSION_PATTERNS = {
     'mosh-server': r'mosh-server \(mosh [0-9]', 'mosh-client': r'mosh-client \(mosh [0-9]',
     'vim': '^VIM - Vi IMproved [0-9]', 'vimdiff': '^VIM - Vi IMproved [0-9]', 'view': '^VIM - Vi IMproved [0-9]',
     'rvim': '^VIM - Vi IMproved [0-9]', 'rview': '^VIM - Vi IMproved [0-9]', 'zsh': r'^zsh [0-9]+\.[0-9]+',
+    'tldr': 'Please run `tldr --update`',
 }
 checks = []
 for line in pt.splitlines():
