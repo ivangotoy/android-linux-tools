@@ -305,6 +305,8 @@ VERSION_PATTERNS = {
     'adb': 'Android Debug Bridge version ', 'fastboot': 'fastboot version ', 'simg2img': 'Usage: simg2img ',
     'img2simg': 'Usage: img2simg ', 'lpunpack': 'tool for extracting partition images from super',
     'lpmake': 'tool for creating Android Logical Partition images',
+    'mkfs.exfat': 'exfatprogs version', 'fsck.exfat': 'exfatprogs version', 'tune.exfat': 'exfatprogs version',
+    'exfatlabel': 'exfatprogs version', 'dump.exfat': 'exfatprogs version',
 }
 checks = []
 for line in pt.splitlines():

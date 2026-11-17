@@ -252,3 +252,8 @@ simg2img        android-tools    simg2img     -     -
 img2simg        android-tools    img2simg     -     -
 lpunpack        android-tools    lpunpack     -     -
 lpmake          android-tools    lpmake       -     -
+mkfs.exfat      exfatprogs       mkfs.exfat   -     -
+fsck.exfat      exfatprogs       fsck.exfat   -     -
+tune.exfat      exfatprogs       tune.exfat   -     -
+exfatlabel      exfatprogs       exfatlabel   -     -
+dump.exfat      exfatprogs       dump.exfat   -     -

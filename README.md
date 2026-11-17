@@ -3,7 +3,7 @@
 A root module that adds Linux userspace tools (netfilter, iproute2, WireGuard/AmneziaWG, Wi-Fi (iw), tracing
 and debugging (strace, ltrace, fatrace, gdbserver, lldb-server, eu-stack), packet capture, BPF tracing (bpftool,
 bpftrace with its tool scripts, the bcc libbpf-tools, eCapture), reverse engineering (rizin), ELF tools (GNU binutils,
-elfutils, patchelf), device trees (dtc), EROFS, SquashFS, ext4 and F2FS tools, Android platform tools (adb, fastboot,
+elfutils, patchelf), device trees (dtc), EROFS, SquashFS, ext4, F2FS and exFAT tools, Android platform tools (adb, fastboot,
 sparse and super image tools), git, ripgrep, fd, fzf, ncdu, picocom, an NFS mount helper, util-linux programs
 (nsenter, unshare, losetup, dmesg, ...), nmap, OpenSSL, an SSH client and server (dropbear), DNS and network
 diagnostics, storage benchmarks (fio), compression, editors, shells)
@@ -364,6 +364,11 @@ linked in statically. Four more programs are in `libexec` without a command of t
 | `img2simg` | android-tools | 37.0.0p1 | dynamic | 68 | Apache-2.0 AND BSD-2-Clause AND BSD-3-Clause AND ISC AND MIT AND OpenSSL AND LGPL-2.1-or-later |
 | `lpunpack` | android-tools | 37.0.0p1 | dynamic | 344 | Apache-2.0 AND BSD-2-Clause AND BSD-3-Clause AND ISC AND MIT AND OpenSSL AND LGPL-2.1-or-later |
 | `lpmake` | android-tools | 37.0.0p1 | dynamic | 389 | Apache-2.0 AND BSD-2-Clause AND BSD-3-Clause AND ISC AND MIT AND OpenSSL AND LGPL-2.1-or-later |
+| `mkfs.exfat` | exfatprogs | 1.4.4 | static | 834 | GPL-2.0-or-later |
+| `fsck.exfat` | exfatprogs | 1.4.4 | static | 359 | GPL-2.0-or-later |
+| `tune.exfat` | exfatprogs | 1.4.4 | static | 314 | GPL-2.0-or-later |
+| `exfatlabel` | exfatprogs | 1.4.4 | static | 311 | GPL-2.0-or-later |
+| `dump.exfat` | exfatprogs | 1.4.4 | static | 315 | GPL-2.0-or-later |
 | `alt-list` | (module script) | | | | MIT |
 
 `$ALTSHARE/MANIFEST.json` (and `dist/MANIFEST-v2.json`) records per tool the recipe, upstream version, source
@@ -442,6 +447,9 @@ URL and sha256, how the checksum was verified, licence, patches, dependencies, l
   single-threaded, no FUSE) and squashfs-tools 4.7.5 (`mksquashfs`, `unsquashfs`; gzip, xz, lz4, zstd), with the
   zstd, xz and lz4 libraries of those recipes and the NDK zlib. dtc 1.8.1 with `fdtdump`, `fdtget`, `fdtput`,
   `fdtoverlay` (no YAML output). fatrace 0.19.1 reports file access events system-wide (fanotify, root).
+- exFAT: exfatprogs 1.4.4 (`mkfs.exfat`, `fsck.exfat`, `tune.exfat`, `exfatlabel`, `dump.exfat`; mkfs.exfat
+  looks for an existing filesystem or partition table with util-linux's libblkid). Devices that ship
+  `mkfs.exfat` or `fsck.exfat` get `mkfs.exfat-ng`/`fsck.exfat-ng` from the installer.
 - util-linux 2.42.4 also provides `nsenter-ng`, `unshare-ng`, `lsns`, `losetup`, `dmesg`, `wipefs`, `fallocate`,
   `zramctl`, `taskset`, `chrt`, `ionice`, `prlimit`, `rfkill`, `hexdump` and `script`; libcap `getcap`/`setcap`;
   libcap-ng `pscap`, `netcap`, `filecap`; e2fsprogs `debugfs`, `dumpe2fs`, `e2image`, `filefrag`; f2fs-tools

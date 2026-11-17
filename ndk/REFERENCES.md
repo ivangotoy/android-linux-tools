@@ -2248,3 +2248,28 @@ None since v2.1: every tool of v1 (and wg-quick, awg, awg-quick, drill, ethtool-
 v2.2-r2 there is no Alpine fallback: `ndk/scripts/stage.py` fails if a tool of `ndk/tools.tsv` has no NDK build,
 and `ndk/scripts/check.py` fails on a `lib/` directory, the resolv.conf overlay, or ELF files outside
 `$ALTDIR/libexec/`.
+
+## Additions after v2.6-r5
+
+Sources surveyed on 2026-11-17: AOSP `platform/external/*` (main), Termux packages (commit
+`a5fd2b5dc5673ab1c61a05030661834938f73bf1`), Alpine aports (master), buildroot (master), OpenWrt packages (master).
+
+### exfatprogs 1.4.4 (mkfs.exfat, fsck.exfat, tune.exfat, exfatlabel, dump.exfat; static)
+| Source | Observed |
+|---|---|
+| AOSP external/exfatprogs | 1.2.1 (METADATA, upgraded 2023-09-13), Soong `Android.bp`; `mkfs.exfat` links `libext2_blkid` (e2fsprogs' blkid), for which `mkfs/mkfs.c` has a code path without util-linux |
+| Termux packages/exfatprogs | 1.4.4 from the GitHub tag archive, `autoreconf -fi`, depends on libblkid, no patches |
+| aports community/exfatprogs | 1.4.4, `util-linux-dev` (libblkid) and `musl-fts-dev`, plain `./configure`, no patches |
+| buildroot package/exfatprogs, OpenWrt utils/exfatprogs | 1.2.9 and 1.4.3 from the release tarball; OpenWrt depends on libblkid |
+
+Chosen approach: the release tarball (`configure` included, no autoreconf), `configure_std`, then `make` with
+`LDFLAGS=$LT_LDFLAGS` (libtool drops a plain `-static` from program links; `-all-static` keeps them static). No
+patches. CHECKSUM_SOURCE: `.asc`, Hyunchul Lee key `D58529CC5376E36D6E1E6F6234F230FAF78E48D3` (current key from
+keys.openpgp.org; the keyserver.ubuntu.com copy carries an older expiry date), and the release's `.sha256`.
+
+Why:
+- `configure` requires a libblkid (`PKG_CHECK_MODULES([BLKID], [blkid >= 2.20])`, else e2fsprogs' blkid).
+  mkfs.exfat uses it to report an existing filesystem or partition table before formatting. The util-linux recipe
+  already builds libblkid for `blkid-ng`; it now also installs `libblkid.a`, `blkid.h` and `blkid.pc` into its
+  package, as it does for libuuid, and exfatprogs depends on util-linux. The util-linux programs are unchanged.
+- `exfat2img` and `lsdosattr`/`chdosattr` are built by upstream's Makefile but not shipped (not part of the request).

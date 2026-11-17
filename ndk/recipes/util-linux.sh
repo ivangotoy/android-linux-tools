@@ -26,4 +26,12 @@ build() {
   mkdir -p "$PKGDIR/include/uuid" "$PKGDIR/lib"
   cp libuuid/src/uuid.h "$PKGDIR/include/uuid/"
   cp .libs/libuuid.a "$PKGDIR/lib/"
+  # libblkid (header, static library, pkg-config file) for exfatprogs' mkfs.exfat; built above for blkid
+  make -j"$JOBS" libblkid.la libblkid/blkid.pc
+  mkdir -p "$PKGDIR/include/blkid" "$PKGDIR/lib/pkgconfig"
+  cp libblkid/src/blkid.h "$PKGDIR/include/blkid/"
+  cp .libs/libblkid.a "$PKGDIR/lib/"
+  # paths relative to prefix= (build.sh rewrites prefix= to the private sysroot of the dependant)
+  sed -e 's|^exec_prefix=.*|exec_prefix=${prefix}|' -e 's|^libdir=.*|libdir=${exec_prefix}/lib|' \
+      -e 's|^includedir=.*|includedir=${prefix}/include|' libblkid/blkid.pc > "$PKGDIR/lib/pkgconfig/blkid.pc"
 }
