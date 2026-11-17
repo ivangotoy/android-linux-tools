@@ -309,6 +309,9 @@ VERSION_PATTERNS = {
     'exfatlabel': 'exfatprogs version', 'dump.exfat': 'exfatprogs version', 'mkfs.fat': r'mkfs\.fat [0-9]',
     'mkfs.vfat': r'mkfs\.fat [0-9]', 'mkfs.msdos': r'mkfs\.fat [0-9]', 'fsck.fat': r'fsck\.fat [0-9]',
     'fsck.vfat': r'fsck\.fat [0-9]', 'fatlabel': 'fatlabel [0-9]',
+    'zip': r'Copyright \(c\) 1990-2008 Info-ZIP', 'zipcloak': '^ZipCloak ', 'zipnote': '^ZipNote ',
+    'zipsplit': '^ZipSplit ', 'unzip': '^UnZip .* by Info-ZIP', 'funzip': r'fUnZip \(filter UnZip\)',
+    'zipinfo': '^ZipInfo .* Info-ZIP',
 }
 checks = []
 for line in pt.splitlines():

@@ -2291,3 +2291,35 @@ Why:
 - bionic's `iconv_open` knows only ASCII and the Unicode encodings, not `CP850`, so iconv conversions of FAT names
   would fail; without iconv dosfstools uses its built-in CP850 table (`src/charconv.c`).
 - Termux and buildroot pull in GNU libiconv for the other codepages; that dependency was not added.
+
+### Info-ZIP Zip 3.0 and UnZip 6.0 (zip, zipcloak, zipnote, zipsplit, unzip, funzip, zipinfo; static)
+| Source | Observed |
+|---|---|
+| AOSP | no external/zip or external/unzip (404); Android's own `unzip`/`zipinfo` are ziptool (libziparchive) |
+| Debian zip 3.0-16, unzip 6.0-31 | `debian/patches/series`: zip 17 patches (typos, build hardening, gcc 14 configure fix, CVE-2018-13410, a Unicode file name overflow, command injection, symlink update detection); unzip 34 patches (CVE-2014-8139/8140/8141/9636/9913, CVE-2015-7696/7697, CVE-2016-9844, CVE-2018-1000035, CVE-2018-18384, CVE-2019-13232 (zip bombs), CVE-2022-0529/0530, CAN-2026-2034440/2034442/2034443, uid/gid, timestamps, Zip64 from Windows). unzip `debian/rules`: `make -f unix/Makefile unzips` with `-DACORN_FTYPE_NFS -DWILD_STOP_AT_DIR -DLARGE_FILE_SUPPORT -DUNICODE_SUPPORT -DUNICODE_WCHAR -DUTF8_MAYBE_NATIVE -DNO_LCHMOD -DDATE_FORMAT=DF_YMD -DUSE_BZIP2 -DIZ_HAVE_UXUIDGID -DNOMEMCPY -DNO_WORKING_ISPRINT`; zip: `unix/configure` then `make -f unix/Makefile generic` |
+| Termux packages/zip, packages/unzip | the same tarballs; unzip with Debian's defines and 24 CVE/bugfix patches, a patch that drops `unix/configure`'s run tests, and `unzip.c.patch` (always treats the native charset as UTF-8); zip with a patch that answers the UID/GID run test |
+| aports main/zip, main/unzip | zip 3.0-r13 (6 patches), unzip 6.0-r16 (its own CVE series, including CVE-2021-4217) |
+| buildroot package/zip, package/unzip | zip: `-I. -DUNIX -DUIDGID_NOT_16BIT`; unzip from Debian's `unzip_6.0.orig.tar.gz` built with CMake, `-DLARGE_FILE_SUPPORT` |
+| OpenWrt packages utils/unzip | 6.0 from SourceForge |
+
+Chosen approach: the SourceForge tarballs `zip30.tar.gz` and `unzip60.tar.gz` (Info-ZIP publishes no signature; their
+sha256 equals the `.orig.tar.gz` of Debian's `.dsc`, signed by Santiago Vila, key
+`D54C3BFAFFB042DE382DA5D741CE7F0B9F1B8B32`) and Debian's `zip_3.0-16.debian.tar.xz` / `unzip_6.0-31.debian.tar.xz` as
+`EXTRA_SRCS` from snapshot.debian.org (sha256 also from those `.dsc` files). `build()` applies the series in order.
+- unzip: every patch except `this-is-debian-unzip.patch` (it only changes the usage banner to "UnZip ... by Debian").
+  Built as `debian/rules` does with the same defines without `USE_BZIP2`; `unzip` and `funzip` are shipped, `zipinfo`
+  is a wrapper for `unzip -Z`. `unzipsfx` is built by the `unzips` target but not shipped.
+- zip: the whole series. `unix/configure` as `debian/rules` runs it; with the series' configure fix it finds the
+  NDK headers and functions (the generated `flags` are checked for `-DUNICODE_SUPPORT` and the absence of
+  `-DNO_DIR`, `-DZMEM`, `-DNO_ERRNO`, `-DNO_MKSTEMP`). Its Large File Support test executes a test program, which a
+  cross build cannot run, so `-DLARGE_FILE_SUPPORT` is passed (Zip64; `off_t` is 64-bit on aarch64).
+- Licence: `LICENSE` (Info-ZIP) of each tarball plus Debian's `debian/copyright` as `LICENSE.debian-copyright`.
+
+Why:
+- Info-ZIP has made no release since 2009; Debian's series is the maintained set of fixes, and the `.dsc` signature
+  covers both the upstream tarball and the patches.
+- No UTF-8 patch (Termux's `unzip.c.patch`): bionic's locale is UTF-8 by default and `setlocale(LC_CTYPE, "")`
+  selects UTF-8 whatever `LANG` says (bionic `libc/bionic/locale.cpp`: `__bionic_current_locale_is_utf8 = true`,
+  `__is_utf8_locale("")` is true), and `nl_langinfo(CODESET)` is then `"UTF-8"` (`libc/bionic/langinfo.cpp`), so
+  unzip's own codeset test already selects native UTF-8.
+- No bzip2 library is in this tree; Zip and UnZip handle stored and deflated entries (the methods Zip writes).

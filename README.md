@@ -6,7 +6,7 @@ bpftrace with its tool scripts, the bcc libbpf-tools, eCapture), reverse enginee
 elfutils, patchelf), device trees (dtc), EROFS, SquashFS, ext4, F2FS, exFAT and FAT tools, Android platform tools (adb, fastboot,
 sparse and super image tools), git, ripgrep, fd, fzf, ncdu, picocom, an NFS mount helper, util-linux programs
 (nsenter, unshare, losetup, dmesg, ...), nmap, OpenSSL, an SSH client and server (dropbear), DNS and network
-diagnostics, storage benchmarks (fio), compression, editors, shells)
+diagnostics, storage benchmarks (fio), compression and archivers (Info-ZIP zip/unzip), editors, shells)
 to rooted aarch64 Android phones. Every
 program is compiled from upstream source with the Android NDK for bionic (`aarch64-linux-android`, API 35).
 The module does not depend on any particular device. It runs nothing at boot (no `post-fs-data.sh`,
@@ -375,6 +375,13 @@ linked in statically. Four more programs are in `libexec` without a command of t
 | `fsck.fat` | dosfstools | 4.2 | static | 662 | GPL-3.0-or-later |
 | `fsck.vfat` | dosfstools | 4.2 | static | 662 (=fsck.fat) | GPL-3.0-or-later |
 | `fatlabel` | dosfstools | 4.2 | static | 298 | GPL-3.0-or-later |
+| `zip` | zip | 3.0 | static | 483 | Info-ZIP |
+| `zipcloak` | zip | 3.0 | static | 328 | Info-ZIP |
+| `zipnote` | zip | 3.0 | static | 316 | Info-ZIP |
+| `zipsplit` | zip | 3.0 | static | 318 | Info-ZIP |
+| `unzip` | unzip | 6.0 | static | 415 | Info-ZIP |
+| `funzip` | unzip | 6.0 | static | 259 | Info-ZIP |
+| `zipinfo` | unzip | 6.0 | static | 415 (=unzip `-Z`) | Info-ZIP |
 | `alt-list` | (module script) | | | | MIT |
 
 `$ALTSHARE/MANIFEST.json` (and `dist/MANIFEST-v2.json`) records per tool the recipe, upstream version, source
@@ -458,6 +465,10 @@ URL and sha256, how the checksum was verified, licence, patches, dependencies, l
   `fsck.fat`, `fatlabel`, and `mkfs.vfat`, `mkfs.msdos`, `fsck.vfat` as the same programs under their legacy
   names; FAT names and labels use dosfstools' built-in CP850 table). Devices that ship `mkfs.exfat` or
   `fsck.exfat` get `mkfs.exfat-ng`/`fsck.exfat-ng` from the installer.
+- Info-ZIP: Zip 3.0 (`zip`, `zipcloak`, `zipnote`, `zipsplit`) and UnZip 6.0 (`unzip`, `funzip`, and `zipinfo`, which
+  is `unzip -Z`), both with Debian's patch series (security and build fixes; see `ndk/REFERENCES.md`), Zip64,
+  UTF-8 file names and traditional PKWARE encryption; stored and deflated entries (no bzip2). Devices that ship
+  `unzip` or `zipinfo` get `unzip-ng`/`zipinfo-ng` from the installer.
 - util-linux 2.42.4 also provides `nsenter-ng`, `unshare-ng`, `lsns`, `losetup`, `dmesg`, `wipefs`, `fallocate`,
   `zramctl`, `taskset`, `chrt`, `ionice`, `prlimit`, `rfkill`, `hexdump` and `script`; libcap `getcap`/`setcap`;
   libcap-ng `pscap`, `netcap`, `filecap`; e2fsprogs `debugfs`, `dumpe2fs`, `e2image`, `filefrag`; f2fs-tools

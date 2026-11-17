@@ -263,3 +263,10 @@ mkfs.msdos      dosfstools       mkfs.fat     -     -
 fsck.fat        dosfstools       fsck.fat     -     -
 fsck.vfat       dosfstools       fsck.fat     -     -
 fatlabel        dosfstools       fatlabel     -     -
+zip             zip              zip          -     -
+zipcloak        zip              zipcloak     -     -
+zipnote         zip              zipnote      -     -
+zipsplit        zip              zipsplit     -     -
+unzip           unzip            unzip        -     -
+funzip          unzip            funzip       -     -
+zipinfo         unzip            unzip        -Z    -
