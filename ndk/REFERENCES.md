@@ -2277,7 +2277,7 @@ Why:
 ### dosfstools 4.2 (mkfs.fat, fsck.fat, fatlabel; static)
 | Source | Observed |
 |---|---|
-| AOSP external/dosfstools | present (a Makefile tree with `src/`, `debian/` and NOTICE; no METADATA file); Android's own FAT tools are `fsck_msdos`/`newfs_msdos` |
+| AOSP external/dosfstools | present (a Makefile tree with `src/`, `debian/` and NOTICE; no METADATA file); Android's own FAT tools are `fsck_msdos`/`newfs_msdos` (external/fsck_msdos, external/newfs_msdos) |
 | Termux packages/dosfstools | 4.2 release tarball, `--enable-compat-symlinks`, depends on libiconv |
 | aports main/dosfstools | 4.2, `./configure`, no patches |
 | buildroot package/dosfstools | 4.2, `--enable-compat-symlinks`, `LIBS=-liconv` with libiconv when the C library has no iconv |
@@ -2295,7 +2295,7 @@ Why:
 ### Info-ZIP Zip 3.0 and UnZip 6.0 (zip, zipcloak, zipnote, zipsplit, unzip, funzip, zipinfo; static)
 | Source | Observed |
 |---|---|
-| AOSP | no external/zip or external/unzip (404); Android's own `unzip`/`zipinfo` are ziptool (libziparchive) |
+| AOSP | no external/zip or external/unzip (404); Android's own `unzip`/`zipinfo` are symlinks to ziptool (system/libziparchive `Android.bp`) |
 | Debian zip 3.0-16, unzip 6.0-31 | `debian/patches/series`: zip 17 patches (typos, build hardening, gcc 14 configure fix, CVE-2018-13410, a Unicode file name overflow, command injection, symlink update detection); unzip 34 patches (CVE-2014-8139/8140/8141/9636/9913, CVE-2015-7696/7697, CVE-2016-9844, CVE-2018-1000035, CVE-2018-18384, CVE-2019-13232 (zip bombs), CVE-2022-0529/0530, CAN-2026-2034440/2034442/2034443, uid/gid, timestamps, Zip64 from Windows). unzip `debian/rules`: `make -f unix/Makefile unzips` with `-DACORN_FTYPE_NFS -DWILD_STOP_AT_DIR -DLARGE_FILE_SUPPORT -DUNICODE_SUPPORT -DUNICODE_WCHAR -DUTF8_MAYBE_NATIVE -DNO_LCHMOD -DDATE_FORMAT=DF_YMD -DUSE_BZIP2 -DIZ_HAVE_UXUIDGID -DNOMEMCPY -DNO_WORKING_ISPRINT`; zip: `unix/configure` then `make -f unix/Makefile generic` |
 | Termux packages/zip, packages/unzip | the same tarballs; unzip with Debian's defines and 24 CVE/bugfix patches, a patch that drops `unix/configure`'s run tests, and `unzip.c.patch` (always treats the native charset as UTF-8); zip with a patch that answers the UID/GID run test |
 | aports main/zip, main/unzip | zip 3.0-r13 (6 patches), unzip 6.0-r16 (its own CVE series, including CVE-2021-4217) |
@@ -2369,11 +2369,13 @@ given directly (the protobuf recipe's `protobuf.pc` has absolute `/usr` paths, w
 not cover), `-static-libstdc++`. Static. No patches.
 
 Why:
-- Static: mosh-client and mosh-server call `getaddrinfo()` only with `AI_NUMERICHOST | AI_NUMERICSERV`
-  (`src/network/network.cc`), so they never need the netd resolver.
+- Static: mosh-client and mosh-server call `getaddrinfo()` only with `AI_NUMERICHOST | AI_NUMERICSERV` and
+  `getnameinfo()` only with `NI_NUMERICHOST | NI_NUMERICSERV` (`src/network/network.cc`), so they never need the
+  netd resolver (the other new static programs reference none of the resolver functions, `llvm-nm`).
 - AES-OCB from OpenSSL 3's EVP interface instead of mosh's internal OCB with the deprecated `AES_encrypt` API.
-- `--disable-hardening`: mosh's own hardening flags add `-fPIE -pie`, which conflicts with the static link;
-  `env.sh` already sets `-fstack-protector-strong -D_FORTIFY_SOURCE=2`.
+- `--disable-hardening`, as OpenWrt: mosh's configure would add its own hardening flags (`-fPIE -pie`,
+  `-fstack-protector-all`, ...) to a static link; `env.sh` already sets `-fstack-protector-strong
+  -D_FORTIFY_SOURCE=2`.
 - Locale: mosh-server refuses to start unless `nl_langinfo(CODESET)` is UTF-8 after `setlocale(LC_ALL, "")`
   (`src/util/locale_utils.cc`); on bionic that is always the case (see Info-ZIP above), so no wrapper variable or
   patch is needed.
