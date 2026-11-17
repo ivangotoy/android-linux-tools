@@ -278,3 +278,4 @@ vimdiff         vim              vim          -d    -
 view            vim              vim          -R    -
 rvim            vim              vim          -Z    -
 rview           vim              vim          -RZ   -
+zsh             zsh              zsh          -     -

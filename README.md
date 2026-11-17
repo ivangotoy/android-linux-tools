@@ -6,7 +6,7 @@ bpftrace with its tool scripts, the bcc libbpf-tools, eCapture), reverse enginee
 elfutils, patchelf), device trees (dtc), EROFS, SquashFS, ext4, F2FS, exFAT and FAT tools, Android platform tools (adb, fastboot,
 sparse and super image tools), git, ripgrep, fd, fzf, ncdu, picocom, an NFS mount helper, util-linux programs
 (nsenter, unshare, losetup, dmesg, ...), nmap, OpenSSL, an SSH client and server (dropbear), mosh, DNS and network
-diagnostics, storage benchmarks (fio), compression and archivers (Info-ZIP zip/unzip, 7-Zip), editors (nano, vim), shells)
+diagnostics, storage benchmarks (fio), compression and archivers (Info-ZIP zip/unzip, 7-Zip), editors (nano, vim), shells (bash, zsh))
 to rooted aarch64 Android phones. Every
 program is compiled from upstream source with the Android NDK for bionic (`aarch64-linux-android`, API 35).
 The module does not depend on any particular device. It runs nothing at boot (no `post-fs-data.sh`,
@@ -54,6 +54,7 @@ runtime file is in the module's `system/` tree, which the root manager mounts ov
 | `system/etc/android-linux-tools/etc/gitconfig` | `$ALTDIR/etc/gitconfig` | git's system-wide configuration: aliases that run the script commands |
 | `system/etc/android-linux-tools/share/rizin/` | `$ALTDIR/share/rizin` | rizin data files (sdb databases, magic, themes, ...; compiled-in data directory) |
 | `system/etc/android-linux-tools/share/vim/` | `$ALTDIR/share/vim` | Vim runtime files (syntax, ftplugin, indent, colors, autoload, plugin, pack, doc, spell, tutor, ...; compiled-in `$VIM` and `$VIMRUNTIME`) |
+| `system/etc/android-linux-tools/share/zsh/functions/` | `$ALTDIR/share/zsh/functions` | zsh's function library (completion, prompts, VCS_Info, Zle widgets, ...; compiled-in `fpath`) |
 | `system/etc/android-linux-tools/etc/netconfig` | `$ALTDIR/etc/netconfig` | libtirpc's transport database for `mount.nfs` |
 | `system/etc/android-linux-tools/etc/alt-tools.map` | `$ALTDIR/etc/alt-tools.map` | rename map written by `customize.sh`, read by `alt-list` |
 | `system/etc/android-linux-tools/share/android-linux-tools/` | `$ALTSHARE` | `dns-servers`, `origins.txt`, `MANIFEST.json`, `phone-test.sh` |
@@ -391,6 +392,7 @@ linked in statically. Four more programs are in `libexec` without a command of t
 | `view` | vim | 9.2.1355 | dynamic | 3667 (=vim `-R`) | Vim |
 | `rvim` | vim | 9.2.1355 | dynamic | 3667 (=vim `-Z`) | Vim |
 | `rview` | vim | 9.2.1355 | dynamic | 3667 (=vim `-RZ`) | Vim |
+| `zsh` | zsh | 5.9.2 | static | 2292 | MIT-Modern-Variant AND GPL-2.0-or-later AND GPL-2.0-only |
 | `alt-list` | (module script) | | | | MIT |
 
 `$ALTSHARE/MANIFEST.json` (and `dist/MANIFEST-v2.json`) records per tool the recipe, upstream version, source
@@ -493,6 +495,11 @@ URL and sha256, how the checksum was verified, licence, patches, dependencies, l
   terminal only (no GUI, no X, no Perl/Python/Lua/Ruby/Tcl interfaces, no NetBeans), ncursesw with the module's
   terminfo. `$VIM` and `$VIMRUNTIME` default to `$ALTDIR/share/vim` (upstream's runtime files, help included).
   Dynamic: `ch_open()` resolves host names through netd.
+- zsh 5.9.2 (static): modules linked into the program (no module loading at run time), all of zsh's modules except
+  `zsh/net/tcp` and `zsh/zftp` (host name lookups), `zsh/newuser` (the first-start setup menu), `zsh/example` and those
+  needing gdbm, PCRE or libcap. `fpath` defaults to the function library in `$ALTDIR/share/zsh/functions`. Temporary
+  files (here-documents, `=(...)`) go to `$TMPDIR` (patch; zsh's default would be `/tmp`). `/system/bin/sh` stays the
+  default shell; start zsh with `zsh` (for example `ssh -t phone zsh`).
 - util-linux 2.42.4 also provides `nsenter-ng`, `unshare-ng`, `lsns`, `losetup`, `dmesg`, `wipefs`, `fallocate`,
   `zramctl`, `taskset`, `chrt`, `ionice`, `prlimit`, `rfkill`, `hexdump` and `script`; libcap `getcap`/`setcap`;
   libcap-ng `pscap`, `netcap`, `filecap`; e2fsprogs `debugfs`, `dumpe2fs`, `e2image`, `filefrag`; f2fs-tools

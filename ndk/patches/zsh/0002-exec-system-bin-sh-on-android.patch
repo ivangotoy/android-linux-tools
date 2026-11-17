@@ -1,0 +1,17 @@
+A command without #! that execve() rejects with ENOEXEC is run with /bin/sh, which Android does not have:
+use /system/bin/sh.
+Source: Termux packages/zsh Src-exec.c.patch (same change with the Termux prefix's sh).
+--- a/Src/exec.c
++++ b/Src/exec.c
+@@ -585,7 +585,11 @@
+ 			}
+ 			*--args = "sh";
+ 			winch_unblock();
++#ifdef __ANDROID__
++			execve("/system/bin/sh", args, newenvp);
++#else
+ 			execve("/bin/sh", args, newenvp);
++#endif
+ 		    }
+ 		}
+ 	    } else

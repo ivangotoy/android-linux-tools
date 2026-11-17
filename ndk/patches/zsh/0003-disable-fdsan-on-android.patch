@@ -1,0 +1,27 @@
+bionic's fdsan aborts a process that closes a file descriptor owned by another object (a DIR* or FILE*, for
+example). Termux turns it off at zsh's startup; this does the same.
+Source: Termux packages/zsh disable-fdsan.patch (there through dlopen/dlsym of libc.so; this static build calls
+android_fdsan_set_error_level(), API 29+, directly).
+--- a/Src/main.c
++++ b/Src/main.c
+@@ -30,6 +30,10 @@
+ #include "zsh.mdh"
+ #include "main.pro"
+ 
++#ifdef __ANDROID__
++#include <android/fdsan.h>
++#endif
++
+ /*
+  * Support for Cygwin binary/text mode filesystems.
+  * Peter A. Castro <doctor@fruitbat.org>
+@@ -90,5 +94,9 @@
+ int
+ main(int argc, char **argv)
+ {
++#ifdef __ANDROID__
++    /* fdsan off, as Termux's zsh does */
++    android_fdsan_set_error_level(ANDROID_FDSAN_ERROR_LEVEL_DISABLED);
++#endif
+     return (zsh_main(argc, argv));
+ }

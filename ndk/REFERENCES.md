@@ -2412,3 +2412,39 @@ Why:
   available), no `xxd`.
 - Termux's `'directory'` patch (swap files in its prefix's tmp) was not taken: Vim's default
   `.,~/tmp,/var/tmp,/tmp` keeps swap files next to the edited file when that directory is writable.
+
+### zsh 5.9.2 (static)
+| Source | Observed |
+|---|---|
+| AOSP | absent (external/zsh 404) |
+| Termux packages/zsh | 5.9.2 from zsh.org; non-dynamic build with extra modules set to `link=static` in `config.modules` ("dynamic loading doesn't work on Android"); `--enable-function-subdirs`, fndir/scriptdir in its prefix, `--enable-site-fndir=no`, cross answers `zsh_cv_printf_has_lld=yes zsh_cv_rlim_t_is_longer=no zsh_cv_type_rlim_t_is_unsigned=yes`, the 64-bit type forced to `long long`; patches: `tmp_path.patch` (DEFAULT_TMPPREFIX), `Src-exec.c.patch` (`/bin/sh`), `disable-fdsan.patch`, a glob change, setresuid/setresgid stubs, TIOCSETD, module and completion paths |
+| aports main/zsh | 5.9.2 from SourceForge, three patches (newuser text, tests) |
+| Arch zsh | `--enable-function-subdirs --with-term-lib=ncursesw --with-tcsetpgrp --enable-pcre --enable-gdbm --enable-cap`, fndir under `/usr/share/zsh` |
+| buildroot package/zsh | 5.9 release tarball, gdbm, cap and pcre per configuration |
+| OpenWrt packages utils/zsh | 5.9.2 from SourceForge, dynamic modules (cross answers for the dynamic-loading tests) |
+
+Chosen approach: `zsh-5.9.2.tar.xz` from zsh.org (`.asc`, key `7CA7ECAAF06216B90F894146ACF8146CAE8CBBC4`).
+`configure_std --disable-dynamic --enable-multibyte --with-term-lib=ncursesw --disable-gdbm --disable-pcre
+--disable-cap --enable-function-subdirs --enable-site-fndir=no --enable-fndir=$ALTDIR/share/zsh/functions
+--enable-scriptdir=$ALTDIR/share/zsh/scripts` with answers for configure's run tests (the recipe checks `config.h`
+for the 64-bit type and FIFOs). In `config.modules` every module with `link=no` becomes `link=static` except
+`zsh/net/tcp`, `zsh/zftp`, `zsh/newuser`, `zsh/example` and the three disabled above; 32 modules are linked in.
+The function library from `make install.fns`.
+- Patch 0001: `TMPPREFIX` starts as `$TMPDIR/zsh` on Android (fallback `/data/local/tmp/zsh`), after Termux's
+  `tmp_path.patch`; here-documents, here-strings, `=(...)` and `fc` write temporary files there
+  (`gettempfile()`/`gettempname()` in `Src/exec.c`, `Src/builtin.c`).
+- Patch 0002: a command without `#!` that `execve()` rejects is run with `/system/bin/sh` (Termux
+  `Src-exec.c.patch`).
+- Patch 0003: fdsan off at startup (Termux `disable-fdsan.patch`; here a direct call, the program is static).
+
+Why:
+- Static, as Termux: no dynamic module loading. Without `zsh/net/tcp` and `zsh/zftp` nothing resolves host names,
+  so no netd dependency.
+- Run-test answers for aarch64 bionic: `long` is 64-bit (`zsh_cv_long_is_64_bit=yes`; the cross default `no` would
+  leave zsh with 32-bit integers), named FIFOs, `link()`, `lseek()`, `realpath(p, NULL)`, `/proc/self/fd` (process
+  substitution), `/dev/ptmx` (zpty), ncurses' `tgetent` (accepts NULL, returns 1), rlim_t as Termux.
+- Termux's glob, setresuid/setresgid, TIOCSETD and module-path patches were not taken: fdsan is off (the glob
+  change works around descriptors closed behind a DIR*), setresuid/setresgid exist in bionic and are only reached
+  for setuid use, `NTTYDISC` is not defined on Linux, and nothing is loaded dynamically.
+- Licence: `LICENCE` (MIT-Modern-Variant); four completion functions are GPL (`_darcs` GPL-2.0-or-later, `_qdbus`,
+  `_zypper`, `_osc` "GPLv2").

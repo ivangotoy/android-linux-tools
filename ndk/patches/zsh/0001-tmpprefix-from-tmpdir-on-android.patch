@@ -1,0 +1,43 @@
+Android has no /tmp: zsh's temporary files (here-documents, =(...), fc) use $TMPPREFIX, which defaults to
+/tmp/zsh. On Android, TMPPREFIX starts as $TMPDIR/zsh when TMPDIR is an absolute path (every wrapper of this
+module sets TMPDIR), else /data/local/tmp/zsh.
+Source: Termux packages/zsh tmp_path.patch (DEFAULT_TMPPREFIX under the Termux prefix), adapted to $TMPDIR.
+--- a/config.h.in
++++ b/config.h.in
+@@ -22,7 +22,11 @@
+ #define DEFAULT_FCEDIT "vi"
+ 
+ /* The default prefix for temporary files */
++#ifdef __ANDROID__
++#define DEFAULT_TMPPREFIX "/data/local/tmp/zsh"
++#else
+ #define DEFAULT_TMPPREFIX "/tmp/zsh"
++#endif
+ 
+ /***** end of user configuration section            *****/
+ /***** shouldn't have to change anything below here *****/
+--- a/Src/params.c
++++ b/Src/params.c
+@@ -828,7 +828,22 @@
+      * So allow the user to set it in the special cases where it's
+      * useful.
+      */
++#ifdef __ANDROID__
++    {
++	/* Android has no /tmp: temporary files in $TMPDIR if it is set */
++	char *tmpdir = getenv("TMPDIR");
++
++	if (tmpdir && *tmpdir == '/') {
++	    char *prefix = bicat(tmpdir, "/zsh");
++
++	    setsparam("TMPPREFIX", ztrdup_metafy(prefix));
++	    zsfree(prefix);
++	} else
++	    setsparam("TMPPREFIX", ztrdup_metafy(DEFAULT_TMPPREFIX));
++    }
++#else
+     setsparam("TMPPREFIX", ztrdup_metafy(DEFAULT_TMPPREFIX));
++#endif
+     setsparam("TIMEFMT", ztrdup_metafy(DEFAULT_TIMEFMT));
+ 
+     hostnam = (char *)zalloc(256);
