@@ -31,10 +31,10 @@ print(d)' "$1"; }
 conf() { sed -n "s/^$1=//p" ndk/build.conf; }
 
 V2=$(conf V2_VERSION); REL=$(conf MODULE_RELEASE)
-[[ "$V2" =~ ^([0-9]+)\.([0-9]+)$ ]] || die "bad V2_VERSION '$V2'"
 [[ "$REL" =~ ^[0-9]+$ ]] || die "bad MODULE_RELEASE '$REL'"
+[[ "$V2" =~ ^([0-9]+)\.([0-9]+)$ ]] || die "bad V2_VERSION '$V2'"
+VCODE=$((BASH_REMATCH[1] * 100000 + BASH_REMATCH[2] * 1000 + 10#$REL))
 TAG="v$V2-r$REL"
-VCODE=$((BASH_REMATCH[1] * 100000 + BASH_REMATCH[2] * 1000 + REL))
 ZIP="$MODID-$TAG.zip"
 UPDATE_URL="$URL/raw/branch/main/update.json"
 
