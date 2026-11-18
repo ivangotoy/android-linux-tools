@@ -603,6 +603,11 @@ JOBS=8 MEM=12G ./build-ndk.sh  # make -j and memory limit (defaults)
 - Releases are published on Forgejo (<https://git.digtvbg.com/ivangotoy/android-linux-tools/releases>) with
   the ZIP and its `.sha256` file as assets (one ZIP from v2.3-r1; releases up to v2.2-r2 have both flavour ZIPs). A release tag is
   never moved; a fix gets a new `-rN`.
+- Release pipeline: bump `V2_VERSION`/`MODULE_RELEASE` in `ndk/build.conf`, add the `- vX.Y-rN: ...` bullet under
+  History, push, then run Actions -> module-release. `ci/module-release.sh` (runner `release-host`) builds with
+  `./build-ndk.sh` on a persistent build cache, checks the ZIP, writes the release commit (Contents/size lines,
+  `update.json`), pushes main and the annotated tag, publishes the Forgejo release with the ZIP and `.sha256`
+  (both downloaded back and compared) and makes sure github-release runs for the tag. It stops early if the tag exists.
 - Module updates: module.prop carries `updateJson=https://git.digtvbg.com/ivangotoy/android-linux-tools/raw/branch/main/update.json`.
   `ndk/package.sh` writes `dist/update.json` for the built ZIP; the release commit copies it to `update.json`
   at the repo root, so the root file always names the newest published release.

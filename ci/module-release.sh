@@ -1,0 +1,153 @@
+#!/usr/bin/env bash
+# Builds and releases the module version set in ndk/build.conf (run by
+# .forgejo/workflows/module-release.yml from a clone of main at the dispatched commit).
+#
+# Before dispatching: bump V2_VERSION/MODULE_RELEASE in ndk/build.conf and add the
+# changelog bullet "- vX.Y-rN: ..." under "## History" in README.md.
+#
+# build (./build-ndk.sh, cache in ALT_BUILD_CACHE) -> check the ZIP -> release commit
+# (README Contents/size lines, root update.json = dist/update.json) -> annotated tag ->
+# push main, then the tag -> draft release on the tag -> upload ZIP + .sha256 ->
+# download back and compare -> publish -> make sure github-release runs for the tag.
+set -euo pipefail
+
+: "${RELEASE_TOKEN:?}" "${SERVER_URL:?}" "${REPOSITORY:?}" "${ALT_BUILD_CACHE:?}"
+MODID=android-linux-tools
+API="$SERVER_URL/api/v1/repos/$REPOSITORY"
+URL="$SERVER_URL/$REPOSITORY"
+ROOT=$(git rev-parse --show-toplevel)
+cd "$ROOT"
+export GIT_AUTHOR_NAME="Ivan Angelov" GIT_AUTHOR_EMAIL="ivangotoy@gmail.com"
+export GIT_COMMITTER_NAME="$GIT_AUTHOR_NAME" GIT_COMMITTER_EMAIL="$GIT_AUTHOR_EMAIL"
+
+log() { printf '==> %s\n' "$*" >&2; }
+die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
+auth() { printf 'Authorization: token %s' "$RELEASE_TOKEN"; }
+api() { local m="$1" p="$2"; shift 2; curl -sS --fail-with-body --retry 3 -X "$m" -H "$(auth)" "$@" "$API$p"; }
+code() { curl -sS -o /dev/null -w '%{http_code}' -H "$(auth)" "$API$1"; }
+jget() { python3 -I -c 'import json,sys;d=json.load(sys.stdin)
+for k in sys.argv[1].split("."): d=d[int(k)] if k.isdigit() else d[k]
+print(d)' "$1"; }
+conf() { sed -n "s/^$1=//p" ndk/build.conf; }
+
+V2=$(conf V2_VERSION); REL=$(conf MODULE_RELEASE)
+[[ "$V2" =~ ^([0-9]+)\.([0-9]+)$ ]] || die "bad V2_VERSION '$V2'"
+[[ "$REL" =~ ^[0-9]+$ ]] || die "bad MODULE_RELEASE '$REL'"
+TAG="v$V2-r$REL"
+VCODE=$((BASH_REMATCH[1] * 100000 + BASH_REMATCH[2] * 1000 + REL))
+ZIP="$MODID-$TAG.zip"
+UPDATE_URL="$URL/raw/branch/main/update.json"
+
+# fail early: the version must be new and have its changelog bullet
+git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1 && die "tag $TAG exists: bump MODULE_RELEASE or V2_VERSION"
+[ "$(code "/tags/$TAG")" = 404 ] || die "tag $TAG exists (or the check failed)"
+[ "$(code "/releases/tags/$TAG")" = 404 ] || die "release $TAG exists (or the check failed)"
+grep -q "^- $TAG: " README.md || die "README.md has no changelog bullet '- $TAG: ...'"
+log "release $TAG (versionCode $VCODE)"
+
+# build with the persistent cache (downloads, per-recipe builds, outputs)
+mkdir -p "$ALT_BUILD_CACHE" .work
+ln -sfn "$ALT_BUILD_CACHE" .work/ndk
+./build-ndk.sh
+
+# check the module
+[ -f "dist/$ZIP" ] && [ -f "dist/$ZIP.sha256" ] || die "dist/$ZIP or its .sha256 missing"
+(cd dist && sha256sum -c --quiet "$ZIP.sha256") || die "dist/$ZIP.sha256 does not verify"
+unzip -tq "dist/$ZIP" >/dev/null || die "zip test failed"
+PROP=$(unzip -p "dist/$ZIP" module.prop)
+for want in "version=$TAG" "versionCode=$VCODE" "updateJson=$UPDATE_URL"; do
+    grep -qxF "$want" <<<"$PROP" || die "module.prop lacks '$want'"
+done
+python3 -I - "dist/update.json" "dist/MANIFEST-v2.json" "$TAG" "$VCODE" "$URL/releases/download/$TAG/$ZIP" <<'PY' || die "dist/update.json or MANIFEST does not match"
+import json, sys
+u, m = json.load(open(sys.argv[1])), json.load(open(sys.argv[2]))
+assert u["version"] == sys.argv[3] and u["versionCode"] == int(sys.argv[4]) and u["zipUrl"] == sys.argv[5], u
+assert m["version"] == sys.argv[3] and m["versionCode"] == int(sys.argv[4]) and m["host_check_errors"] == 0, m
+PY
+ZIP_SHA=$(sha256sum "dist/$ZIP" | cut -d' ' -f1)
+log "built $ZIP sha256 $ZIP_SHA"
+
+# release commit: README Contents/size lines, root update.json
+python3 -I - README.md dist/MANIFEST-v2.json "$TAG" "$ZIP" <<'PY'
+import json, re, sys
+path, man, tag, zipn = sys.argv[1:]
+m = json.load(open(man))
+s = open(path).read()
+n = 0
+for pat, rep in ((r"^## Contents \(v[0-9.]+-r[0-9]+\)$", f"## Contents ({tag})"),
+                 (r"`dist/MANIFEST-v2\.json` of the v[0-9.]+-r[0-9]+ build\.", f"`dist/MANIFEST-v2.json` of the {tag} build."),
+                 (r"^\| `android-linux-tools-v[0-9.]+-r[0-9]+\.zip` \| [0-9]+ \| [0-9.]+ MB \|$",
+                  f"| `{zipn}` | {m['zip_bytes']} | {m['unpacked_mb']} MB |")):
+    s, k = re.subn(pat, rep, s, count=1, flags=re.M)
+    if k != 1:
+        sys.exit(f"README: no line matching {pat}")
+    n += k
+open(path, "w").write(s)
+PY
+cp dist/update.json update.json
+git add README.md update.json
+git commit -q -m "Release $TAG"
+git tag -a "$TAG" -m "$TAG"
+REL_SHA=$(git rev-parse HEAD)
+log "release commit $REL_SHA, tag $TAG"
+
+# push main (fast-forward only), then the tag
+git -c "http.extraHeader=$(auth)" push -q origin "HEAD:refs/heads/main" || die "push of main failed (main moved?)"
+git -c "http.extraHeader=$(auth)" push -q origin "refs/tags/$TAG" || die "push of tag $TAG failed"
+PUSHED_AT=$(date -u +%s)
+
+# draft release on the tag, upload, download back, publish
+BODY=$(python3 -I - README.md "$TAG" "$ZIP" dist/MANIFEST-v2.json <<'PY'
+import json, re, sys
+path, tag, zipn, man = sys.argv[1:]
+s = open(path).read()
+cmds = re.search(r"^(\d+) commands plus `alt-list`", s, re.M).group(1)
+b = re.search(r"^- " + re.escape(tag) + r": (.*?)(?=^- |^## |\Z)", s, re.M | re.S).group(1)
+change = " ".join(l.strip() for l in b.strip().splitlines())
+change = change[0].upper() + change[1:]
+size = json.load(open(man))["zip_bytes"]
+print(f"Android Linux tools {tag}: one module ZIP with {cmds} Linux command-line tools for rooted Android "
+      "(aarch64), built with the Android NDK. Install it from the root manager app (Magisk, KernelSU with or "
+      "without a metamodule, APatch) and reboot.\n\n"
+      f"Changes:\n- {change}\n\n"
+      f"Assets: `{zipn}` ({size} bytes) and its `.sha256`.")
+PY
+)
+REQ=$(python3 -I -c 'import json,sys;print(json.dumps({"tag_name":sys.argv[1],"name":sys.argv[1],"body":sys.argv[2],"draft":True}))' "$TAG" "$BODY")
+RELEASE_ID=$(api POST /releases -H 'Content-Type: application/json' -d "$REQ" | jget id)
+trap '[ "${PUBLISHED:-0}" = 1 ] || api DELETE "/releases/$RELEASE_ID" >/dev/null || true' EXIT
+log "draft release $RELEASE_ID"
+for f in "$ZIP" "$ZIP.sha256"; do
+    id=$(api POST "/releases/$RELEASE_ID/assets?name=$f" -F "attachment=@dist/$f" | jget id)
+    u=$(api GET "/releases/$RELEASE_ID/assets/$id" | jget browser_download_url)
+    curl -sSL --fail-with-body -H "$(auth)" -o ".work/back-$f" "$u"
+    cmp -s "dist/$f" ".work/back-$f" || die "uploaded $f differs from dist/$f"
+    rm -f ".work/back-$f"
+    log "uploaded and compared $f"
+done
+api PATCH "/releases/$RELEASE_ID" -H 'Content-Type: application/json' -d '{"draft":false}' >/dev/null
+PUBLISHED=1
+[ "$(api GET "/tags/$TAG" | jget commit.sha)" = "$REL_SHA" ] || die "tag $TAG does not point at $REL_SHA"
+log "published $TAG"
+
+# the tag push must have started github-release (it waits for this release); dispatch it if not
+started=""
+for i in $(seq 1 12); do
+    started=$(api GET "/actions/tasks?limit=20" | python3 -I -c '
+import json, sys, datetime
+since = int(sys.argv[1]) - 120
+for r in json.load(sys.stdin)["workflow_runs"]:
+    t = datetime.datetime.fromisoformat(r["created_at"]).timestamp()
+    if r["workflow_id"] == "github-release.yml" and t >= since:
+        print(r["run_number"], r["event"], r["status"]); break' "$PUSHED_AT")
+    [ -n "$started" ] && break
+    sleep 5
+done
+if [ -n "$started" ]; then
+    log "github-release run for $TAG: $started"
+else
+    log "no github-release run from the tag push: dispatching it with tag $TAG"
+    api POST /actions/workflows/github-release.yml/dispatches -H 'Content-Type: application/json' \
+        -d "{\"ref\":\"main\",\"inputs\":{\"tag\":\"$TAG\"}}" >/dev/null
+fi
+log "done: $UPDATE_URL -> $TAG"

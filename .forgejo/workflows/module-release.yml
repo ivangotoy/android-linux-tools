@@ -1,0 +1,26 @@
+# Builds and releases the module version set in ndk/build.conf: ci/module-release.sh.
+# Before dispatching, bump V2_VERSION/MODULE_RELEASE in ndk/build.conf and add the
+# "- vX.Y-rN: ..." changelog bullet to README.md. The tag push then starts github-release.
+name: module-release
+
+on:
+  workflow_dispatch:
+
+jobs:
+  release:
+    runs-on: release-host
+    timeout-minutes: 175
+    steps:
+      - name: Build and release
+        env:
+          RELEASE_TOKEN: ${{ secrets.MODULE_RELEASE_TOKEN }}
+          SERVER_URL: ${{ forgejo.server_url }}
+          REPOSITORY: ${{ forgejo.repository }}
+          BASE_SHA: ${{ forgejo.sha }}
+        run: |
+          set -eu
+          rm -rf src
+          git -c "http.extraHeader=Authorization: token $RELEASE_TOKEN" clone -q --branch main "$SERVER_URL/$REPOSITORY.git" src
+          cd src
+          git checkout -q -B main "$BASE_SHA"
+          ALT_BUILD_CACHE="$HOME/.cache/android-linux-tools" bash ci/module-release.sh
