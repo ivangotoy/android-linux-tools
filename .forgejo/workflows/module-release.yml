@@ -1,6 +1,6 @@
 # Builds and releases the module version set in ndk/build.conf: ci/module-release.sh.
 # Before dispatching, bump V2_VERSION/MODULE_RELEASE in ndk/build.conf and add the
-# "- vX.Y-rN: ..." changelog bullet to README.md. The tag push then starts github-release.
+# "- vX.Y-rN: ..." changelog bullet to README.md.
 name: module-release
 
 on:

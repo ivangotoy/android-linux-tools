@@ -8,7 +8,7 @@
 # build (./build-ndk.sh, cache in ALT_BUILD_CACHE) -> check the ZIP -> release commit
 # (README Contents/size lines, root update.json = dist/update.json) -> annotated tag ->
 # push main, then the tag -> draft release on the tag -> upload ZIP + .sha256 ->
-# download back and compare -> publish -> make sure github-release runs for the tag.
+# download back and compare -> publish.
 set -euo pipefail
 
 : "${RELEASE_TOKEN:?}" "${SERVER_URL:?}" "${REPOSITORY:?}" "${ALT_BUILD_CACHE:?}"
@@ -129,23 +129,4 @@ PUBLISHED=1
 [ "$(api GET "/tags/$TAG" | jget commit.sha)" = "$REL_SHA" ] || die "tag $TAG does not point at $REL_SHA"
 log "published $TAG"
 
-# the tag push must have started github-release (it waits for this release); dispatch it if not.
-# /actions/runs lists the run while it still waits for the runner this job holds.
-started=""
-for i in $(seq 1 12); do
-    started=$(api GET "/actions/runs?limit=20" | python3 -I -c '
-import json, sys
-for r in json.load(sys.stdin)["workflow_runs"]:
-    if r["workflow_id"] == "github-release.yml" and r.get("prettyref") == sys.argv[1] and r.get("trigger_event") == "push":
-        print(r["index_in_repo"], r["status"]); break' "$TAG")
-    [ -n "$started" ] && break
-    sleep 5
-done
-if [ -n "$started" ]; then
-    log "github-release run for $TAG: $started"
-else
-    log "no github-release run from the tag push: dispatching it with tag $TAG"
-    api POST /actions/workflows/github-release.yml/dispatches -H 'Content-Type: application/json' \
-        -d "{\"ref\":\"main\",\"inputs\":{\"tag\":\"$TAG\"}}" >/dev/null
-fi
 log "done: $UPDATE_URL -> $TAG"
