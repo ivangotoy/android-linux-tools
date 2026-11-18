@@ -107,18 +107,18 @@ the same programs and differed only in metadata (up to v2.0 the full flavour add
 libLLVM, about 172 MB). The module id is unchanged, so the ZIP installs over either flavour like any upgrade;
 `module.prop` and `MANIFEST.json` no longer have a `flavour` field.
 
-## Contents (v2.7-r1)
+## Contents (v2.7-r2)
 
 274 commands plus `alt-list`, 250 ELF programs; there is no `lib/` directory. Sizes are of the stripped
 `$ALTDIR/libexec/` programs. Linkage `dynamic` = PIE against the system `libc.so`/`libm.so`/`libdl.so`
 (`libz.so` for curl, nmap, dropbear, ltrace, fio, git and the android-tools programs) only, every third-party library
 linked in statically. Four more programs are in `libexec` without a command of their own: `mtr-packet`, `sadc`
 (started by `sar`) and `git-remote-http`/`git-remote-https` (started by `git`). Generated from
-`dist/MANIFEST-v2.json` of the v2.7-r1 build.
+`dist/MANIFEST-v2.json` of the v2.7-r2 build.
 
 | ZIP | Bytes | Unpacked |
 |---|---|---|
-| `android-linux-tools-v2.7-r1.zip` | 203113042 | 487.4 MB |
+| `android-linux-tools-v2.7-r2.zip` | 203113093 | 487.4 MB |
 
 | Command | Recipe | Version | Linkage | libexec (KB) | Licence (SPDX) |
 |---|---|---|---|---|---|
@@ -660,6 +660,8 @@ JOBS=8 MEM=12G ./build-ndk.sh  # make -j and memory limit (defaults)
   `zipinfo`), 7-Zip 26.06 (`7zz`), Vim 9.2.1355 (`vim`, `vimdiff`, `view`, `rvim`, `rview`), zsh 5.9.2,
   tealdeer 1.9.1 (`tldr`, with the English tldr-pages for offline use), mosh 1.4.0 (`mosh-server`,
   `mosh-client`), exfatprogs 1.4.4 and dosfstools 4.2; every other program is the same as in v2.6-r5.
+- v2.7-r2: same programs as v2.7-r1; module.prop carries `updateJson`, so the root manager app offers
+  module updates from the Forgejo releases.
 
 ## Licences
 
