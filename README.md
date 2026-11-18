@@ -107,18 +107,18 @@ the same programs and differed only in metadata (up to v2.0 the full flavour add
 libLLVM, about 172 MB). The module id is unchanged, so the ZIP installs over either flavour like any upgrade;
 `module.prop` and `MANIFEST.json` no longer have a `flavour` field.
 
-## Contents (v2.7-r2)
+## Contents (v2.7-r3)
 
 274 commands plus `alt-list`, 250 ELF programs; there is no `lib/` directory. Sizes are of the stripped
 `$ALTDIR/libexec/` programs. Linkage `dynamic` = PIE against the system `libc.so`/`libm.so`/`libdl.so`
 (`libz.so` for curl, nmap, dropbear, ltrace, fio, git and the android-tools programs) only, every third-party library
 linked in statically. Four more programs are in `libexec` without a command of their own: `mtr-packet`, `sadc`
 (started by `sar`) and `git-remote-http`/`git-remote-https` (started by `git`). Generated from
-`dist/MANIFEST-v2.json` of the v2.7-r2 build.
+`dist/MANIFEST-v2.json` of the v2.7-r3 build.
 
 | ZIP | Bytes | Unpacked |
 |---|---|---|
-| `android-linux-tools-v2.7-r2.zip` | 203113093 | 487.4 MB |
+| `android-linux-tools-v2.7-r3.zip` | 203113094 | 487.4 MB |
 
 | Command | Recipe | Version | Linkage | libexec (KB) | Licence (SPDX) |
 |---|---|---|---|---|---|
