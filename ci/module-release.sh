@@ -94,7 +94,6 @@ log "release commit $REL_SHA, tag $TAG"
 # push main (fast-forward only), then the tag
 git -c "http.extraHeader=$(auth)" push -q origin "HEAD:refs/heads/main" || die "push of main failed (main moved?)"
 git -c "http.extraHeader=$(auth)" push -q origin "refs/tags/$TAG" || die "push of tag $TAG failed"
-PUSHED_AT=$(date -u +%s)
 
 # draft release on the tag, upload, download back, publish
 BODY=$(python3 -I - README.md "$TAG" "$ZIP" dist/MANIFEST-v2.json <<'PY'
@@ -130,16 +129,15 @@ PUBLISHED=1
 [ "$(api GET "/tags/$TAG" | jget commit.sha)" = "$REL_SHA" ] || die "tag $TAG does not point at $REL_SHA"
 log "published $TAG"
 
-# the tag push must have started github-release (it waits for this release); dispatch it if not
+# the tag push must have started github-release (it waits for this release); dispatch it if not.
+# /actions/runs lists the run while it still waits for the runner this job holds.
 started=""
 for i in $(seq 1 12); do
-    started=$(api GET "/actions/tasks?limit=20" | python3 -I -c '
-import json, sys, datetime
-since = int(sys.argv[1]) - 120
+    started=$(api GET "/actions/runs?limit=20" | python3 -I -c '
+import json, sys
 for r in json.load(sys.stdin)["workflow_runs"]:
-    t = datetime.datetime.fromisoformat(r["created_at"]).timestamp()
-    if r["workflow_id"] == "github-release.yml" and t >= since:
-        print(r["run_number"], r["event"], r["status"]); break' "$PUSHED_AT")
+    if r["workflow_id"] == "github-release.yml" and r.get("prettyref") == sys.argv[1] and r.get("trigger_event") == "push":
+        print(r["index_in_repo"], r["status"]); break' "$TAG")
     [ -n "$started" ] && break
     sleep 5
 done
