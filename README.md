@@ -667,6 +667,7 @@ JOBS=8 MEM=12G ./build-ndk.sh  # make -j and memory limit (defaults)
   `mosh-client`), exfatprogs 1.4.4 and dosfstools 4.2; every other program is the same as in v2.6-r5.
 - v2.7-r2: same programs as v2.7-r1; module.prop carries `updateJson`, so the root manager app offers
   module updates from the Forgejo releases.
+- v2.7-r3: same programs as v2.7-r2; built and released by the Forgejo pipeline.
 
 ## Licences
 
