@@ -361,7 +361,8 @@ write(os.path.join(ST, 'module.prop'),
       'id=%s\nname=Android Linux tools\nversion=%s\nversionCode=%d\nauthor=Ivan Angelov\n'
       'description=%d tools built with the Android NDK (bionic): %s. '
       'Names that exist on the device get an -ng suffix (alt-list).\n'
-      % (MODID, VERSION, VCODE, ndk_n, main), 0o644)
+      'updateJson=%s/raw/branch/main/update.json\n'
+      % (MODID, VERSION, VCODE, ndk_n, main, REPO_URL), 0o644)
 
 manifest = {'module': MODID, 'version': VERSION, 'versionCode': VCODE, 'arch': 'aarch64',
             'ndk': NDK_RELEASE, 'api': API, 'moddir': MODDIR, 'altdir': ALTDIR,

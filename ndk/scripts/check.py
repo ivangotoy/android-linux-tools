@@ -188,6 +188,8 @@ if prop.get('id') != MODID:
     err('module.prop id invalid')
 if not prop.get('versionCode', '').isdigit() or int(prop['versionCode']) <= 32401:
     err('versionCode not numeric or not above v1 (32401)')
+if prop.get('updateJson') != 'https://git.digtvbg.com/ivangotoy/android-linux-tools/raw/branch/main/update.json':
+    err('module.prop updateJson is not the Forgejo update.json')
 res['module_prop'] = prop
 for t in ('xterm', 'xterm-256color', 'screen', 'tmux', 'linux', 'vt100'):
     if not os.path.isfile(os.path.join(RT, 'share', 'terminfo', t[0], t)):

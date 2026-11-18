@@ -603,6 +603,9 @@ JOBS=8 MEM=12G ./build-ndk.sh  # make -j and memory limit (defaults)
 - Releases are published on Forgejo (<https://git.digtvbg.com/ivangotoy/android-linux-tools/releases>) with
   the ZIP and its `.sha256` file as assets (one ZIP from v2.3-r1; releases up to v2.2-r2 have both flavour ZIPs). A release tag is
   never moved; a fix gets a new `-rN`.
+- Module updates: module.prop carries `updateJson=https://git.digtvbg.com/ivangotoy/android-linux-tools/raw/branch/main/update.json`.
+  `ndk/package.sh` writes `dist/update.json` for the built ZIP; the release commit copies it to `update.json`
+  at the repo root, so the root file always names the newest published release.
 - Git refs reach GitHub through the Forgejo push mirror. `.forgejo/workflows/github-release.yml` runs when a
   `v*` tag is pushed, waits for that tag's Forgejo release to be published, and `ci/github-release.py` copies it to
   <https://github.com/ivangotoy/android-linux-tools/releases>: it waits for the mirrored tag at the same commit,
