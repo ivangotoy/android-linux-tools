@@ -31,7 +31,8 @@ for k in sys.argv[1].split("."): d=d[int(k)] if k.isdigit() else d[k]
 print(d)' "$1"; }
 conf() { sed -n "s/^$1=//p" ndk/build.conf; }
 # on exit: on failure delete the release only if the forge says it is still a draft (a publish whose reply
-# was lost leaves a published release), remove the private dir; keeps the exit code
+# was lost leaves a published release), remove the private dir and the downloaded-back assets; keeps the
+# exit code
 cleanup() {
     local rc=$?
     set +e
@@ -44,7 +45,7 @@ cleanup() {
             log "deleting draft release $RELEASE_ID ($TAG) failed, check $URL/releases by hand"
         fi
     fi
-    rm -rf "$PRIV"
+    rm -rf "$PRIV" "$ROOT"/.work/back-*
     exit "$rc"
 }
 RELEASE_ID= PUBLISHED=0

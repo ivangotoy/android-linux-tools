@@ -252,6 +252,19 @@ PY2
   rm -rf "$h"
 }
 
+# an uploaded asset that differs when downloaded back: rc=1, the draft is deleted, no downloaded copy is left
+case_corrupt() {
+  local h rc left; h=$(new_fixture)
+  rc=$(run_release "$h" corrupt)
+  left=$(cd "$h/repo" && ls -d .work/back-* 2>/dev/null)
+  if [ "$rc" = 1 ] && [ "$(draft "$h")" = deleted ] && [ -z "$left" ] && grep -q 'differs from dist/' "$h/out.txt"; then
+    ok "corrupt upload: rc=1, draft deleted, no downloaded copy left in .work"
+  else
+    bad "corrupt upload: rc=$rc, release $(draft "$h"), left: ${left:-none}"
+  fi
+  rm -rf "$h"
+}
+
 case_ok
 case_draft_request post_fail
 case_draft_request post_lost
@@ -259,6 +272,7 @@ case_draft_request post_noid
 case_cleanup upload_fail 1 deleted
 case_cleanup patch_lost 56 False
 case_cleanup get_fail 56 False
-for m in ok post_fail post_lost post_noid upload_fail patch_lost get_fail; do case_token "$m"; done
+for m in ok post_fail post_lost post_noid upload_fail patch_lost get_fail corrupt; do case_token "$m"; done
 case_workflow
+case_corrupt
 [ "$FAILS" -eq 0 ]
