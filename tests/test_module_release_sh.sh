@@ -184,7 +184,28 @@ case_draft_request() {
   rm -rf "$h"
 }
 
+# F2: a failure after the draft exists deletes it only when the forge confirms it is still a draft; the exit
+# code is the failing step's
+case_cleanup() {
+  local h rc m=$1 want_rc=$2 want=$3; h=$(new_fixture)
+  rc=$(run_release "$h" "$m")
+  if [ "$rc" = "$want_rc" ] && [ "$(draft "$h")" = "$want" ]; then
+    case "$want" in
+      deleted) ok "cleanup ($m): rc=$rc, the draft is deleted" ;;
+      *) if grep -q "release 7 ($TAG) not deleted: .*check https://forge.example.invalid/o/r/releases by hand" "$h/out.txt"; then
+           ok "cleanup ($m): rc=$rc, release not deleted and named to check by hand"
+         else bad "cleanup ($m): kept, but no check-by-hand line: $(tail -2 "$h/out.txt")"; fi ;;
+    esac
+  else
+    bad "cleanup ($m): rc=$rc (want $want_rc), release $(draft "$h") (want $want): $(grep -c '^DELETE' "$h/state/calls") DELETE calls"
+  fi
+  rm -rf "$h"
+}
+
 case_ok
 case_draft_request post_fail
 case_draft_request post_lost
+case_cleanup upload_fail 1 deleted
+case_cleanup patch_lost 56 False
+case_cleanup get_fail 56 False
 [ "$FAILS" -eq 0 ]

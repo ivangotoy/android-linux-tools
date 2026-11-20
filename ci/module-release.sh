@@ -117,7 +117,23 @@ REQ=$(python3 -I -c 'import json,sys;print(json.dumps({"tag_name":sys.argv[1],"n
 nodraft="creating the draft release failed: the forge may hold a draft release for tag $TAG, check $URL/releases by hand"
 RELEASE_ID=$(api POST /releases -H 'Content-Type: application/json' -d "$REQ" | jget id) || die "$nodraft"
 [[ "$RELEASE_ID" =~ ^[0-9]+$ ]] || die "$nodraft (reply id '$RELEASE_ID')"
-trap '[ "${PUBLISHED:-0}" = 1 ] || api DELETE "/releases/$RELEASE_ID" >/dev/null || true' EXIT
+# on failure delete the release only if the forge says it is still a draft (a publish whose reply was lost
+# leaves a published release); keeps the exit code
+cleanup() {
+    local rc=$?
+    set +e
+    if [ "${PUBLISHED:-0}" != 1 ] && [[ "${RELEASE_ID:-}" =~ ^[0-9]+$ ]]; then
+        if [ "$(api GET "/releases/$RELEASE_ID" 2>/dev/null | jget draft 2>/dev/null)" != True ]; then
+            log "release $RELEASE_ID ($TAG) not deleted: the forge did not confirm it is a draft, check $URL/releases by hand"
+        elif api DELETE "/releases/$RELEASE_ID" >/dev/null; then
+            log "deleted draft release $RELEASE_ID ($TAG)"
+        else
+            log "deleting draft release $RELEASE_ID ($TAG) failed, check $URL/releases by hand"
+        fi
+    fi
+    exit "$rc"
+}
+trap cleanup EXIT
 log "draft release $RELEASE_ID"
 for f in "$ZIP" "$ZIP.sha256"; do
     id=$(api POST "/releases/$RELEASE_ID/assets?name=$f" -F "attachment=@dist/$f" | jget id)
