@@ -113,7 +113,10 @@ print(f"Android Linux tools {tag}: one module ZIP with {cmds} Linux command-line
 PY
 )
 REQ=$(python3 -I -c 'import json,sys;print(json.dumps({"tag_name":sys.argv[1],"name":sys.argv[1],"body":sys.argv[2],"draft":True}))' "$TAG" "$BODY")
-RELEASE_ID=$(api POST /releases -H 'Content-Type: application/json' -d "$REQ" | jget id)
+# a rejected request, or one the forge applied but whose reply was lost, may leave a draft on the forge
+nodraft="creating the draft release failed: the forge may hold a draft release for tag $TAG, check $URL/releases by hand"
+RELEASE_ID=$(api POST /releases -H 'Content-Type: application/json' -d "$REQ" | jget id) || die "$nodraft"
+[[ "$RELEASE_ID" =~ ^[0-9]+$ ]] || die "$nodraft (reply id '$RELEASE_ID')"
 trap '[ "${PUBLISHED:-0}" = 1 ] || api DELETE "/releases/$RELEASE_ID" >/dev/null || true' EXIT
 log "draft release $RELEASE_ID"
 for f in "$ZIP" "$ZIP.sha256"; do
