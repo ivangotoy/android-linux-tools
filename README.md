@@ -1,3 +1,7 @@
+> [!NOTE]
+> 🏡 **Home:** [git.digtvbg.com/ivangotoy/android-linux-tools](https://git.digtvbg.com/ivangotoy/android-linux-tools), where code, issues and releases live.
+> 🪞 **Mirror:** [github.com/ivangotoy/android-linux-tools](https://github.com/ivangotoy/android-linux-tools), read-only, synced automatically.
+
 # Android Linux tools
 
 A root module that adds Linux userspace tools (netfilter, iproute2, WireGuard/AmneziaWG, Wi-Fi (iw), tracing and
@@ -14,8 +18,6 @@ The module does not depend on any particular device. It runs nothing at boot (no
 `service.sh` or other boot script) and changes nothing on the device except the files the root manager
 mounts from its `system/` tree.
 
-- Repository: <https://git.digtvbg.com/ivangotoy/android-linux-tools> (Forgejo), mirrored to
-  <https://github.com/ivangotoy/android-linux-tools>.
 - Module id `android-linux-tools`, module directory `/data/adb/modules/android-linux-tools`.
 - Version `v2.M-rN`, versionCode `major*100000 + minor*1000 + N` (`v2.6-r1` = `206001`), set in `ndk/build.conf`.
 - One ZIP (see "One ZIP"); tool list in "Contents".
