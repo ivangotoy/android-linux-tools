@@ -1,6 +1,5 @@
-> [!NOTE]
-> 🏡 **Home:** [git.digtvbg.com/ivangotoy/android-linux-tools](https://git.digtvbg.com/ivangotoy/android-linux-tools), where code, issues and releases live.
-> 🪞 **Mirror:** [github.com/ivangotoy/android-linux-tools](https://github.com/ivangotoy/android-linux-tools), read-only, synced automatically.
+> 🏠 **Home:** [git.digtvbg.com/ivangotoy/android-linux-tools](https://git.digtvbg.com/ivangotoy/android-linux-tools)\
+> 🔄 **Mirror:** [github.com/ivangotoy/android-linux-tools](https://github.com/ivangotoy/android-linux-tools) (read-only)
 
 # Android Linux tools
 
