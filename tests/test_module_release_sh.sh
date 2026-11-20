@@ -114,6 +114,7 @@ elif meth == "POST" and path == "/releases":
     if mode == "post_fail": fail(22, '{"message":"rejected"}')
     s["draft"] = True
     if mode == "post_lost": fail(56)
+    if mode == "post_noid": reply({"id": None})
     reply({"id": 7})
 elif meth == "POST" and path.startswith("/releases/7/assets?name="):
     if mode == "upload_fail": fail(22, '{"message":"upload rejected"}')
@@ -152,9 +153,9 @@ EOF
 }
 # run_release H MODE: run the script in H/repo against the stub forge in MODE; prints its exit code
 run_release() {
-  (cd "$1/repo" && PATH="$1/bin:$PATH" TMPDIR="$1/tmp" STATE="$1/state" FORGE_MODE=$2 REAL_GIT=$REAL_GIT \
-    RELEASE_TOKEN=$tok SERVER_URL=https://forge.example.invalid REPOSITORY=o/r ALT_BUILD_CACHE="$1/cache" \
-    bash ci/module-release.sh) > "$1/out.txt" 2>&1
+  (cd "$1/repo" && printf -v RELEASE_TOKEN %s "$tok" && export RELEASE_TOKEN &&
+    PATH="$1/bin:$PATH" TMPDIR="$1/tmp" STATE="$1/state" FORGE_MODE=$2 REAL_GIT=$REAL_GIT \
+    SERVER_URL=https://forge.example.invalid REPOSITORY=o/r ALT_BUILD_CACHE="$1/cache" bash ci/module-release.sh) > "$1/out.txt" 2>&1
   echo $?
 }
 # draft H: the release's state on the stub forge (True, False, deleted, None)
@@ -176,10 +177,11 @@ case_ok() {
 case_draft_request() {
   local h rc m; m=$1; h=$(new_fixture)
   rc=$(run_release "$h" "$m")
-  if [ "$rc" = 1 ] && grep -q "ERROR: .*the forge may hold a draft release for tag $TAG, check https://forge.example.invalid/o/r/releases by hand" "$h/out.txt"; then
-    ok "draft request ($m): rc=1, the error names $TAG and the draft to check"
+  if [ "$rc" = 1 ] && grep -q "ERROR: .*the forge may hold a draft release for tag $TAG, check https://forge.example.invalid/o/r/releases by hand" "$h/out.txt" &&
+    ! grep -q -e '^DELETE' -e '^GET /releases/[0-9]' "$h/state/calls"; then
+    ok "draft request ($m): rc=1, the error names $TAG and the draft to check, no cleanup call"
   else
-    bad "draft request ($m): rc=$rc, no draft warning: $(tail -2 "$h/out.txt")"
+    bad "draft request ($m): rc=$rc, no draft warning or a cleanup call: $(tail -2 "$h/out.txt")"
   fi
   rm -rf "$h"
 }
@@ -202,10 +204,61 @@ case_cleanup() {
   rm -rf "$h"
 }
 
+# F3: the token is in no git or curl command line and in no output; curl gets it from a 0600 file in a 0700
+# dir that is gone after the run, git push from the environment
+case_token() {
+  local h rc m calls bad_calls; m=$1; h=$(new_fixture)
+  rc=$(run_release "$h" "$m")
+  calls=$(grep -c . "$h/state/calls")
+  bad_calls=$(grep -v -e '^[A-Z]* .* auth=file fmode=600 dmode=700$' -e '^push auth=env$' "$h/state/calls")
+  if grep -qF "$tok" "$h/state/argv" "$h/out.txt"; then
+    bad "token ($m): in a command line or the output: $(grep -hF "$tok" "$h/state/argv" "$h/out.txt" | cut -c1-60 | head -3)"
+  elif [ -n "$bad_calls" ]; then
+    bad "token ($m): calls without the token from a private file or the environment: $(echo "$bad_calls" | head -3)"
+  elif [ -n "$(ls -A "$h/tmp")" ]; then
+    bad "token ($m): left in TMPDIR: $(ls -A "$h/tmp")"
+  else
+    ok "token ($m, rc=$rc): not in $(grep -c '^curl\|^git' "$h/state/argv") git/curl command lines or the output; $calls forge calls authenticated off argv"
+  fi
+  rm -rf "$h"
+}
+
+# F3: the workflow's clone and checkout carry no token; the release script still gets it in its environment
+case_workflow() {
+  local h; h=$(new_fixture)
+  mkdir -p "$h/wf" "$h/home"
+  python3 -I - "$ALT_TREE/.forgejo/workflows/module-release.yml" > "$h/run.sh" <<'PY2'
+import sys, textwrap
+lines = open(sys.argv[1]).read().splitlines()
+i = next(n for n, l in enumerate(lines) if l.strip() == "run: |")
+ind = len(lines[i]) - len(lines[i].lstrip())
+body = []
+for l in lines[i + 1:]:
+    if l.strip() and len(l) - len(l.lstrip()) <= ind:
+        break
+    body.append(l)
+print(textwrap.dedent("\n".join(body)))
+PY2
+  (cd "$h/wf" && printf -v RELEASE_TOKEN %s "$tok" && export RELEASE_TOKEN &&
+    PATH="$h/bin:$PATH" HOME="$h/home" STATE="$h/state" WF=1 REAL_GIT=$REAL_GIT \
+    SERVER_URL=https://forge.example.invalid REPOSITORY=o/r BASE_SHA=0123abcd bash "$h/run.sh") > "$h/out.txt" 2>&1
+  if grep -qF "$tok" "$h/state/argv" "$h/out.txt"; then
+    bad "workflow: token in a command line: $(grep -hF "$tok" "$h/state/argv" | cut -c1-60 | head -2)"
+  elif grep -qx "script ran token=set cache=$h/home/.cache/android-linux-tools" "$h/state/calls" && grep -q '^clone ' "$h/state/calls"; then
+    ok "workflow: clone and checkout without the token, release script gets it in its environment"
+  else
+    bad "workflow: the run block did not clone and run the release script: $(cat "$h/state/calls" "$h/out.txt" | head -3)"
+  fi
+  rm -rf "$h"
+}
+
 case_ok
 case_draft_request post_fail
 case_draft_request post_lost
+case_draft_request post_noid
 case_cleanup upload_fail 1 deleted
 case_cleanup patch_lost 56 False
 case_cleanup get_fail 56 False
+for m in ok post_fail post_lost post_noid upload_fail patch_lost get_fail; do case_token "$m"; done
+case_workflow
 [ "$FAILS" -eq 0 ]

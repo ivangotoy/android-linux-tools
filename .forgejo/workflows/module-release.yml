@@ -20,7 +20,7 @@ jobs:
         run: |
           set -eu
           rm -rf src
-          git -c "http.extraHeader=Authorization: token $RELEASE_TOKEN" clone -q --branch main "$SERVER_URL/$REPOSITORY.git" src
+          git clone -q --branch main "$SERVER_URL/$REPOSITORY.git" src
           cd src
           git checkout -q -B main "$BASE_SHA"
           ALT_BUILD_CACHE="$HOME/.cache/android-linux-tools" bash ci/module-release.sh

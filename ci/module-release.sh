@@ -22,13 +22,35 @@ export GIT_COMMITTER_NAME="$GIT_AUTHOR_NAME" GIT_COMMITTER_EMAIL="$GIT_AUTHOR_EM
 
 log() { printf '==> %s\n' "$*" >&2; }
 die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
-auth() { printf 'Authorization: token %s' "$RELEASE_TOKEN"; }
-api() { local m="$1" p="$2"; shift 2; curl -sS --fail-with-body --retry 3 -X "$m" -H "$(auth)" "$@" "$API$p"; }
-code() { curl -sS -o /dev/null -w '%{http_code}' -H "$(auth)" "$API$1"; }
+# the token reaches curl in a header file in a private dir and git in the environment, never a command line
+api() { local m="$1" p="$2"; shift 2; curl -sS --fail-with-body --retry 3 -X "$m" -H "@$PRIV/auth" "$@" "$API$p"; }
+code() { curl -sS -o /dev/null -w '%{http_code}' -H "@$PRIV/auth" "$API$1"; }
+gitauth() { GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.extraHeader GIT_CONFIG_VALUE_0="Authorization: token $RELEASE_TOKEN" git "$@"; }
 jget() { python3 -I -c 'import json,sys;d=json.load(sys.stdin)
 for k in sys.argv[1].split("."): d=d[int(k)] if k.isdigit() else d[k]
 print(d)' "$1"; }
 conf() { sed -n "s/^$1=//p" ndk/build.conf; }
+# on exit: on failure delete the release only if the forge says it is still a draft (a publish whose reply
+# was lost leaves a published release), remove the private dir; keeps the exit code
+cleanup() {
+    local rc=$?
+    set +e
+    if [ "${PUBLISHED:-0}" != 1 ] && [[ "${RELEASE_ID:-}" =~ ^[0-9]+$ ]]; then
+        if [ "$(api GET "/releases/$RELEASE_ID" 2>/dev/null | jget draft 2>/dev/null)" != True ]; then
+            log "release $RELEASE_ID ($TAG) not deleted: the forge did not confirm it is a draft, check $URL/releases by hand"
+        elif api DELETE "/releases/$RELEASE_ID" >/dev/null; then
+            log "deleted draft release $RELEASE_ID ($TAG)"
+        else
+            log "deleting draft release $RELEASE_ID ($TAG) failed, check $URL/releases by hand"
+        fi
+    fi
+    rm -rf "$PRIV"
+    exit "$rc"
+}
+RELEASE_ID= PUBLISHED=0
+PRIV=$(mktemp -d)
+trap cleanup EXIT
+(umask 077 && printf 'Authorization: token %s\n' "$RELEASE_TOKEN" > "$PRIV/auth")
 
 V2=$(conf V2_VERSION); REL=$(conf MODULE_RELEASE)
 [[ "$REL" =~ ^[0-9]+$ ]] || die "bad MODULE_RELEASE '$REL'"
@@ -92,8 +114,8 @@ REL_SHA=$(git rev-parse HEAD)
 log "release commit $REL_SHA, tag $TAG"
 
 # push main (fast-forward only), then the tag
-git -c "http.extraHeader=$(auth)" push -q origin "HEAD:refs/heads/main" || die "push of main failed (main moved?)"
-git -c "http.extraHeader=$(auth)" push -q origin "refs/tags/$TAG" || die "push of tag $TAG failed"
+gitauth push -q origin "HEAD:refs/heads/main" || die "push of main failed (main moved?)"
+gitauth push -q origin "refs/tags/$TAG" || die "push of tag $TAG failed"
 
 # draft release on the tag, upload, download back, publish
 BODY=$(python3 -I - README.md "$TAG" "$ZIP" dist/MANIFEST-v2.json <<'PY'
@@ -117,28 +139,11 @@ REQ=$(python3 -I -c 'import json,sys;print(json.dumps({"tag_name":sys.argv[1],"n
 nodraft="creating the draft release failed: the forge may hold a draft release for tag $TAG, check $URL/releases by hand"
 RELEASE_ID=$(api POST /releases -H 'Content-Type: application/json' -d "$REQ" | jget id) || die "$nodraft"
 [[ "$RELEASE_ID" =~ ^[0-9]+$ ]] || die "$nodraft (reply id '$RELEASE_ID')"
-# on failure delete the release only if the forge says it is still a draft (a publish whose reply was lost
-# leaves a published release); keeps the exit code
-cleanup() {
-    local rc=$?
-    set +e
-    if [ "${PUBLISHED:-0}" != 1 ] && [[ "${RELEASE_ID:-}" =~ ^[0-9]+$ ]]; then
-        if [ "$(api GET "/releases/$RELEASE_ID" 2>/dev/null | jget draft 2>/dev/null)" != True ]; then
-            log "release $RELEASE_ID ($TAG) not deleted: the forge did not confirm it is a draft, check $URL/releases by hand"
-        elif api DELETE "/releases/$RELEASE_ID" >/dev/null; then
-            log "deleted draft release $RELEASE_ID ($TAG)"
-        else
-            log "deleting draft release $RELEASE_ID ($TAG) failed, check $URL/releases by hand"
-        fi
-    fi
-    exit "$rc"
-}
-trap cleanup EXIT
 log "draft release $RELEASE_ID"
 for f in "$ZIP" "$ZIP.sha256"; do
     id=$(api POST "/releases/$RELEASE_ID/assets?name=$f" -F "attachment=@dist/$f" | jget id)
     u=$(api GET "/releases/$RELEASE_ID/assets/$id" | jget browser_download_url)
-    curl -sSL --fail-with-body -H "$(auth)" -o ".work/back-$f" "$u"
+    curl -sSL --fail-with-body -H "@$PRIV/auth" -o ".work/back-$f" "$u"
     cmp -s "dist/$f" ".work/back-$f" || die "uploaded $f differs from dist/$f"
     rm -f ".work/back-$f"
     log "uploaded and compared $f"
